@@ -4,7 +4,7 @@ import ClientCard from './ClientCard';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOpenClient, onEditPhase, onReorderPhase }) {
+export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOpenClient, onEditPhase, onReorderPhase, onAddComment }) {
   const columnRef = useRef(null);
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
       </View>
       <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollArea}>
         {phase.clients.map((client) => (
-          <ClientCard key={client.id} client={client} phaseId={phase.id} onDelete={onDeleteClient} onOpen={onOpenClient} />
+          <ClientCard key={client.id} client={client} phaseId={phase.id} onDelete={onDeleteClient} onOpen={onOpenClient} onAddComment={onAddComment}/>
         ))}
       </ScrollView>
     </View>

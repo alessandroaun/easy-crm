@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions } from 'react-native';
 import KanbanColumn from '../components/KanbanColumn';
 import AddClientModal from '../components/AddClientModal';
@@ -32,6 +32,30 @@ export default function DashboardScreen() {
   const [editingPhase, setEditingPhase] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('TODOS');
+
+  // Referência para o ScrollView do Kanban
+  const boardScrollRef = useRef(null);
+
+  // Efeito para converter rolagem vertical do mouse em rolagem horizontal no Web
+  useEffect(() => {
+    if (Platform.OS === 'web' && boardScrollRef.current) {
+      // O React Native Web possui o método getScrollableNode()
+      const node = boardScrollRef.current.getScrollableNode 
+        ? boardScrollRef.current.getScrollableNode() 
+        : boardScrollRef.current;
+
+      const handleWheel = (e) => {
+        // Se a rolagem for vertical (deltaY), convertemos para horizontal (scrollLeft)
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          node.scrollLeft += e.deltaY;
+        }
+      };
+
+      node.addEventListener('wheel', handleWheel, { passive: false });
+      return () => node.removeEventListener('wheel', handleWheel);
+    }
+  }, []);
 
   useEffect(() => {
     fetchBoardData();
@@ -72,11 +96,12 @@ export default function DashboardScreen() {
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     newClient.createdAt = new Date().toISOString();
     
+    // Novo padrão: +55 (xx) xxxxxxxxx (sem hífen)
     if (newClient.phone) {
       let cl = newClient.phone.replace(/\D/g, '');
       if (!cl.startsWith('55') && cl.length <= 11) cl = '55' + cl;
-      const match = cl.match(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/);
-      newClient.phone = match ? `+${match[1]} (${match[2]}) ${match[3]}-${match[4]}` : newClient.phone;
+      const match = cl.match(/^(\d{2})(\d{2})(\d+)$/);
+      newClient.phone = match ? `+${match[1]} (${match[2]}) ${match[3]}` : newClient.phone;
     }
 
     if (updatedBoard.phases.length > 0) {
@@ -106,9 +131,33 @@ export default function DashboardScreen() {
     const clientIndex = updatedBoard.phases[sourcePhaseIndex].clients.findIndex(c => c.id === clientId);
     if (clientIndex === -1) return;
     const [movedClient] = updatedBoard.phases[sourcePhaseIndex].clients.splice(clientIndex, 1);
+    movedClient.updatedAt = new Date().toISOString();
     updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
     setBoardData(updatedBoard);
     syncBoardToDatabase(updatedBoard);
+  };
+
+  // Função que injeta comentários automáticos via ações rápidas no Card
+  const handleAddCommentToClient = (clientId, phaseId, commentText) => {
+    if (!boardData) return;
+    const updatedBoard = JSON.parse(JSON.stringify(boardData));
+    
+    const phaseIndex = updatedBoard.phases.findIndex(p => p.id === phaseId);
+    if (phaseIndex !== -1) {
+      const clientIndex = updatedBoard.phases[phaseIndex].clients.findIndex(c => c.id === clientId);
+      if (clientIndex !== -1) {
+        const client = updatedBoard.phases[phaseIndex].clients[clientIndex];
+        const autoComment = {
+          id: `auto_${Date.now()}`,
+          text: commentText,
+          date: new Date().toISOString()
+        };
+        client.comments = [autoComment, ...(client.comments || [])];
+        
+        setBoardData(updatedBoard);
+        syncBoardToDatabase(updatedBoard);
+      }
+    }
   };
 
   const handleMoveToTrash = (clientId, phaseId) => {
@@ -260,7 +309,7 @@ export default function DashboardScreen() {
       <View style={styles.headerContainer}>
         <View style={[styles.headerTop, isMobile && styles.headerTopMobile]}>
           
-          <Text style={[styles.logo, isMobile && styles.logoMobile]}>Easy CRM</Text>
+          <Text style={[styles.logo, isMobile && styles.logoMobile]}>Easy CRM - Alessandro Uchoa</Text>
           
           {/* Grupo de Busca - Expande no Desktop, quebra linha no Mobile */}
           <View style={[styles.searchGroup, isMobile && styles.searchGroupMobile]}>
@@ -301,7 +350,7 @@ export default function DashboardScreen() {
       {/* ---------------------------------- */}
 
       {/* ÁREA DO KANBAN COM ESPAÇO OTIMIZADO */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardContainer}>
+      <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
         {filteredBoardData?.phases?.map((phase) => (
           <KanbanColumn 
             key={phase.id} 
@@ -311,6 +360,7 @@ export default function DashboardScreen() {
             onOpenClient={handleOpenClientDetails}
             onEditPhase={(p) => setEditingPhase(p)}
             onReorderPhase={handleReorderPhase}
+            onAddComment={handleAddCommentToClient}
           />
         ))}
         
