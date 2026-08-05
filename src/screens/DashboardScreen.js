@@ -10,11 +10,18 @@ import ImportLeadsModal from '../components/ImportLeadsModal';
 import EditPhaseModal from '../components/EditPhaseModal';
 import { supabase } from '../services/supabaseClient';
 import NotificationModal from '../components/NotificationModal';
+import MinhaCentral from '../components/MinhaCentral';
+import InformacoesGerais from '../components/InformacoesGerais';
+import Configuracao from '../components/Configuracao';
 
 // Fonte moderna injetada nativamente no Web
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
 export default function DashboardScreen() {
+  // AQUI É O LUGAR CORRETO DOS ESTADOS (Dentro da função principal)
+  const [activeView, setActiveView] = useState('kanban'); // 'kanban', 'minha_central', 'info_gerais'
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   // Hook de Responsividade
   const { width } = useWindowDimensions();
   const isMobile = width < 850; // Se a tela for menor que 850px, ativa o modo responsivo/mobile
@@ -383,82 +390,126 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       
-      {/* CABEÇALHO RESPONSIVO */}
-      <View style={styles.headerContainer}>
-        <View style={[styles.headerTop, isMobile && styles.headerTopMobile]}>
-          
-          <Text style={[styles.logo, isMobile && styles.logoMobile]}>Easy CRM - Alessandro Uchoa</Text>
-          
-          {/* Grupo de Busca - Expande no Desktop, quebra linha no Mobile */}
-          <View style={[styles.searchGroup, isMobile && styles.searchGroupMobile]}>
+      {/* ===== INÍCIO DO NOVO HEADER COMPACTO ===== */}
+      <View style={[styles.topHeader, isMobile && styles.topHeaderMobile]}>
+        
+        {/* ESQUERDA: Menu Sanduíche e Logo 3D */}
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
+            <Text style={styles.menuIcon}>☰</Text>
+          </TouchableOpacity>
+          <Text style={styles.logoText3D}>Easy CRM</Text>
+        </View>
+
+        {/* CENTRO: Barra de Busca e Filtro (Centralizados na tela no desktop) */}
+        <View style={[styles.headerCenter, isMobile && styles.headerCenterMobile]}>
+          <View style={[styles.searchContainer, isMobile && { width: '100%' }]}>
             <TextInput
               style={styles.searchInput}
-              placeholder="🔍 Buscar lead..."
+              placeholder="Buscar Lead..."
               placeholderTextColor="#94a3b8"
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
-            <TouchableOpacity 
-              style={[styles.btnFilter, activeFilter !== 'TODOS' && styles.btnFilterActive]} 
-              onPress={() => setIsFilterModalVisible(true)}
-            >
-              <Text style={[styles.btnFilterText, activeFilter !== 'TODOS' && styles.btnFilterTextActive]}>
-                ⚙️ {isMobile ? '' : (activeFilter !== 'TODOS' ? 'Ativo' : 'Filtros')}
-              </Text>
-            </TouchableOpacity>
           </View>
+          <TouchableOpacity 
+            style={[styles.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
+            onPress={() => setIsFilterModalVisible(true)}
+          >
+            <Text style={[styles.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
+              Filtro
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Botões de Ação - Adapta o texto dependendo do espaço */}
-          <View style={[styles.headerActions, isMobile && styles.headerActionsMobile]}>
+        {/* DIREITA: Notificações e Ações (Sem emojis) */}
+        <View style={[styles.headerRight, isMobile && styles.headerRightMobile]}>
+          
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
+            <Text style={styles.iconBtnText}>🔔</Text>
+            {activeNotifications.length > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>{activeNotifications.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-            {/* NOVO BOTÃO DE NOTIFICAÇÕES */}
-            <TouchableOpacity style={[styles.btnBase, styles.btnSecondary, { position: 'relative' }]} onPress={() => setIsNotifModalVisible(true)}>
-              <Text style={styles.btnSecondaryText}>🔔 {!isMobile && 'Avisos'}</Text>
-              
-              {/* Mostra a bolinha vermelha se houver notificações pendentes */}
-              {activeNotifications.length > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>{activeNotifications.length}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
+            <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.btnBase, styles.btnSecondary]} onPress={() => setIsTrashModalVisible(true)}>
-              <Text style={styles.btnSecondaryText}>🗑️ {!isMobile && 'Lixeira'}</Text>
+          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsImportModalVisible(true)}>
+            <Text style={styles.actionBtnSecondaryText}>Importar</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => setIsClientModalVisible(true)}>
+            <Text style={styles.actionBtnPrimaryText}>Novo</Text>
+          </TouchableOpacity>
+          
+        </View>
+
+      </View>
+      {/* ===== FIM DO NOVO HEADER ===== */}
+
+      {/* RENDERIZAÇÃO CONDICIONAL DAS TELAS */}
+      
+      {activeView === 'kanban' && (
+        <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
+          {filteredBoardData?.phases?.map((phase) => (
+            <KanbanColumn 
+              key={phase.id} 
+              phase={phase} 
+              onDropClient={handleDropClient} 
+              onDeleteClient={handleMoveToTrash}
+              onOpenClient={handleOpenClientDetails}
+              onEditPhase={(p) => setEditingPhase(p)}
+              onReorderPhase={handleReorderPhase}
+              onAddComment={handleAddCommentToClient}
+            />
+          ))}
+          <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
+            <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+
+      {activeView === 'minha_central' && (
+        <MinhaCentral boardData={boardData} onOpenClient={handleOpenClientDetails} />
+      )}
+
+      {activeView === 'info_gerais' && (
+        <InformacoesGerais />
+      )}
+
+      {activeView === 'configuracao' && (
+        <Configuracao />
+      )}
+
+      {/* MODAL DO MENU LATERAL */}
+      {isMenuOpen && (
+        <View style={styles.sidebarOverlay}>
+          <TouchableOpacity style={styles.sidebarBackdrop} onPress={() => setIsMenuOpen(false)} />
+          <View style={[styles.sidebarContent, isMobile && { width: '80%' }]}>
+            <Text style={styles.sidebarTitle}>Navegação</Text>
+            
+            <TouchableOpacity style={[styles.menuItem, activeView === 'kanban' && styles.menuItemActive]} onPress={() => { setActiveView('kanban'); setIsMenuOpen(false); }}>
+              <Text style={[styles.menuItemText, activeView === 'kanban' && styles.menuItemTextActive]}>📊 Painel Kanban</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={[styles.btnBase, styles.btnSuccess]} onPress={() => setIsImportModalVisible(true)}>
-              <Text style={styles.btnSuccessText}>📥 {!isMobile && 'Importar'}</Text>
+            <TouchableOpacity style={[styles.menuItem, activeView === 'minha_central' && styles.menuItemActive]} onPress={() => { setActiveView('minha_central'); setIsMenuOpen(false); }}>
+              <Text style={[styles.menuItemText, activeView === 'minha_central' && styles.menuItemTextActive]}>🎯 Minha Central</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.btnBase, styles.btnPrimary]} onPress={() => setIsClientModalVisible(true)}>
-              <Text style={styles.btnPrimaryText}>➕ {!isMobile && 'Novo'}</Text>
+            <TouchableOpacity style={[styles.menuItem, activeView === 'info_gerais' && styles.menuItemActive]} onPress={() => { setActiveView('info_gerais'); setIsMenuOpen(false); }}>
+              <Text style={[styles.menuItemText, activeView === 'info_gerais' && styles.menuItemTextActive]}>ℹ️ Informações Gerais</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.menuItem, activeView === 'configuracao' && styles.menuItemActive]} onPress={() => { setActiveView('configuracao'); setIsMenuOpen(false); }}>
+              <Text style={[styles.menuItemText, activeView === 'configuracao' && styles.menuItemTextActive]}>⚙️ Configuração</Text>
             </TouchableOpacity>
           </View>
-
         </View>
-      </View>
-      {/* ---------------------------------- */}
-
-      {/* ÁREA DO KANBAN COM ESPAÇO OTIMIZADO */}
-      <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
-        {filteredBoardData?.phases?.map((phase) => (
-          <KanbanColumn 
-            key={phase.id} 
-            phase={phase} 
-            onDropClient={handleDropClient} 
-            onDeleteClient={handleMoveToTrash}
-            onOpenClient={handleOpenClientDetails}
-            onEditPhase={(p) => setEditingPhase(p)}
-            onReorderPhase={handleReorderPhase}
-            onAddComment={handleAddCommentToClient}
-          />
-        ))}
-        
-        <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
-          <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
-        </TouchableOpacity>
-      </ScrollView>
+      )}
 
       {/* MODAIS */}
       <AddClientModal visible={isClientModalVisible} onClose={() => setIsClientModalVisible(false)} onSave={handleSaveNewClient} />
@@ -484,114 +535,182 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // Fundo cinza ultraclaro super moderno
   },
   
-  /* --- ESTILOS DO CABEÇALHO --- */
-  headerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 16, // Espaço reduzido
-    zIndex: 10,
-    ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } })
-  },
-  headerTop: {
+  /* --- ESTILOS DO NOVO CABEÇALHO COMPACTO E DIVIDIDO --- */
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 10, // Altura mínima reduzida
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    zIndex: 50,
+    ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } })
   },
-  headerTopMobile: {
+  topHeaderMobile: {
     flexDirection: 'column',
     alignItems: 'stretch',
     gap: 12,
-  },
-  logo: {
-    fontFamily: MODERN_FONT,
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-    letterSpacing: -0.5,
-  },
-  logoMobile: {
-    textAlign: 'center',
+    paddingVertical: 14,
   },
 
-  /* --- BUSCA E FILTROS --- */
-  searchGroup: {
+  // ÁREA ESQUERDA
+  headerLeft: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    maxWidth: 600,
   },
-  searchGroupMobile: {
-    maxWidth: '100%',
+  menuButton: {
+    padding: 4,
+    marginRight: 14,
+  },
+  menuIcon: {
+    fontSize: 22,
+    color: '#334155',
+    fontWeight: 'bold',
+  },
+  logoText3D: {
+    fontFamily: MODERN_FONT,
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#1e3a8a', 
+    fontStyle: 'italic',
+    letterSpacing: -1,
+    textShadowColor: '#93c5fd',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+    ...Platform.select({
+      web: {
+        textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb, 3px 4px 5px rgba(0,0,0,0.2)'
+      }
+    })
+  },
+
+  // ÁREA CENTRAL
+  headerCenter: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center', // Garante que fique centralizado
+  },
+  headerCenterMobile: {
+    flex: undefined,
+    width: '100%',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    width: 320, // Largura ideal
+    height: 36, // Compacto
+    paddingHorizontal: 12,
   },
   searchInput: {
     flex: 1,
     fontFamily: MODERN_FONT,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#111827',
+    fontSize: 13,
+    color: '#0f172a',
     ...Platform.select({ web: { outlineStyle: 'none' } })
   },
-  btnFilter: {
-    backgroundColor: '#F3F4F6',
+  filterBtn: {
+    backgroundColor: '#f1f5f9',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    height: 36,
+    paddingHorizontal: 14,
     justifyContent: 'center',
+    marginLeft: 8,
   },
-  btnFilterActive: {
+  filterBtnActive: {
     backgroundColor: '#EFF6FF',
     borderColor: '#3B82F6',
   },
-  btnFilterText: {
+  filterBtnText: {
     fontFamily: MODERN_FONT,
-    color: '#4B5563',
-    fontWeight: '600',
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
   },
-  btnFilterTextActive: { color: '#2563EB' },
+  filterBtnTextActive: {
+    color: '#2563EB',
+  },
 
-  /* --- BOTÕES DE AÇÃO --- */
-  headerActions: {
+  // ÁREA DIREITA
+  headerRight: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'flex-end',
+    gap: 8,
   },
-  headerActionsMobile: {
-    justifyContent: 'center', // Centraliza no celular
-  },
-  btnBase: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerRightMobile: {
+    flex: undefined,
     justifyContent: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
+    flexWrap: 'wrap',
   },
-  btnSecondary: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB' },
-  btnSecondaryText: { fontFamily: MODERN_FONT, color: '#4B5563', fontWeight: '600', fontSize: 14 },
-  
-  btnSuccess: { backgroundColor: '#10B981' }, // Verde esmeralda moderno
-  btnSuccessText: { fontFamily: MODERN_FONT, color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
-  
-  btnPrimary: { backgroundColor: '#2563EB' }, // Azul vibrante
-  btnPrimaryText: { fontFamily: MODERN_FONT, color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
+  iconBtn: {
+    padding: 6,
+    marginRight: 6,
+    position: 'relative',
+  },
+  iconBtnText: {
+    fontSize: 18,
+  },
+  notificationBadge: {
+    position: 'absolute', 
+    top: 0, 
+    right: 0,
+    backgroundColor: '#ef4444', 
+    borderRadius: 10, 
+    width: 18, 
+    height: 18,
+    alignItems: 'center', 
+    justifyContent: 'center',
+    borderWidth: 2, 
+    borderColor: '#ffffff'
+  },
+  notificationBadgeText: { 
+    color: '#ffffff', 
+    fontSize: 9, 
+    fontWeight: 'bold',
+    fontFamily: MODERN_FONT
+  },
+  actionBtnSecondary: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+  },
+  actionBtnSecondaryText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  actionBtnPrimary: {
+    backgroundColor: '#2563eb', 
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 6,
+  },
+  actionBtnPrimaryText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
 
   /* --- ÁREA DO KANBAN --- */
   boardContainer: {
     flex: 1,
-    paddingTop: 16, // Removeu o abismo em branco acima das colunas
+    paddingTop: 16, 
     paddingHorizontal: 16,
   },
   addPhaseButton: {
@@ -613,11 +732,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-  notificationBadge: {
-    position: 'absolute', top: -5, right: -5,
-    backgroundColor: '#ef4444', borderRadius: 10, width: 20, height: 20,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: '#ffffff'
-  },
-  notificationBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: 'bold' },
+  /* --- ESTILOS DO MENU LATERAL --- */
+  sidebarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, flexDirection: 'row' },
+  sidebarBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)' },
+  sidebarContent: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 280, backgroundColor: '#ffffff', padding: 24, ...Platform.select({ web: { boxShadow: '4px 0px 15px rgba(0,0,0,0.1)' } }) },
+  sidebarTitle: { fontFamily: MODERN_FONT, fontSize: 18, fontWeight: '800', color: '#1e293b', marginBottom: 24 },
+  menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 8, marginBottom: 8, backgroundColor: '#f8fafc' },
+  menuItemActive: { backgroundColor: '#eff6ff', borderLeftWidth: 4, borderLeftColor: '#2563eb' },
+  menuItemText: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: '600', color: '#475569' },
+  menuItemTextActive: { color: '#2563eb' },
 });
