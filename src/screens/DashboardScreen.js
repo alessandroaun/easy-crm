@@ -102,7 +102,33 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
+    // 1. Faz a busca inicial padrão quando a tela carrega
     fetchBoardData();
+
+    // 2. Inscreve o aplicativo no canal de tempo real do Supabase
+    const boardSubscription = supabase
+      .channel('realtime-board')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE', // Escuta apenas quando há atualizações (edição de leads, mover de fase, etc)
+          schema: 'public',
+          table: 'crm_boards',
+          filter: "id=eq.crm_principal" // Filtra para escutar apenas as mudanças do Kanban principal
+        },
+        (payload) => {
+          // Essa mágica acontece sempre que o banco é atualizado!
+          if (payload.new && payload.new.data_payload) {
+            setBoardData(payload.new.data_payload);
+          }
+        }
+      )
+      .subscribe();
+
+    // 3. Limpa a inscrição quando você sair da tela para economizar memória
+    return () => {
+      supabase.removeChannel(boardSubscription);
+    };
   }, []);
 
   const fetchBoardData = async () => {
@@ -187,7 +213,7 @@ export default function DashboardScreen() {
     syncBoardToDatabase(updatedBoard); 
   };
 
-  const handleDropClient = (clientId, sourcePhaseId, targetPhaseId) => {
+  const handleDropClient = (clientId, sourcePhaseId, targetPhaseId, targetClientId = null) => {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     const sourcePhaseIndex = updatedBoard.phases.findIndex(p => p.id === sourcePhaseId);
@@ -197,27 +223,43 @@ export default function DashboardScreen() {
     const clientIndex = updatedBoard.phases[sourcePhaseIndex].clients.findIndex(c => c.id === clientId);
     if (clientIndex === -1) return;
     
+    // 1. Remove o card da posição original
     const [movedClient] = updatedBoard.phases[sourcePhaseIndex].clients.splice(clientIndex, 1);
     
-    // Atualiza a data de movimentação (para o cálculo dos dias inativos)
     movedClient.updatedAt = new Date().toISOString();
 
-    // --- REGISTRA O COMENTÁRIO AUTOMÁTICO DE MUDANÇA DE FASE ---
-    const sourcePhaseName = updatedBoard.phases[sourcePhaseIndex].title;
-    const targetPhaseName = updatedBoard.phases[targetPhaseIndex].title;
-    
+    // 2. Se mudou de fase, adiciona o comentário automático
     if (sourcePhaseId !== targetPhaseId) {
+      const sourcePhaseName = updatedBoard.phases[sourcePhaseIndex].title;
+      const targetPhaseName = updatedBoard.phases[targetPhaseIndex].title;
       const phaseChangeComment = {
         id: `move_${Date.now()}`,
         text: `⚙️ Sistema: Lead movido da fase "${sourcePhaseName}" para "${targetPhaseName}".`,
         date: new Date().toISOString()
       };
-      // Insere no topo da lista de comentários do lead
       movedClient.comments = [phaseChangeComment, ...(movedClient.comments || [])];
     }
-    // -------------------------------------------------------------
 
-    updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
+    // 3. LÓGICA INTELIGENTE DE REORDENAÇÃO MANUAL
+    if (targetClientId && targetClientId !== clientId) {
+      // Procura a posição exata do card em que você soltou em cima
+      const targetClientIndex = updatedBoard.phases[targetPhaseIndex].clients.findIndex(c => c.id === targetClientId);
+      
+      if (targetClientIndex !== -1) {
+        // Insere o card arrastado EXATAMENTE na posição daquele card
+        updatedBoard.phases[targetPhaseIndex].clients.splice(targetClientIndex, 0, movedClient);
+      } else {
+        // Fallback de segurança: joga no final da coluna
+        updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
+      }
+    } else if (sourcePhaseId === targetPhaseId) {
+      // Se ele soltou o card no vazio da MESMA coluna de onde tirou, devolve pra posição original
+      updatedBoard.phases[targetPhaseIndex].clients.splice(clientIndex, 0, movedClient);
+    } else {
+      // Se soltou no fundo (vazio) de OUTRA coluna, vai pro final daquela lista
+      updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
+    }
+
     setBoardData(updatedBoard);
     syncBoardToDatabase(updatedBoard);
   };

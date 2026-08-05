@@ -1,12 +1,17 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking, Animated, Easing, Modal } from 'react-native';
+
+const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
 export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment }) {
   const cardRef = useRef(null);
   const [pulseColor, setPulseColor] = useState(null);
-  
-  // Controlador da animação de pulsação
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Estados e Refs do Modal de Exclusão
+  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteScale = useRef(new Animated.Value(0.8)).current;
+  const deleteOpacity = useRef(new Animated.Value(0)).current;
 
   // Motor em tempo real: Cor e Pulsação
   useEffect(() => {
@@ -81,6 +86,28 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     }
   }, [client, phaseId, onOpen]);
 
+  // Funções do Modal Animado
+  const openDeleteModal = (e) => {
+    if (Platform.OS === 'web' && e && e.stopPropagation) e.stopPropagation();
+    setIsDeleting(true);
+    deleteScale.setValue(0.8);
+    deleteOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(deleteScale, { toValue: 1, friction: 6, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(deleteOpacity, { toValue: 1, duration: 250, useNativeDriver: Platform.OS !== 'web' })
+    ]).start();
+  };
+
+  const closeDeleteModal = (callback) => {
+    Animated.parallel([
+      Animated.timing(deleteScale, { toValue: 0.8, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(deleteOpacity, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      setIsDeleting(false);
+      if (typeof callback === 'function') callback();
+    });
+  };
+
   const formatCategory = (rawCategory) => {
     if (!rawCategory) return null;
     const text = rawCategory.toLowerCase();
@@ -132,8 +159,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
   };
   
   const commentsCount = client.comments ? client.comments.length : 0;
-  
-  // Agora conta quantos agendamentos foram CONCLUÍDOS (notified = true)
   const completedApptsCount = client.appointments ? client.appointments.filter(a => a.notified).length : 0;
 
   const buildTags = () => {
@@ -159,75 +184,99 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
   const tagsToRender = buildTags();
 
   return (
-    <View ref={cardRef} style={[styles.card, pulseColor && { borderColor: pulseColor, borderWidth: 2 }]}>
-      <View style={styles.headerContainer}>
-        <View style={styles.headerTextContainer}>
-          <View style={styles.nameRow}>
-            
-            {/* RELÓGINHO COM ANIMAÇÃO */}
-            {pulseColor && (
-              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                <Text style={styles.pulsingClock}>⏰</Text>
-              </Animated.View>
-            )}
+    <>
+      <View ref={cardRef} dataSet={{ clientid: client.id }} style={[styles.card, pulseColor && { borderColor: pulseColor, borderWidth: 2 }]}>
+        <View style={styles.headerContainer}>
+          <View style={styles.headerTextContainer}>
+            <View style={styles.nameRow}>
+              
+              {/* RELÓGINHO COM ANIMAÇÃO */}
+              {pulseColor && (
+                <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                  <Text style={styles.pulsingClock}>⏰</Text>
+                </Animated.View>
+              )}
 
-            <Text style={styles.name} numberOfLines={1}>{client.name}</Text>
-            
-            {commentsCount > 0 && (
-              <View style={styles.commentBadge}>
-                <Text style={styles.commentBadgeText}>{commentsCount} {commentsCount === 1 ? 'comentário' : 'comentários'}</Text>
-              </View>
-            )}
+              <Text style={styles.name} numberOfLines={1}>{client.name}</Text>
+              
+              {commentsCount > 0 && (
+                <View style={styles.commentBadge}>
+                  <Text style={styles.commentBadgeText}>{commentsCount} {commentsCount === 1 ? 'comentário' : 'comentários'}</Text>
+                </View>
+              )}
 
-            {/* TAG DE HISTÓRICO DE AGENDAMENTOS (Ex: 1A, 2A) */}
-            {completedApptsCount > 0 && (
-              <View style={styles.apptBadge}>
-                <Text style={styles.apptBadgeText}>{completedApptsCount}A</Text>
-              </View>
-            )}
+              {/* TAG DE HISTÓRICO DE AGENDAMENTOS (Ex: 1A, 2A) */}
+              {completedApptsCount > 0 && (
+                <View style={styles.apptBadge}>
+                  <Text style={styles.apptBadgeText}>{completedApptsCount}A</Text>
+                </View>
+              )}
 
-            {daysInactive >= 7 && (
-              <View style={styles.inactiveBadge}>
-                <Text style={styles.inactiveText}>{daysInactive}d</Text>
+              {daysInactive >= 7 && (
+                <View style={styles.inactiveBadge}>
+                  <Text style={styles.inactiveText}>{daysInactive}d</Text>
+                </View>
+              )}
+            </View>
+
+            {client.createdAt && (
+              <Text style={styles.dateText}>{formatDateTime(client.createdAt)}</Text>
+            )}
+          </View>
+          <TouchableOpacity style={styles.deleteButton} onPress={openDeleteModal}>
+            <Text style={styles.deleteIcon}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <Pressable style={styles.clickableArea} onPress={() => { if (Platform.OS !== 'web' && onOpen) onOpen(client, phaseId); }}>
+          
+          <View style={styles.phoneRow}>
+            <Text style={styles.phoneText}>{client.phone || 'Sem telefone'}</Text>
+            {client.phone && (
+              <View style={styles.actionButtonsContainer}>
+                <TouchableOpacity style={styles.btnActionWA} onPress={handleWhatsAppClick}>
+                  <Text style={styles.btnActionTextWA}>WA</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnActionCall} onPress={handlePhoneCall}>
+                  <Text style={styles.btnActionTextCall}>Ligar</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
 
-          {client.createdAt && (
-            <Text style={styles.dateText}>{formatDateTime(client.createdAt)}</Text>
-          )}
-        </View>
-        <TouchableOpacity style={styles.deleteButton} onPress={(e) => { e.stopPropagation(); onDelete(client.id, phaseId); }}>
-          <Text style={styles.deleteIcon}>✕</Text>
-        </TouchableOpacity>
+          <Text style={styles.info} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
+          
+          <View style={styles.tagsContainer}>
+            {tagsToRender.map(tag => (
+              <Text key={tag.id} style={[styles.tag, { backgroundColor: tag.bg, color: tag.color }]}>{tag.text}</Text>
+            ))}
+          </View>
+
+        </Pressable>
       </View>
-      
-      <Pressable style={styles.clickableArea} onPress={() => { if (Platform.OS !== 'web' && onOpen) onOpen(client, phaseId); }}>
-        
-        <View style={styles.phoneRow}>
-          <Text style={styles.phoneText}>{client.phone || 'Sem telefone'}</Text>
-          {client.phone && (
-            <View style={styles.actionButtonsContainer}>
-              <TouchableOpacity style={styles.btnActionWA} onPress={handleWhatsAppClick}>
-                <Text style={styles.btnActionTextWA}>WA</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnActionCall} onPress={handlePhoneCall}>
-                <Text style={styles.btnActionTextCall}>Ligar</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
 
-        <Text style={styles.info} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
-        
-        <View style={styles.tagsContainer}>
-          {tagsToRender.map(tag => (
-            <Text key={tag.id} style={[styles.tag, { backgroundColor: tag.bg, color: tag.color }]}>{tag.text}</Text>
-          ))}
-        </View>
-
-      </Pressable>
-    </View>
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {isDeleting && (
+        <Modal transparent={true} visible={isDeleting} onRequestClose={() => closeDeleteModal()}>
+          <View style={styles.modalOverlay}>
+            <Animated.View style={[styles.alertBox, { opacity: deleteOpacity, transform: [{ scale: deleteScale }] }]}>
+              <Text style={styles.alertIcon}>⚠️</Text>
+              <Text style={styles.alertTitle}>Excluir Card?</Text>
+              <Text style={styles.alertMessage}>Tem certeza que deseja enviar "{client.name}" para a lixeira? Você poderá restaurá-lo depois se precisar.</Text>
+              
+              <View style={styles.alertButtonRow}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => closeDeleteModal()}>
+                  <Text style={styles.cancelBtnText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.confirmBtn} onPress={() => closeDeleteModal(() => onDelete(client.id, phaseId))}>
+                  <Text style={styles.confirmBtnText}>Sim, excluir</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+          </View>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -258,4 +307,16 @@ const styles = StyleSheet.create({
   info: { fontSize: 12, color: '#475569', marginBottom: 6, lineHeight: 16 },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, 
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontWeight: '600' },
+  
+  // Estilos do Modal de Exclusão
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
+  alertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  alertIcon: { fontSize: 48, marginBottom: 12 },
+  alertTitle: { fontFamily: MODERN_FONT, fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
+  alertMessage: { fontFamily: MODERN_FONT, fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  alertButtonRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  cancelBtn: { flex: 1, backgroundColor: '#f1f5f9', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  cancelBtnText: { fontFamily: MODERN_FONT, color: '#475569', fontWeight: '700', fontSize: 14 },
+  confirmBtn: { flex: 1, backgroundColor: '#ef4444', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  confirmBtnText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 14 }
 });

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { supabase } from '../services/supabaseClient'; // Importação do banco de dados
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
@@ -7,24 +8,110 @@ export default function Configuracao() {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
 
-  // Estados dos parâmetros (No futuro, estes dados virão do Supabase)
-  const [name, setName] = useState('Alessandro Uchoa'); 
-  const [monthlyGoal, setMonthlyGoal] = useState('2.500.000');
-  const [dailyCalls, setDailyCalls] = useState('15');
-  const [dailyNeg, setDailyNeg] = useState('5');
-  const [dailySims, setDailySims] = useState('3');
+  // Estados de Carregamento
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // Histórico de Metas (Mockado para visualização do layout)
-  const goalHistory = [
-    { id: 1, month: 'Julho / 2026', goal: '2.000.000', reached: '2.430.000', status: 'success' },
-    { id: 2, month: 'Junho / 2026', goal: '1.800.000', reached: '1.500.000', status: 'warning' },
-    { id: 3, month: 'Maio / 2026', goal: '1.500.000', reached: '1.600.000', status: 'success' },
-  ];
+  // Estados dos parâmetros
+  const [name, setName] = useState(''); 
+  const [monthlyGoal, setMonthlyGoal] = useState('');
+  const [dailyCalls, setDailyCalls] = useState('');
+  const [dailyNeg, setDailyNeg] = useState('');
+  const [dailySims, setDailySims] = useState('');
+  const [goalHistory, setGoalHistory] = useState([]);
 
-  const handleSaveConfig = () => {
-    // Aqui você integraria a lógica de salvar no banco de dados
-    alert('Configurações salvas com sucesso! Seus painéis analíticos foram atualizados com as novas metas.');
+  // Retorna o Mês/Ano atual formatado (ex: "Agosto / 2026")
+  const getCurrentMonthLabel = () => {
+    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const d = new Date();
+    return `${months[d.getMonth()]} / ${d.getFullYear()}`;
   };
+
+  // Carrega os dados do Supabase ao abrir a tela
+  useEffect(() => {
+    fetchConfig();
+  }, []);
+
+  const fetchConfig = async () => {
+    try {
+      // Busca as configurações na tabela genérica crm_boards usando o ID 'crm_config'
+      const { data, error } = await supabase.from('crm_boards').select('data_payload').eq('id', 'crm_config').maybeSingle();
+      if (error) throw error;
+
+      if (data && data.data_payload) {
+        const p = data.data_payload;
+        setName(p.name || 'Alessandro Uchoa');
+        setMonthlyGoal(p.monthlyGoal || '2.500.000');
+        setDailyCalls(p.dailyCalls || '15');
+        setDailyNeg(p.dailyNeg || '5');
+        setDailySims(p.dailySims || '3');
+        setGoalHistory(p.goalHistory || []);
+      } else {
+        // Se for a primeira vez que abre, cria o registro padrão no banco
+        const defaultHistory = [
+          { id: 1, month: 'Julho / 2026', goal: '2.000.000', reached: '2.430.000', status: 'success' },
+          { id: 2, month: 'Junho / 2026', goal: '1.800.000', reached: '1.500.000', status: 'warning' },
+        ];
+        const defaultData = {
+          name: 'Alessandro Uchoa', monthlyGoal: '2.500.000', dailyCalls: '15', dailyNeg: '5', dailySims: '3', goalHistory: defaultHistory
+        };
+        
+        await supabase.from('crm_boards').insert([{ id: 'crm_config', data_payload: defaultData }]);
+        
+        setName(defaultData.name);
+        setMonthlyGoal(defaultData.monthlyGoal);
+        setDailyCalls(defaultData.dailyCalls);
+        setDailyNeg(defaultData.dailyNeg);
+        setDailySims(defaultData.dailySims);
+        setGoalHistory(defaultHistory);
+      }
+    } catch (err) {
+      console.error("Erro ao buscar configurações:", err);
+      alert("Erro ao carregar as configurações do banco de dados.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Salva definitivamente no Supabase
+  const handleSaveConfig = async () => {
+    setSaving(true);
+    const updatedConfig = {
+      name, monthlyGoal, dailyCalls, dailyNeg, dailySims, goalHistory
+    };
+
+    try {
+      const { error } = await supabase.from('crm_boards').update({ data_payload: updatedConfig }).eq('id', 'crm_config');
+      if (error) throw error;
+      
+      alert('✅ Sucesso! Suas metas e parâmetros foram salvos definitivamente na nuvem.');
+    } catch (err) {
+      console.error("Erro ao salvar:", err);
+      alert("❌ Ocorreu um erro ao tentar salvar as configurações.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Função para formatar o valor como moeda (R$ 1.500.000)
+  const handleCurrencyChange = (text) => {
+    const rawNumber = text.replace(/\D/g, '');
+    if (!rawNumber) {
+      setMonthlyGoal('');
+      return;
+    }
+    const formattedNumber = new Intl.NumberFormat('pt-BR').format(parseInt(rawNumber, 10));
+    setMonthlyGoal(formattedNumber);
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={{ fontFamily: MODERN_FONT, marginTop: 12, color: '#64748b' }}>Carregando dados da nuvem...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -50,13 +137,19 @@ export default function Configuracao() {
 
           {/* Card: Meta de Vendas */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Meta Mensal (Agosto / 2026)</Text>
+            <Text style={styles.cardTitle}>Meta Mensal ({getCurrentMonthLabel()})</Text>
             <Text style={styles.cardDescription}>Volume total de créditos de consórcio que você deseja comercializar este mês.</Text>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Valor da Meta (R$)</Text>
               <View style={styles.currencyInputContainer}>
                 <Text style={styles.currencySymbol}>R$</Text>
-                <TextInput style={styles.currencyInput} value={monthlyGoal} onChangeText={setMonthlyGoal} keyboardType="numeric" placeholder="0.000.000" />
+                <TextInput 
+                  style={styles.currencyInput} 
+                  value={monthlyGoal} 
+                  onChangeText={handleCurrencyChange} 
+                  keyboardType="numeric" 
+                  placeholder="0.000.000" 
+                />
               </View>
             </View>
           </View>
@@ -64,7 +157,7 @@ export default function Configuracao() {
           {/* Card: Metas Operacionais */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Parâmetros Diários</Text>
-            <Text style={styles.cardDescription}>O CRM usará estes números para te cobrar na "Minha Central".</Text>
+            <Text style={styles.cardDescription}>O CRM usará estes números como base para gerar seus insights operacionais.</Text>
             
             <View style={[styles.row, isMobile && styles.rowMobile]}>
               <View style={styles.inputGroupRow}>
@@ -82,8 +175,8 @@ export default function Configuracao() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveConfig}>
-            <Text style={styles.saveButtonText}>Salvar Configurações</Text>
+          <TouchableOpacity style={[styles.saveButton, saving && { backgroundColor: '#94a3b8' }]} onPress={handleSaveConfig} disabled={saving}>
+            <Text style={styles.saveButtonText}>{saving ? 'Salvando...' : 'Salvar Configurações'}</Text>
           </TouchableOpacity>
 
         </View>
