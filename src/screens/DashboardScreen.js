@@ -9,6 +9,7 @@ import FilterModal from '../components/FilterModal';
 import ImportLeadsModal from '../components/ImportLeadsModal';
 import EditPhaseModal from '../components/EditPhaseModal';
 import { supabase } from '../services/supabaseClient';
+import NotificationModal from '../components/NotificationModal';
 
 // Fonte moderna injetada nativamente no Web
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
@@ -32,6 +33,42 @@ export default function DashboardScreen() {
   const [editingPhase, setEditingPhase] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('TODOS');
+  const [isNotifModalVisible, setIsNotifModalVisible] = useState(false);
+  const [activeNotifications, setActiveNotifications] = useState([]);
+  
+  // Relógio interno que bate a cada 1 minuto para checar notificações
+  useEffect(() => {
+    const checkNotifications = () => {
+      if (!boardData) return;
+      
+      const now = new Date();
+      const notifs = [];
+
+      boardData.phases.forEach(phase => {
+        phase.clients.forEach(client => {
+          if (client.appointments) {
+            client.appointments.forEach(appt => {
+              if (!appt.notified) {
+                const eventTime = new Date(appt.dateTime);
+                // Subtrai os minutos de antecedência para descobrir a hora do aviso
+                const notifyTime = new Date(eventTime.getTime() - appt.reminderMinutes * 60000);
+                
+                if (now >= notifyTime) {
+                  notifs.push({ client, appt, phaseId: phase.id });
+                }
+              }
+            });
+          }
+        });
+      });
+      setActiveNotifications(notifs);
+    };
+
+    checkNotifications(); // Checa na hora
+    const timer = setInterval(checkNotifications, 60000); // Checa a cada 1 minuto
+    
+    return () => clearInterval(timer);
+  }, [boardData]);
 
   // Referência para o ScrollView do Kanban
   const boardScrollRef = useRef(null);
@@ -113,6 +150,27 @@ export default function DashboardScreen() {
     }
   };
 
+  // Função para dispensar (dar check) na notificação
+  const handleDismissNotification = (clientId, phaseId, appointmentId) => {
+    if (!boardData) return;
+    const updatedBoard = JSON.parse(JSON.stringify(boardData));
+    
+    const phaseIndex = updatedBoard.phases.findIndex(p => p.id === phaseId);
+    if (phaseIndex !== -1) {
+      const clientIndex = updatedBoard.phases[phaseIndex].clients.findIndex(c => c.id === clientId);
+      if (clientIndex !== -1) {
+        const client = updatedBoard.phases[phaseIndex].clients[clientIndex];
+        const apptIndex = client.appointments.findIndex(a => a.id === appointmentId);
+        
+        if (apptIndex !== -1) {
+          client.appointments[apptIndex].notified = true; // Marca como lido
+          setBoardData(updatedBoard);
+          syncBoardToDatabase(updatedBoard);
+        }
+      }
+    }
+  };
+
   const handleSaveNewPhase = (phaseTitle) => {
     if (!boardData) return;
     const newPhase = { id: `phase_${Date.now()}`, title: phaseTitle, clients: [], color: '#f1f5f9' };
@@ -128,10 +186,30 @@ export default function DashboardScreen() {
     const sourcePhaseIndex = updatedBoard.phases.findIndex(p => p.id === sourcePhaseId);
     const targetPhaseIndex = updatedBoard.phases.findIndex(p => p.id === targetPhaseId);
     if (sourcePhaseIndex === -1 || targetPhaseIndex === -1) return;
+    
     const clientIndex = updatedBoard.phases[sourcePhaseIndex].clients.findIndex(c => c.id === clientId);
     if (clientIndex === -1) return;
+    
     const [movedClient] = updatedBoard.phases[sourcePhaseIndex].clients.splice(clientIndex, 1);
+    
+    // Atualiza a data de movimentação (para o cálculo dos dias inativos)
     movedClient.updatedAt = new Date().toISOString();
+
+    // --- REGISTRA O COMENTÁRIO AUTOMÁTICO DE MUDANÇA DE FASE ---
+    const sourcePhaseName = updatedBoard.phases[sourcePhaseIndex].title;
+    const targetPhaseName = updatedBoard.phases[targetPhaseIndex].title;
+    
+    if (sourcePhaseId !== targetPhaseId) {
+      const phaseChangeComment = {
+        id: `move_${Date.now()}`,
+        text: `⚙️ Sistema: Lead movido da fase "${sourcePhaseName}" para "${targetPhaseName}".`,
+        date: new Date().toISOString()
+      };
+      // Insere no topo da lista de comentários do lead
+      movedClient.comments = [phaseChangeComment, ...(movedClient.comments || [])];
+    }
+    // -------------------------------------------------------------
+
     updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
     setBoardData(updatedBoard);
     syncBoardToDatabase(updatedBoard);
@@ -332,6 +410,19 @@ export default function DashboardScreen() {
 
           {/* Botões de Ação - Adapta o texto dependendo do espaço */}
           <View style={[styles.headerActions, isMobile && styles.headerActionsMobile]}>
+
+            {/* NOVO BOTÃO DE NOTIFICAÇÕES */}
+            <TouchableOpacity style={[styles.btnBase, styles.btnSecondary, { position: 'relative' }]} onPress={() => setIsNotifModalVisible(true)}>
+              <Text style={styles.btnSecondaryText}>🔔 {!isMobile && 'Avisos'}</Text>
+              
+              {/* Mostra a bolinha vermelha se houver notificações pendentes */}
+              {activeNotifications.length > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>{activeNotifications.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
             <TouchableOpacity style={[styles.btnBase, styles.btnSecondary]} onPress={() => setIsTrashModalVisible(true)}>
               <Text style={styles.btnSecondaryText}>🗑️ {!isMobile && 'Lixeira'}</Text>
             </TouchableOpacity>
@@ -377,6 +468,12 @@ export default function DashboardScreen() {
       <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} />
       <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
       <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} />
+        <NotificationModal 
+        visible={isNotifModalVisible} 
+        onClose={() => setIsNotifModalVisible(false)} 
+        notifications={activeNotifications}
+        onDismiss={handleDismissNotification}
+      />
     </View>
   );
 }
@@ -516,4 +613,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+  notificationBadge: {
+    position: 'absolute', top: -5, right: -5,
+    backgroundColor: '#ef4444', borderRadius: 10, width: 20, height: 20,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#ffffff'
+  },
+  notificationBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: 'bold' },
 });

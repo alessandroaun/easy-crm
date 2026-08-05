@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Linking, useWindowDimensions 
+  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Linking, useWindowDimensions, Animated 
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../services/supabaseClient';
@@ -14,16 +14,44 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const [activeTab, setActiveTab] = useState('informacoes');
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
+  
+  const [apptType, setApptType] = useState('Ligar');
+  const [apptDate, setApptDate] = useState(''); 
+  const [apptTime, setApptTime] = useState(''); 
+  const [apptReminder, setApptReminder] = useState(0); 
+  
+  // Motor Dinâmico de Alertas (Sucesso / Erro)
+  const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
+  const alertScale = useRef(new Animated.Value(0.8)).current;
+  const alertOpacity = useRef(new Animated.Value(0)).current;
+
+  // Função para exibir o alerta com animação suave
+  const showCustomAlert = (type, title, message) => {
+    setAlertConfig({ visible: true, type, title, message });
+    alertScale.setValue(0.8);
+    alertOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(alertScale, { toValue: 1, friction: 6, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(alertOpacity, { toValue: 1, duration: 250, useNativeDriver: Platform.OS !== 'web' })
+    ]).start();
+  };
+
+  // Função para fechar o alerta com animação de saída
+  const closeCustomAlert = () => {
+    Animated.parallel([
+      Animated.timing(alertScale, { toValue: 0.8, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(alertOpacity, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      setAlertConfig({ visible: false, type: 'success', title: '', message: '' });
+    });
+  };
 
   useEffect(() => {
     if (clientData) {
       let mergedInfo = clientData.initialInfo || '';
       if (clientData.history) {
-        mergedInfo = mergedInfo 
-          ? `${mergedInfo}\n\n=== DADOS DA IMPORTAÇÃO ===\n${clientData.history}` 
-          : clientData.history;
+        mergedInfo = mergedInfo ? `${mergedInfo}\n\n=== DADOS DA IMPORTAÇÃO ===\n${clientData.history}` : clientData.history;
       }
-
       const dataToSet = { ...clientData, initialInfo: mergedInfo };
       delete dataToSet.history; 
 
@@ -31,11 +59,28 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       setOriginalData(JSON.parse(JSON.stringify(dataToSet))); 
       setActiveTab('informacoes');
       setNewCommentText('');
+      
+      const now = new Date();
+      setApptDate(now.toLocaleDateString('pt-BR'));
+      setApptTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     }
   }, [clientData]);
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleDateChange = (text) => {
+    let cleaned = text.replace(/\D/g, '');
+    if (cleaned.length > 2) cleaned = cleaned.replace(/^(\d{2})(\d)/, '$1/$2');
+    if (cleaned.length > 5) cleaned = cleaned.replace(/^(\d{2})\/(\d{2})(\d)/, '$1/$2/$3');
+    setApptDate(cleaned.substring(0, 10)); 
+  };
+
+  const handleTimeChange = (text) => {
+    let cleaned = text.replace(/\D/g, '');
+    if (cleaned.length > 2) cleaned = cleaned.replace(/^(\d{2})(\d)/, '$1:$2');
+    setApptTime(cleaned.substring(0, 5)); 
   };
 
   const handleSave = () => {
@@ -46,7 +91,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       if (!cl.startsWith('55') && cl.length <= 11) cl = '55' + cl;
       const match = cl.match(/^(\d{2})(\d{2})(\d+)$/);
       if (match) {
-        // Formato: +55 (XX) XXXXX-XXXX
         const numero = match[3];
         const numeroFormatado = numero.length > 4 ? `${numero.slice(0, -4)}-${numero.slice(-4)}` : numero;
         updatedData.phone = `+${match[1]} (${match[2]}) ${numeroFormatado}`;
@@ -54,29 +98,19 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     }
 
     const fieldsToTrack = {
-      name: 'Nome', phone: 'Telefone', email: 'E-mail', profession: 'Profissão',
-      monthlyIncome: 'Renda', category: 'Categoria', desiredCredit: 'Crédito Desejado',
-      idealInstallment: 'Parcela', urgency: 'Urgência', platform: 'Origem',
-      bidAmount: 'Lance', hasFinancing: 'Financiamento', leadTemp: 'Temperatura', winProbability: 'Probabilidade'
+      name: 'Nome', phone: 'Telefone', email: 'E-mail', category: 'Categoria', desiredCredit: 'Crédito', leadTemp: 'Temperatura'
     };
 
     let changes = [];
     for (let key in fieldsToTrack) {
       if ((updatedData[key] || '') !== (originalData[key] || '')) {
-        const oldVal = originalData[key] ? originalData[key] : 'vazio';
-        const newVal = updatedData[key] ? updatedData[key] : 'vazio';
-        changes.push(`- ${fieldsToTrack[key]}: de "${oldVal}" para "${newVal}"`);
+        changes.push(`- ${fieldsToTrack[key]}: alterado.`);
       }
     }
 
     if (changes.length > 0) {
       const summaryText = `⚙️ Sistema: Perfil atualizado\n${changes.join('\n')}`;
-      const autoComment = {
-        id: `sys_${Date.now()}`,
-        text: summaryText,
-        date: new Date().toISOString()
-      };
-      updatedData.comments = [autoComment, ...(updatedData.comments || [])];
+      updatedData.comments = [{ id: `sys_${Date.now()}`, text: summaryText, date: new Date().toISOString() }, ...(updatedData.comments || [])];
     }
 
     onSave(updatedData);
@@ -85,18 +119,67 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
   const handleAddComment = () => {
     if (!newCommentText.trim()) return;
-    
-    const comment = {
-      id: Date.now().toString(),
-      text: newCommentText,
-      date: new Date().toISOString(),
-    };
-
-    setFormData(prev => ({
-      ...prev,
-      comments: [comment, ...(prev.comments || [])]
-    }));
+    const comment = { id: Date.now().toString(), text: newCommentText, date: new Date().toISOString() };
+    setFormData(prev => ({ ...prev, comments: [comment, ...(prev.comments || [])] }));
     setNewCommentText('');
+  };
+
+  const handleAddAppointment = () => {
+    if (!apptDate || !apptTime || apptDate.length < 10 || apptTime.length < 5) {
+      alert("Preencha a data e o horário completos do agendamento.");
+      return;
+    }
+
+    try {
+      const [day, month, year] = apptDate.split('/');
+      const [hours, minutes] = apptTime.split(':');
+      const eventDateTime = new Date(year, month - 1, day, hours, minutes);
+
+      if (isNaN(eventDateTime.getTime())) throw new Error("Data inválida");
+
+      // VALIDAÇÃO: Impede agendamentos no passado
+      if (eventDateTime <= new Date()) {
+        showCustomAlert('error', 'Ação Inválida', 'A data e o horário do agendamento devem ser no futuro. Por favor, escolha um horário válido.');
+        return;
+      }
+
+      const newAppointment = {
+        id: `appt_${Date.now()}`,
+        type: apptType,
+        dateTime: eventDateTime.toISOString(),
+        reminderMinutes: apptReminder,
+        notified: false
+      };
+
+      setFormData(prev => ({
+        ...prev,
+        appointments: [newAppointment, ...(prev.appointments || [])],
+        comments: [
+          { id: `sys_appt_${Date.now()}`, text: `⚙️ Sistema: Agendou para ${apptType} em ${apptDate} às ${apptTime}.`, date: new Date().toISOString() },
+          ...(prev.comments || [])
+        ]
+      }));
+      
+      // Aciona o Modal de Sucesso Customizado
+      showCustomAlert('success', 'Agendado!', 'Seu compromisso foi salvo e você será notificado no horário programado.');
+      
+    } catch (error) {
+      alert("Formato de data ou hora inválido. Use DD/MM/AAAA e HH:MM.");
+    }
+  };
+
+  const handleDeleteAppointment = (apptId) => {
+    setFormData(prev => {
+      const updatedAppts = (prev.appointments || []).filter(a => a.id !== apptId);
+      return {
+        ...prev,
+        appointments: updatedAppts,
+        comments: [
+          { id: `sys_appt_del_${Date.now()}`, text: `⚙️ Sistema: Um agendamento pendente foi cancelado.`, date: new Date().toISOString() },
+          ...(prev.comments || [])
+        ]
+      };
+    });
   };
 
   const handleUpload = async (fieldKey) => {
@@ -127,57 +210,30 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
   const TabButton = ({ id, label }) => (
     <TouchableOpacity 
-      style={[
-        styles.tabButton, 
-        isMobile && styles.tabButtonMobile, 
-        activeTab === id && styles.tabButtonActive,
-        isMobile && activeTab === id && styles.tabButtonMobileActive
-      ]} 
+      style={[styles.tabButton, isMobile && styles.tabButtonMobile, activeTab === id && styles.tabButtonActive, isMobile && activeTab === id && styles.tabButtonMobileActive]} 
       onPress={() => setActiveTab(id)}
     >
-      <Text style={[
-        styles.tabText, 
-        isMobile && styles.tabTextMobile,
-        activeTab === id && styles.tabTextActive
-      ]}>
-        {label}
-      </Text>
+      <Text style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === id && styles.tabTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
 
   const CommentsSection = () => (
     <View style={[styles.commentsContainer, isMobile && styles.commentsContainerMobile]}>
       <Text style={styles.commentsTitle}>Atividades e Comentários</Text>
-      
       <View style={styles.commentInputContainer}>
-        <TextInput 
-          style={styles.commentInput} 
-          placeholder="Registre uma ação ou contato..."
-          multiline={true}
-          value={newCommentText}
-          onChangeText={setNewCommentText}
-        />
-        <TouchableOpacity style={styles.addCommentBtn} onPress={handleAddComment}>
-          <Text style={styles.addCommentBtnText}>Salvar</Text>
-        </TouchableOpacity>
+        <TextInput style={styles.commentInput} placeholder="Registre uma ação..." multiline={true} value={newCommentText} onChangeText={setNewCommentText} />
+        <TouchableOpacity style={styles.addCommentBtn} onPress={handleAddComment}><Text style={styles.addCommentBtnText}>Salvar</Text></TouchableOpacity>
       </View>
-
       <ScrollView style={styles.commentsList} showsVerticalScrollIndicator={false}>
         {(!formData.comments || formData.comments.length === 0) ? (
           <Text style={styles.noCommentsText}>Nenhuma interação registrada.</Text>
         ) : (
           formData.comments.map(comment => {
-            // Verifica se é comentário gerado pelo sistema
             const isSystem = comment.text.includes('Sistema:');
-            
             return (
               <View key={comment.id} style={[styles.commentCard, isSystem ? styles.commentCardAuto : styles.commentCardManual]}>
-                <Text style={styles.commentDate}>
-                  {new Date(comment.date).toLocaleDateString('pt-BR')} às {new Date(comment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-                <Text style={[styles.commentText, isSystem ? styles.commentTextAuto : styles.commentTextManual]}>
-                  {comment.text}
-                </Text>
+                <Text style={styles.commentDate}>{new Date(comment.date).toLocaleDateString('pt-BR')} às {new Date(comment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>
+                <Text style={[styles.commentText, isSystem ? styles.commentTextAuto : styles.commentTextManual]}>{comment.text}</Text>
               </View>
             );
           })
@@ -189,22 +245,32 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
+        
+        {/* MODAL ANIMADO DE ALERTA (Sucesso / Erro) */}
+        {alertConfig.visible && (
+          <View style={styles.successAlertOverlay}>
+            <Animated.View style={[styles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
+              <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
+              <Text style={styles.successAlertTitle}>{alertConfig.title}</Text>
+              <Text style={styles.successAlertMessage}>{alertConfig.message}</Text>
+              <TouchableOpacity 
+                style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
+                onPress={closeCustomAlert}
+              >
+                <Text style={styles.successAlertBtnText}>{alertConfig.type === 'success' ? 'Continuar' : 'Entendi'}</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        )}
+
         <View style={[styles.modalWrapper, isMobile && styles.modalWrapperMobile]}>
           
           <View style={[styles.header, isMobile && styles.headerMobile]}>
             <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={[styles.title, isMobile && styles.titleMobile]} numberOfLines={1}>
-                {formData.name || 'Detalhes do Lead'}
-              </Text>
-              {formData.createdAt && (
-                <Text style={styles.subtitle}>
-                  Cadastrado em: {new Date(formData.createdAt).toLocaleDateString('pt-BR')} às {new Date(formData.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-              )}
+              <Text style={[styles.title, isMobile && styles.titleMobile]} numberOfLines={1}>{formData.name || 'Detalhes do Lead'}</Text>
+              {formData.createdAt && <Text style={styles.subtitle}>Cadastrado em: {new Date(formData.createdAt).toLocaleDateString('pt-BR')} às {new Date(formData.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>}
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}><Text style={styles.closeButtonText}>✕</Text></TouchableOpacity>
           </View>
 
           <View style={[styles.body, isMobile && styles.bodyMobile]}>
@@ -213,12 +279,13 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               <View style={styles.sidebarMobileContainer}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sidebarMobile}>
                   <TabButton id="informacoes" label="Informações" />
-                  <TabButton id="comentarios" label="Comentários" />
                   <TabButton id="dados" label="Dados Pessoais" />
                   <TabButton id="consorcio" label="Interesse" />
                   <TabButton id="financeiro" label="Financeiro" />
                   <TabButton id="docs" label="Documentos" />
                   <TabButton id="kpis" label="Inteligência" />
+                  <TabButton id="comentarios" label="Comentários" />
+                  <TabButton id="agendamentos" label="Agendamentos" />
                 </ScrollView>
               </View>
             ) : (
@@ -229,6 +296,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 <TabButton id="financeiro" label="Financeiro" />
                 <TabButton id="docs" label="Documentos" />
                 <TabButton id="kpis" label="Inteligência" />
+                <TabButton id="agendamentos" label="Agendamentos" />
               </View>
             )}
 
@@ -248,6 +316,83 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 </View>
               )}
 
+              {activeTab === 'agendamentos' && (
+                <View style={[styles.splitContainer, isMobile && styles.splitContainerMobile]}>
+                  
+                  <View style={[styles.splitLeft, isMobile && styles.splitLeftMobile]}>
+                    <Text style={styles.sectionTitle}>Criar Novo Agendamento</Text>
+                    
+                    <View style={styles.apptTypeContainer}>
+                      {['Ligar', 'Visitar', 'Mensagem', 'Simulação'].map(tipo => (
+                        <TouchableOpacity key={tipo} style={[styles.apptTypeBtn, apptType === tipo && styles.apptTypeBtnActive]} onPress={() => setApptType(tipo)}>
+                          <Text style={[styles.apptTypeText, apptType === tipo && styles.apptTypeTextActive]}>{tipo}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <View style={[styles.row, isMobile && styles.rowMobile]}>
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Data (DD/MM/AAAA)</Text>
+                        <TextInput style={styles.inputSmall} placeholder="Ex: 25/12/2026" value={apptDate} onChangeText={handleDateChange} keyboardType="numeric" maxLength={10} />
+                      </View>
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Horário (HH:MM)</Text>
+                        <TextInput style={styles.inputSmall} placeholder="Ex: 14:30" value={apptTime} onChangeText={handleTimeChange} keyboardType="numeric" maxLength={5} />
+                      </View>
+                    </View>
+
+                    <Text style={styles.label}>Lembrar-me com antecedência de:</Text>
+                    <View style={styles.apptTypeContainer}>
+                      {[0, 15, 30, 60, 120].map(mins => (
+                        <TouchableOpacity key={mins} style={[styles.apptTypeBtn, apptReminder === mins && styles.apptTypeBtnActive]} onPress={() => setApptReminder(mins)}>
+                          <Text style={[styles.apptTypeText, apptReminder === mins && styles.apptTypeTextActive]}>
+                            {mins === 0 ? 'Na hora' : mins === 60 ? '1 hora' : mins === 120 ? '2 horas' : `${mins}m`}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <TouchableOpacity style={styles.saveApptBtn} onPress={handleAddAppointment}>
+                      <Text style={styles.saveApptBtnText}>+ Programar Agendamento</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={[styles.splitRight, isMobile && styles.splitRightMobile]}>
+                    <Text style={styles.sectionTitle}>Agendamentos Ativos</Text>
+                    
+                    <ScrollView style={{maxHeight: 400}} showsVerticalScrollIndicator={false}>
+                      {(!formData.appointments || formData.appointments.length === 0) ? (
+                        <Text style={styles.noCommentsText}>Nenhum agendamento futuro.</Text>
+                      ) : (
+                        formData.appointments.map(appt => (
+                          <View key={appt.id} style={[styles.scheduledCard, appt.notified && styles.scheduledCardDone]}>
+                            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
+                              <Text style={styles.scheduledCardTitle}>{appt.type}</Text>
+                              
+                              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                                <Text style={styles.scheduledCardReminder}>{appt.reminderMinutes === 0 ? 'Na hora' : `${appt.reminderMinutes}m antes`}</Text>
+                                {!appt.notified && (
+                                  <TouchableOpacity onPress={() => handleDeleteAppointment(appt.id)} style={styles.deleteApptBtn}>
+                                    <Text style={{fontSize: 14, color: '#ef4444'}}>🗑️</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            </View>
+                            
+                            <Text style={styles.scheduledCardDate}>
+                              📅 {new Date(appt.dateTime).toLocaleDateString('pt-BR')} às {new Date(appt.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                            
+                            {appt.notified && <Text style={styles.scheduledCardStatus}>✓ Concluído</Text>}
+                          </View>
+                        ))
+                      )}
+                    </ScrollView>
+                  </View>
+
+                </View>
+              )}
+
               {activeTab === 'dados' && (
                 <View style={styles.formSection}>
                   <Text style={styles.sectionTitle}>Dados Pessoais e Contato</Text>
@@ -258,14 +403,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
                     <View style={styles.inputGroup}>
                       <Text style={styles.label}>Telefone / WhatsApp</Text>
-                      {/* MAXLENGTH APLICADO AO TELEFONE */}
-                      <TextInput 
-                        style={styles.input} 
-                        value={formData.phone || ''} 
-                        onChangeText={t => handleChange('phone', t)}
-                        maxLength={19}
-                        keyboardType="phone-pad" 
-                      />
+                      <TextInput style={styles.input} value={formData.phone || ''} onChangeText={t => handleChange('phone', t)} maxLength={19} keyboardType="phone-pad" />
                     </View>
                     <View style={styles.inputGroup}><Text style={styles.label}>E-mail</Text><TextInput style={styles.input} value={formData.email || ''} onChangeText={t => handleChange('email', t)} /></View>
                   </View>
@@ -342,9 +480,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 </View>
               )}
 
-              {isMobile && activeTab === 'comentarios' && (
-                <CommentsSection />
-              )}
+              {isMobile && activeTab === 'comentarios' && <CommentsSection />}
             </ScrollView>
 
             {!isMobile && (
@@ -372,10 +508,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalWrapper: {
-    width: '100%', maxWidth: 1150, height: '90%', backgroundColor: '#ffffff', borderRadius: 16, overflow: 'hidden',
-    ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } })
-  },
+  modalWrapper: { width: '100%', maxWidth: 1150, height: '90%', backgroundColor: '#ffffff', borderRadius: 16, overflow: 'hidden', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
   modalWrapperMobile: { height: '100%', borderRadius: 0 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: 24, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   headerMobile: { padding: 16 },
@@ -404,10 +537,33 @@ const styles = StyleSheet.create({
   rowMobile: { flexDirection: 'column', gap: 0, marginBottom: 0 }, 
   inputGroup: { flex: 1, marginBottom: 12 },
   label: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6 },
-  input: {
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 14, color: '#0f172a',
-    ...Platform.select({ web: { outlineStyle: 'none' } })
-  },
+  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 14, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  inputSmall: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, fontSize: 13, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
+
+  splitContainer: { flexDirection: 'row', width: '100%' },
+  splitContainerMobile: { flexDirection: 'column' },
+  splitLeft: { flex: 1.6, paddingRight: 24 },
+  splitLeftMobile: { paddingRight: 0, paddingBottom: 24 },
+  splitRight: { flex: 1, borderLeftWidth: 1, borderColor: '#e2e8f0', paddingLeft: 24 },
+  splitRightMobile: { borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, paddingTop: 24 },
+  
+  apptTypeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  apptTypeBtn: { backgroundColor: '#f1f5f9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  apptTypeBtnActive: { backgroundColor: '#e0e7ff', borderColor: '#4f46e5' },
+  apptTypeText: { color: '#64748b', fontWeight: '600', fontSize: 12 },
+  apptTypeTextActive: { color: '#4f46e5' },
+  saveApptBtn: { backgroundColor: '#f59e0b', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+  saveApptBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
+  deleteApptBtn: { padding: 4, backgroundColor: '#fee2e2', borderRadius: 6 },
+
+  scheduledSection: { marginTop: 35, borderTopWidth: 1, borderColor: '#e2e8f0', paddingTop: 24 },
+  scheduledCard: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', borderLeftWidth: 4, borderLeftColor: '#f59e0b', borderRadius: 8, padding: 12, marginBottom: 10, ...Platform.select({ web: { boxShadow: '0px 2px 4px rgba(0,0,0,0.03)' } }) },
+  scheduledCardDone: { opacity: 0.5, borderLeftColor: '#cbd5e1', backgroundColor: '#f8fafc' },
+  scheduledCardTitle: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
+  scheduledCardReminder: { fontSize: 10, fontWeight: '700', color: '#f59e0b', backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  scheduledCardDate: { fontSize: 12, color: '#475569', marginTop: 4, fontWeight: '500' },
+  scheduledCardStatus: { fontSize: 10, color: '#10b981', marginTop: 8, fontWeight: 'bold' },
+
   uploadButton: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderStyle: 'dashed', borderRadius: 8, padding: 16, alignItems: 'center' },
   uploadButtonText: { color: '#475569', fontWeight: '600', fontSize: 14 },
   viewDocButton: { backgroundColor: '#eff6ff', padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#bfdbfe' },
@@ -423,16 +579,10 @@ const styles = StyleSheet.create({
   addCommentBtnText: { color: '#ffffff', fontWeight: '600', fontSize: 12 },
   commentsList: { flex: 1 },
   noCommentsText: { color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginTop: 20, fontSize: 13 },
-  
-  // Estilos da Lista de Comentários (Base)
   commentCard: { padding: 12, borderRadius: 8, borderWidth: 1, marginBottom: 12 },
   commentDate: { fontSize: 10, color: '#64748b', marginBottom: 6, fontWeight: '600' },
-  
-  // Variação: Comentário Manual (Destaque principal)
   commentCardManual: { backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderLeftWidth: 4, borderLeftColor: '#3b82f6' },
   commentTextManual: { fontSize: 13, color: '#1e293b', lineHeight: 18, fontWeight: '500' },
-  
-  // Variação: Comentário Automático do Sistema (Discreto)
   commentCardAuto: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
   commentTextAuto: { fontSize: 13, color: '#64748b', lineHeight: 18, fontStyle: 'italic' },
 
@@ -442,4 +592,12 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: '#475569', fontWeight: '600', fontSize: 14 },
   saveButton: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, backgroundColor: '#2563eb' },
   saveButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+
+  successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
+  successAlertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  successAlertIcon: { fontSize: 48, marginBottom: 12 },
+  successAlertTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
+  successAlertMessage: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
+  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 }
 });

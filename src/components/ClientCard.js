@@ -1,8 +1,59 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking, Animated, Easing } from 'react-native';
 
 export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment }) {
   const cardRef = useRef(null);
+  const [pulseColor, setPulseColor] = useState(null);
+  
+  // Controlador da animação de pulsação
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Motor em tempo real: Cor e Pulsação
+  useEffect(() => {
+    const checkAppointmentStatus = () => {
+      if (!client.appointments || client.appointments.length === 0) {
+        setPulseColor(null);
+        return;
+      }
+
+      const now = new Date();
+      const activeAppts = client.appointments
+        .filter(a => !a.notified && new Date(a.dateTime) > now)
+        .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+
+      if (activeAppts.length === 0) {
+        setPulseColor(null);
+        return;
+      }
+
+      const nextApptTime = new Date(activeAppts[0].dateTime).getTime();
+      const timeLeft = nextApptTime - now.getTime();
+      const hoursLeft = timeLeft / (1000 * 60 * 60);
+
+      if (hoursLeft > 24) setPulseColor('#22c55e');      // Verde
+      else if (hoursLeft > 4) setPulseColor('#eab308'); // Amarelo
+      else setPulseColor('#ef4444');                    // Vermelho
+    };
+
+    checkAppointmentStatus();
+    const interval = setInterval(checkAppointmentStatus, 30000);
+    return () => clearInterval(interval);
+  }, [client.appointments]);
+
+  // Efeito visual do pulsar
+  useEffect(() => {
+    if (pulseColor) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.25, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' })
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [pulseColor, pulseAnim]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && cardRef.current) {
@@ -16,7 +67,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       
       const handleClick = (e) => {
         const text = e.target.innerText || '';
-        // Evita abrir o modal se o usuário clicar em botões de ação ou no X
         if (text === '✕' || text.includes('WA') || text.includes('Ligar') || text.includes(client.phone)) return;
         if (onOpen) onOpen(client, phaseId);
       };
@@ -57,7 +107,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
-  // Ação: Ligar (Discador)
   const handlePhoneCall = (e) => {
     if (Platform.OS === 'web' && e && e.stopPropagation) e.stopPropagation();
     const cleanPhone = client.phone?.replace(/\D/g, '');
@@ -67,7 +116,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     }
   };
 
-  // Ação: WhatsApp
   const handleWhatsAppClick = (e) => {
     if (Platform.OS === 'web' && e && e.stopPropagation) e.stopPropagation();
     const cleanPhone = client.phone?.replace(/\D/g, '');
@@ -77,15 +125,16 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     }
   };
 
-  const getDaysInactive = () => {
+  const daysInactive = () => {
     const lastMoveDate = client.updatedAt || client.createdAt;
     if (!lastMoveDate) return 0;
-    const diffTime = Math.abs(new Date() - new Date(lastMoveDate));
-    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return Math.floor(Math.abs(new Date() - new Date(lastMoveDate)) / (1000 * 60 * 60 * 24));
   };
-
-  const daysInactive = getDaysInactive();
+  
   const commentsCount = client.comments ? client.comments.length : 0;
+  
+  // Agora conta quantos agendamentos foram CONCLUÍDOS (notified = true)
+  const completedApptsCount = client.appointments ? client.appointments.filter(a => a.notified).length : 0;
 
   const buildTags = () => {
     const tags = [];
@@ -110,17 +159,30 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
   const tagsToRender = buildTags();
 
   return (
-    <View ref={cardRef} style={styles.card}>
+    <View ref={cardRef} style={[styles.card, pulseColor && { borderColor: pulseColor, borderWidth: 2 }]}>
       <View style={styles.headerContainer}>
         <View style={styles.headerTextContainer}>
           <View style={styles.nameRow}>
+            
+            {/* RELÓGINHO COM ANIMAÇÃO */}
+            {pulseColor && (
+              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                <Text style={styles.pulsingClock}>⏰</Text>
+              </Animated.View>
+            )}
+
             <Text style={styles.name} numberOfLines={1}>{client.name}</Text>
             
             {commentsCount > 0 && (
               <View style={styles.commentBadge}>
-                <Text style={styles.commentBadgeText}>
-                  {commentsCount} {commentsCount === 1 ? 'comentário' : 'comentários'}
-                </Text>
+                <Text style={styles.commentBadgeText}>{commentsCount} {commentsCount === 1 ? 'comentário' : 'comentários'}</Text>
+              </View>
+            )}
+
+            {/* TAG DE HISTÓRICO DE AGENDAMENTOS (Ex: 1A, 2A) */}
+            {completedApptsCount > 0 && (
+              <View style={styles.apptBadge}>
+                <Text style={styles.apptBadgeText}>{completedApptsCount}A</Text>
               </View>
             )}
 
@@ -142,7 +204,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       
       <Pressable style={styles.clickableArea} onPress={() => { if (Platform.OS !== 'web' && onOpen) onOpen(client, phaseId); }}>
         
-        {/* NOVA ÁREA DE TELEFONE E BOTÕES */}
         <View style={styles.phoneRow}>
           <Text style={styles.phoneText}>{client.phone || 'Sem telefone'}</Text>
           {client.phone && (
@@ -161,9 +222,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         
         <View style={styles.tagsContainer}>
           {tagsToRender.map(tag => (
-            <Text key={tag.id} style={[styles.tag, { backgroundColor: tag.bg, color: tag.color }]}>
-              {tag.text}
-            </Text>
+            <Text key={tag.id} style={[styles.tag, { backgroundColor: tag.bg, color: tag.color }]}>{tag.text}</Text>
           ))}
         </View>
 
@@ -173,29 +232,22 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#FFFFFF', padding: 10, borderRadius: 8, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: '#3b82f6',
-    ...Platform.select({
-      web: { boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', cursor: 'grab', userSelect: 'none' },
-      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 }
-    })
-  },
+  card: { backgroundColor: '#FFFFFF', padding: 10, borderRadius: 8, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: '#3b82f6', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', cursor: 'grab', userSelect: 'none' }, default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } }) },
   headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   headerTextContainer: { flex: 1, marginRight: 8 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap' },
   name: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', flexShrink: 1 },
-  
+  pulsingClock: { fontSize: 12 },
   commentBadge: { backgroundColor: '#e0e7ff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   commentBadgeText: { color: '#4f46e5', fontSize: 9, fontWeight: '700' },
+  apptBadge: { backgroundColor: '#fef3c7', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  apptBadgeText: { color: '#d97706', fontSize: 9, fontWeight: 'bold' },
   inactiveBadge: { backgroundColor: '#fee2e2', paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
   inactiveText: { color: '#dc2626', fontSize: 10, fontWeight: 'bold' },
-  
   dateText: { fontSize: 9, color: '#94a3b8', marginTop: 2 },
   deleteButton: { paddingLeft: 8, paddingBottom: 4 },
   deleteIcon: { fontSize: 12, color: '#94a3b8', fontWeight: 'bold' },
   clickableArea: { paddingTop: 0, paddingBottom: 0 },
-  
-  // Estilos da Nova Linha de Telefone
   phoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   phoneText: { fontSize: 13, color: '#475569', fontWeight: '500' },
   actionButtonsContainer: { flexDirection: 'row', gap: 4 },
@@ -203,7 +255,6 @@ const styles = StyleSheet.create({
   btnActionTextWA: { color: '#16a34a', fontSize: 10, fontWeight: 'bold' },
   btnActionCall: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   btnActionTextCall: { color: '#475569', fontSize: 10, fontWeight: 'bold' },
-
   info: { fontSize: 12, color: '#475569', marginBottom: 6, lineHeight: 16 },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, 
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontWeight: '600' },
