@@ -43,6 +43,60 @@ export default function DashboardScreen() {
   const [isNotifModalVisible, setIsNotifModalVisible] = useState(false);
   const [activeNotifications, setActiveNotifications] = useState([]);
   
+  // =========================================================================
+  // MOTOR DE AUTO-SCROLL (Rola a tela sozinho quando chega na borda)
+  // =========================================================================
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let scrollInterval = null;
+
+    const handleDragOver = (e) => {
+      const edgeSize = 100; // Distância da borda para acionar o scroll (em pixels)
+      const scrollSpeed = 15; // Velocidade da rolagem
+      let scrollDelta = 0;
+
+      // Se o dedo/mouse estiver muito à esquerda ou muito à direita
+      if (e.clientX < edgeSize) scrollDelta = -scrollSpeed;
+      else if (e.clientX > window.innerWidth - edgeSize) scrollDelta = scrollSpeed;
+
+      if (scrollDelta !== 0) {
+        if (!scrollInterval) {
+          scrollInterval = setInterval(() => {
+            if (boardScrollRef.current) {
+              const node = boardScrollRef.current.getScrollableNode 
+                ? boardScrollRef.current.getScrollableNode() 
+                : boardScrollRef.current;
+              node.scrollLeft += scrollDelta;
+            }
+          }, 20); // 50 quadros por segundo para rolar suave
+        }
+      } else {
+        clearInterval(scrollInterval);
+        scrollInterval = null;
+      }
+    };
+
+    const handleDragEnd = () => {
+      clearInterval(scrollInterval);
+      scrollInterval = null;
+    };
+
+    // Escuta o arrastar globalmente na tela
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('dragend', handleDragEnd);
+    document.addEventListener('drop', handleDragEnd);
+    document.addEventListener('touchend', handleDragEnd);
+
+    return () => {
+      document.removeEventListener('dragover', handleDragOver);
+      document.removeEventListener('dragend', handleDragEnd);
+      document.removeEventListener('drop', handleDragEnd);
+      document.removeEventListener('touchend', handleDragEnd);
+      clearInterval(scrollInterval);
+    };
+  }, []);
+  // =========================================================================
+
   // Relógio interno que bate a cada 1 minuto para checar notificações
   useEffect(() => {
     const checkNotifications = () => {
@@ -206,9 +260,26 @@ export default function DashboardScreen() {
 
   const handleSaveNewPhase = (phaseTitle) => {
     if (!boardData) return;
-    const newPhase = { id: `phase_${Date.now()}`, title: phaseTitle, clients: [], color: '#f1f5f9' };
+    
+    // Pega o maior número de ordem atual e soma +1
+    const nextOrder = boardData.phases.length > 0 
+      ? Math.max(...boardData.phases.map(p => p.order || 0)) + 1 
+      : 1;
+
+    const newPhase = { 
+      id: `phase_${Date.now()}`, 
+      title: phaseTitle, 
+      clients: [], 
+      color: '#f1f5f9',
+      order: nextOrder // Guarda a ordem
+    };
+    
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     updatedBoard.phases.push(newPhase);
+    
+    // Opcional: já garante a ordenação
+    updatedBoard.phases.sort((a, b) => (a.order || 0) - (b.order || 0));
+
     setBoardData(updatedBoard); 
     syncBoardToDatabase(updatedBoard); 
   };
@@ -349,13 +420,21 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleUpdatePhase = (phaseId, newTitle, newColor) => {
+  const handleUpdatePhase = (phaseId, newTitle, newColor, newOrder) => {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     const phaseIndex = updatedBoard.phases.findIndex(p => p.id === phaseId);
+    
     if (phaseIndex !== -1) {
       updatedBoard.phases[phaseIndex].title = newTitle;
       updatedBoard.phases[phaseIndex].color = newColor;
+      
+      // Atualiza a posição (fallback para 99 se o usuário deixar em branco)
+      updatedBoard.phases[phaseIndex].order = parseInt(newOrder, 10) || 99; 
+      
+      // ORDENA todas as fases baseado no número de posição da esquerda pra direita
+      updatedBoard.phases.sort((a, b) => (a.order || 0) - (b.order || 0));
+
       setBoardData(updatedBoard);
       syncBoardToDatabase(updatedBoard);
     }
@@ -432,39 +511,39 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       
-      {/* ===== INÍCIO DO NOVO HEADER COMPACTO ===== */}
+      {/* ===== INÍCIO DO NOVO HEADER COMPACTO E RESPONSIVO ===== */}
       <View style={[styles.topHeader, isMobile && styles.topHeaderMobile]}>
         
-        {/* ESQUERDA: Menu Sanduíche e Logo 3D */}
-        <View style={styles.headerLeft}>
+        {/* LINHA SUPERIOR NO MOBILE / ESQUERDA NO DESKTOP: Menu, Logo, Busca e Filtro */}
+        <View style={styles.headerLeftGroup}>
           <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
             <Text style={styles.menuIcon}>☰</Text>
           </TouchableOpacity>
           <Text style={styles.logoText3D}>Easy CRM</Text>
-        </View>
 
-        {/* CENTRO: Barra de Busca e Filtro (Centralizados na tela no desktop) */}
-        <View style={[styles.headerCenter, isMobile && styles.headerCenterMobile]}>
-          <View style={[styles.searchContainer, isMobile && { width: '100%' }]}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar Lead..."
-              placeholderTextColor="#94a3b8"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+          {/* Barra de busca e Filtro integrados ao lado do logo no mobile para economizar espaço */}
+          <View style={[styles.headerCenter, isMobile && styles.headerCenterMobile]}>
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar Lead..."
+                placeholderTextColor="#94a3b8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+            <TouchableOpacity 
+              style={[styles.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
+              onPress={() => setIsFilterModalVisible(true)}
+            >
+              <Text style={[styles.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
+                Filtro
+              </Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity 
-            style={[styles.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
-            onPress={() => setIsFilterModalVisible(true)}
-          >
-            <Text style={[styles.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
-              Filtro
-            </Text>
-          </TouchableOpacity>
         </View>
 
-        {/* DIREITA: Notificações e Ações (Sem emojis) */}
+        {/* DIREITA: Notificações, Lixeira, Importar e Novo */}
         <View style={[styles.headerRight, isMobile && styles.headerRightMobile]}>
           
           <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
@@ -577,68 +656,66 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB', // Fundo cinza ultraclaro super moderno
   },
   
-  /* --- ESTILOS DO NOVO CABEÇALHO COMPACTO E DIVIDIDO --- */
+  /* --- ESTILOS DO CABEÇALHO OTIMIZADO PARA CELULAR --- */
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#ffffff',
     paddingHorizontal: 16,
-    paddingVertical: 10, // Altura mínima reduzida
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
     zIndex: 50,
     ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } })
   },
   topHeaderMobile: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: 12,
-    paddingVertical: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
   },
 
-  // ÁREA ESQUERDA
-  headerLeft: {
-    flex: 1,
+  headerLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
   },
   menuButton: {
-    padding: 4,
-    marginRight: 14,
+    padding: 2,
   },
   menuIcon: {
-    fontSize: 22,
+    fontSize: 20,
     color: '#334155',
     fontWeight: 'bold',
   },
   logoText3D: {
     fontFamily: MODERN_FONT,
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '900',
     color: '#1e3a8a', 
     fontStyle: 'italic',
     letterSpacing: -1,
-    textShadowColor: '#93c5fd',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 1,
     ...Platform.select({
       web: {
-        textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb, 3px 4px 5px rgba(0,0,0,0.2)'
+        textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb'
       }
     })
   },
 
-  // ÁREA CENTRAL
   headerCenter: {
-    flex: 2,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center', // Garante que fique centralizado
+    marginLeft: 8,
   },
   headerCenterMobile: {
-    flex: undefined,
-    width: '100%',
+    marginLeft: 4,
+    flex: 1,
+    maxWidth: 210, // Mantém a barra de busca compacta ao lado do logo no celular
   },
   searchContainer: {
     flexDirection: 'row',
@@ -647,14 +724,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 6,
-    width: 320, // Largura ideal
-    height: 36, // Compacto
-    paddingHorizontal: 12,
+    flex: 1,
+    height: 32,
+    paddingHorizontal: 8,
   },
   searchInput: {
     flex: 1,
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 12,
     color: '#0f172a',
     ...Platform.select({ web: { outlineStyle: 'none' } })
   },
@@ -663,10 +740,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 6,
-    height: 36,
-    paddingHorizontal: 14,
+    height: 32,
+    paddingHorizontal: 10,
     justifyContent: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
   },
   filterBtnActive: {
     backgroundColor: '#EFF6FF',
@@ -674,7 +751,7 @@ const styles = StyleSheet.create({
   },
   filterBtnText: {
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#475569',
   },
@@ -682,43 +759,38 @@ const styles = StyleSheet.create({
     color: '#2563EB',
   },
 
-  // ÁREA DIREITA
   headerRight: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 8,
+    gap: 6,
   },
   headerRightMobile: {
-    flex: undefined,
-    justifyContent: 'center',
-    flexWrap: 'wrap',
+    gap: 4,
   },
   iconBtn: {
-    padding: 6,
-    marginRight: 6,
+    padding: 4,
     position: 'relative',
   },
   iconBtnText: {
-    fontSize: 18,
+    fontSize: 16,
   },
   notificationBadge: {
     position: 'absolute', 
     top: 0, 
     right: 0,
     backgroundColor: '#ef4444', 
-    borderRadius: 10, 
-    width: 18, 
-    height: 18,
+    borderRadius: 8, 
+    width: 14, 
+    height: 14,
     alignItems: 'center', 
     justifyContent: 'center',
-    borderWidth: 2, 
+    borderWidth: 1, 
     borderColor: '#ffffff'
   },
   notificationBadgeText: { 
     color: '#ffffff', 
-    fontSize: 9, 
+    fontSize: 8, 
     fontWeight: 'bold',
     fontFamily: MODERN_FONT
   },
@@ -726,25 +798,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderRadius: 6,
   },
   actionBtnSecondaryText: {
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
     color: '#475569',
   },
   actionBtnPrimary: {
     backgroundColor: '#2563eb', 
-    paddingVertical: 8,
-    paddingHorizontal: 18,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 6,
   },
   actionBtnPrimaryText: {
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
     color: '#ffffff',
   },

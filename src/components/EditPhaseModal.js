@@ -1,28 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView } from 'react-native';
 
-// Paleta de cores claras e modernas para as fases
 const LIGHT_COLORS = [
-  '#f1f5f9', // Cinza padrão
-  '#e0f2fe', // Azul claro
-  '#dcfce7', // Verde claro
-  '#fef9c3', // Amarelo claro
-  '#ffedd5', // Laranja claro
-  '#fee2e2', // Vermelho claro
-  '#f3e8ff', // Roxo claro
+  '#f1f5f9', '#e0f2fe', '#dcfce7', '#fef9c3', '#ffedd5', '#fee2e2', '#f3e8ff',
 ];
 
-export default function EditPhaseModal({ visible, onClose, phase, onSave, onDelete }) {
+export default function EditPhaseModal({ visible, onClose, phase, allPhases, onSave, onDelete }) {
   const [title, setTitle] = useState('');
   const [color, setColor] = useState('#f1f5f9');
+  const [selectedOrder, setSelectedOrder] = useState('1');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
-  // Preenche os dados quando o modal abre com a fase selecionada
+  // Calcula o total de colunas para exibir na lista de opções
+  const totalColumns = allPhases && allPhases.length > 0 ? allPhases.length : 1;
+
   useEffect(() => {
     if (phase) {
       setTitle(phase.title);
       setColor(phase.color || '#f1f5f9');
       setIsConfirmingDelete(false);
+      
+      // Define a ordem atual da fase como padrão no campo
+      const currentOrder = phase.order !== undefined && phase.order !== null ? phase.order : 1;
+      setSelectedOrder(String(currentOrder));
     }
   }, [phase]);
 
@@ -36,12 +36,18 @@ export default function EditPhaseModal({ visible, onClose, phase, onSave, onDele
       alert('O nome da fase não pode ficar vazio.');
       return;
     }
-    onSave(phase.id, title, color);
-    handleClose();
-  };
 
-  const handleDeleteConfirm = () => {
-    onDelete(phase.id);
+    const numericOrder = parseInt(selectedOrder, 10) || 1;
+
+    // Reorganiza a fila enviando a nova ordem informada
+    const updatedPhases = (allPhases || []).map(p => {
+      if (p.id === phase.id) {
+        return { ...p, title, color, order: numericOrder };
+      }
+      return p;
+    });
+
+    onSave(phase.id, title, color, updatedPhases);
     handleClose();
   };
 
@@ -52,7 +58,6 @@ export default function EditPhaseModal({ visible, onClose, phase, onSave, onDele
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           
-          {/* TELA 1: EDIÇÃO */}
           {!isConfirmingDelete ? (
             <>
               <View style={styles.header}>
@@ -80,6 +85,30 @@ export default function EditPhaseModal({ visible, onClose, phase, onSave, onDele
                     />
                   ))}
                 </View>
+
+                {/* SISTEMA DE LISTA NUMÉRICA PARA POSICIONAMENTO */}
+                <Text style={[styles.label, { marginTop: 20 }]}>Posição / Ordem no Quadro (1 a {totalColumns})</Text>
+                
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.numberListContainer}>
+                  {Array.from({ length: totalColumns }, (_, index) => {
+                    const pos = index + 1;
+                    const isSelected = parseInt(selectedOrder, 10) === pos;
+                    
+                    return (
+                      <TouchableOpacity
+                        key={pos}
+                        style={[styles.numberCard, isSelected && styles.numberCardSelected]}
+                        onPress={() => setSelectedOrder(String(pos))}
+                      >
+                        <Text style={[styles.numberCardText, isSelected && styles.numberCardTextSelected]}>
+                          {pos}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <Text style={styles.helpText}>Toque no número correspondente à posição desejada para esta coluna da esquerda para a direita.</Text>
+
               </View>
 
               <View style={styles.footer}>
@@ -98,7 +127,6 @@ export default function EditPhaseModal({ visible, onClose, phase, onSave, onDele
               </View>
             </>
           ) : (
-            /* TELA 2: CONFIRMAÇÃO DE EXCLUSÃO (ALERT PERSONALIZADO) */
             <View style={styles.confirmContainer}>
               <Text style={styles.confirmTitle}>⚠️ Atenção</Text>
               <Text style={styles.confirmMessage}>
@@ -112,7 +140,7 @@ export default function EditPhaseModal({ visible, onClose, phase, onSave, onDele
                 <TouchableOpacity style={styles.cancelButton} onPress={() => setIsConfirmingDelete(false)}>
                   <Text style={styles.cancelButtonText}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#ef4444' }]} onPress={handleDeleteConfirm}>
+                <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#ef4444' }]} onPress={() => { onDelete(phase.id); handleClose(); }}>
                   <Text style={styles.saveButtonText}>Sim, Excluir Fase</Text>
                 </TouchableOpacity>
               </View>
@@ -144,6 +172,29 @@ const styles = StyleSheet.create({
   colorPicker: { flexDirection: 'row', gap: 10, marginTop: 8 },
   colorSwatch: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0' },
   colorSwatchSelected: { borderColor: '#3b82f6', transform: [{ scale: 1.1 }] },
+  
+  // Estilos da Lista Numérica Horizontal
+  numberListContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  numberCard: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Platform.select({ web: { cursor: 'pointer' } })
+  },
+  numberCardSelected: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  numberCardText: { fontSize: 16, fontWeight: '700', color: '#475569' },
+  numberCardTextSelected: { color: '#ffffff' },
+
+  helpText: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', marginTop: 8 },
+
   footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   deletePhaseButton: { padding: 10 },
   deletePhaseText: { color: '#ef4444', fontWeight: '600', fontSize: 14 },
@@ -152,7 +203,6 @@ const styles = StyleSheet.create({
   saveButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#2563eb' },
   saveButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
   
-  // Estilos da Confirmação
   confirmContainer: { alignItems: 'center', paddingTop: 10 },
   confirmTitle: { fontSize: 22, fontWeight: 'bold', color: '#ef4444', marginBottom: 12 },
   confirmMessage: { fontSize: 16, color: '#1e293b', textAlign: 'center', marginBottom: 12 },

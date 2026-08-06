@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking,
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment }) {
+// ATENÇÃO AQUI: onDropClient adicionado nas props!
+export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment, onDropClient }) {
   const cardRef = useRef(null);
   const [pulseColor, setPulseColor] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -60,31 +61,205 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     }
   }, [pulseColor, pulseAnim]);
 
+  // =========================================================================
+  // MOTOR TÁTIL SUPREMO (FANTASMA + AUTO-SCROLL HORIZONTAL + TRAVA CLIQUE)
+  // =========================================================================
   useEffect(() => {
     if (Platform.OS === 'web' && cardRef.current) {
       const node = cardRef.current;
+      const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+      // 1. DRAG PARA COMPUTADOR
+      if (!isTouchDevice) node.setAttribute('draggable', 'true');
+
       const handleDragStart = (e) => {
+        if (isTouchDevice) return e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.setData('dragType', 'client');
         e.dataTransfer.setData('clientId', client.id);
         e.dataTransfer.setData('sourcePhaseId', phaseId);
       };
+
+      // VARIÁVEIS DO MOTOR
+      let pressTimer = null;
+      let isDragging = false;
+      let ghost = null;
+      let initialX = 0, initialY = 0;
+      let offsetX = 0, offsetY = 0;
+      let touchStartTime = 0;
       
+      // VARIÁVEIS DO AUTO-SCROLL DA TELA
+      let scrollInterval = null;
+      let currentTouchX = 0;
+      let scrollContainer = null;
+
+      const cleanupGhost = () => {
+        if (ghost && document.body.contains(ghost)) document.body.removeChild(ghost);
+        ghost = null;
+        isDragging = false;
+        node.style.opacity = '1';
+        document.body.style.overflow = '';
+        
+        // Desliga o motor de rolagem
+        if (scrollInterval) {
+          clearInterval(scrollInterval);
+          scrollInterval = null;
+        }
+      };
+
       const handleClick = (e) => {
+        const pressDuration = Date.now() - touchStartTime;
+
+        if (isDragging || (isTouchDevice && touchStartTime > 0 && pressDuration > 300)) {
+          e.stopPropagation();
+          e.preventDefault();
+          touchStartTime = 0;
+          return;
+        }
+
         const text = e.target.innerText || '';
         if (text === '✕' || text.includes('WA') || text.includes('Ligar') || text.includes(client.phone)) return;
         if (onOpen) onOpen(client, phaseId);
       };
 
-      node.setAttribute('draggable', 'true');
+      const handleTouchStart = (e) => {
+        if (!isTouchDevice || e.touches.length > 1) return;
+        
+        const text = e.target.innerText || '';
+        if (text === '✕' || text.includes('WA') || text.includes('Ligar')) return;
+
+        const touch = e.touches[0];
+        initialX = touch.clientX;
+        initialY = touch.clientY;
+        currentTouchX = touch.clientX;
+        touchStartTime = Date.now();
+
+        pressTimer = setTimeout(() => {
+          isDragging = true;
+          if (navigator.vibrate) navigator.vibrate(40);
+          
+          document.body.style.overflow = 'hidden';
+
+          const rect = node.getBoundingClientRect();
+          offsetX = touch.clientX - rect.left;
+          offsetY = touch.clientY - rect.top;
+
+          // Cria o Fantasma
+          ghost = node.cloneNode(true);
+          ghost.style.position = 'fixed';
+          ghost.style.zIndex = '999999';
+          ghost.style.opacity = '0.95';
+          ghost.style.margin = '0';
+          ghost.style.boxShadow = '0px 15px 30px rgba(0,0,0,0.3)';
+          ghost.style.transform = 'scale(1.03)'; 
+          ghost.style.setProperty('pointer-events', 'none', 'important');
+          
+          ghost.style.left = `${touch.clientX - offsetX}px`;
+          ghost.style.top = `${touch.clientY - offsetY}px`;
+          ghost.style.width = `${rect.width}px`;
+          ghost.style.height = `${rect.height}px`;
+
+          document.body.appendChild(ghost);
+          node.style.opacity = '0.4';
+
+          // ==============================================================
+          // INICIA O RADAR DE AUTO-SCROLL AO CRIAR O FANTASMA
+          // ==============================================================
+          
+          // 1. Acha quem rola horizontalmente (O ScrollView do Dashboard)
+          scrollContainer = node.parentElement;
+          while (scrollContainer && scrollContainer !== document.body) {
+            if (scrollContainer.scrollWidth > scrollContainer.clientWidth) break;
+            scrollContainer = scrollContainer.parentElement;
+          }
+          if (!scrollContainer) scrollContainer = document.scrollingElement || document.documentElement;
+
+          // 2. Liga o radar 60 vezes por segundo
+          scrollInterval = setInterval(() => {
+            if (!isDragging) return;
+            
+            const edge = 80; // Zona de borda em pixels
+            const speed = 12; // Velocidade que a tela anda
+
+            if (currentTouchX < edge) {
+              scrollContainer.scrollLeft -= speed; // Rola pra esquerda
+            } else if (currentTouchX > window.innerWidth - edge) {
+              scrollContainer.scrollLeft += speed; // Rola pra direita
+            }
+          }, 16);
+
+        }, 350); 
+      };
+
+      const handleTouchMove = (e) => {
+        const touch = e.touches[0];
+        currentTouchX = touch.clientX; // Atualiza a mira do radar em tempo real
+
+        if (!isDragging) {
+          if (Math.abs(touch.clientX - initialX) > 10 || Math.abs(touch.clientY - initialY) > 10) {
+            clearTimeout(pressTimer);
+          }
+          return;
+        }
+
+        if (e.cancelable) e.preventDefault(); 
+        
+        if (ghost) {
+          ghost.style.left = `${touch.clientX - offsetX}px`;
+          ghost.style.top = `${touch.clientY - offsetY}px`;
+        }
+      };
+
+      const handleTouchEnd = (e) => {
+        clearTimeout(pressTimer);
+        
+        if (!isDragging) {
+          cleanupGhost();
+          return;
+        }
+        
+        const touch = e.changedTouches[0];
+        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+
+        cleanupGhost();
+
+        if (targetElement) {
+          const targetColumn = targetElement.closest('[data-phaseid]');
+          const targetCard = targetElement.closest('[data-clientid]');
+
+          if (targetColumn && onDropClient) {
+            const targetPhaseId = targetColumn.getAttribute('data-phaseid');
+            const targetClientId = targetCard ? targetCard.getAttribute('data-clientid') : null;
+            onDropClient(client.id, phaseId, targetPhaseId, targetClientId);
+          }
+        }
+      };
+
+      const handleTouchCancel = () => {
+        clearTimeout(pressTimer);
+        cleanupGhost();
+      };
+
       node.addEventListener('dragstart', handleDragStart);
       node.addEventListener('click', handleClick);
+      node.addEventListener('touchstart', handleTouchStart, { passive: true });
+      node.addEventListener('touchmove', handleTouchMove, { passive: false });
+      node.addEventListener('touchend', handleTouchEnd);
+      node.addEventListener('touchcancel', handleTouchCancel);
+      
       return () => {
+        clearTimeout(pressTimer);
+        cleanupGhost();
         node.removeEventListener('dragstart', handleDragStart);
         node.removeEventListener('click', handleClick);
+        node.removeEventListener('touchstart', handleTouchStart);
+        node.removeEventListener('touchmove', handleTouchMove);
+        node.removeEventListener('touchend', handleTouchEnd);
+        node.removeEventListener('touchcancel', handleTouchCancel);
       };
     }
-  }, [client, phaseId, onOpen]);
+  }, [client, phaseId, onOpen, onDropClient]);
+
 
   // Funções do Modal Animado
   const openDeleteModal = (e) => {
@@ -205,16 +380,16 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
                 </View>
               )}
 
-              {/* TAG DE HISTÓRICO DE AGENDAMENTOS (Ex: 1A, 2A) */}
+              {/* TAG DE HISTÓRICO DE AGENDAMENTOS */}
               {completedApptsCount > 0 && (
                 <View style={styles.apptBadge}>
                   <Text style={styles.apptBadgeText}>{completedApptsCount}A</Text>
                 </View>
               )}
 
-              {daysInactive >= 7 && (
+              {daysInactive() >= 7 && (
                 <View style={styles.inactiveBadge}>
-                  <Text style={styles.inactiveText}>{daysInactive}d</Text>
+                  <Text style={styles.inactiveText}>{daysInactive()}d</Text>
                 </View>
               )}
             </View>
@@ -281,7 +456,24 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#FFFFFF', padding: 10, borderRadius: 8, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: '#3b82f6', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', cursor: 'grab', userSelect: 'none' }, default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } }) },
+  card: { 
+    backgroundColor: '#FFFFFF', 
+    padding: 10, 
+    borderRadius: 8, 
+    marginBottom: 8, 
+    borderLeftWidth: 4, 
+    borderLeftColor: '#3b82f6', 
+    ...Platform.select({ 
+      web: { 
+        boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', 
+        cursor: 'grab', 
+        userSelect: 'none', 
+        WebkitUserSelect: 'none', 
+        WebkitTouchCallout: 'none' 
+      }, 
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } 
+    }) 
+  },
   headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   headerTextContainer: { flex: 1, marginRight: 8 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap' },

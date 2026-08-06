@@ -8,51 +8,43 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
   const columnRef = useRef(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
 
+  // KanbanColumn - APENAS RECEBE OS CARDS (Drop Zone)
   useEffect(() => {
     if (Platform.OS === 'web' && columnRef.current) {
       const node = columnRef.current;
-      const handleDragStart = (e) => {
-        e.stopPropagation();
-        e.dataTransfer.setData('dragType', 'phase');
-        e.dataTransfer.setData('phaseId', phase.id);
-      };
+      
       const handleDragOver = (e) => e.preventDefault();
       
       const handleDrop = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        
         const dragType = e.dataTransfer.getData('dragType');
         
-        if (dragType === 'phase') {
-          const sourcePhaseId = e.dataTransfer.getData('phaseId');
-          if (sourcePhaseId && sourcePhaseId !== phase.id) onReorderPhase(sourcePhaseId, phase.id);
-        } else {
+        // Só aceita cards de clientes agora
+        if (dragType === 'client') {
           const clientId = e.dataTransfer.getData('clientId');
           const sourcePhaseId = e.dataTransfer.getData('sourcePhaseId');
           
-          // Magia da reordenação: detecta o card alvo onde o mouse foi solto
           const targetNode = e.target.closest('[data-clientid]');
           const targetClientId = targetNode ? targetNode.getAttribute('data-clientid') : null;
 
-          // Repare que removemos a restrição de "sourcePhaseId !== phase.id" 
-          // para permitir reordenação dentro da mesma coluna!
           if (clientId && sourcePhaseId) {
             onDropClient(clientId, sourcePhaseId, phase.id, targetClientId);
           }
         }
       };
 
-      node.setAttribute('draggable', 'true');
-      node.addEventListener('dragstart', handleDragStart);
+      // REMOVIDO o draggable="true" da coluna
       node.addEventListener('dragover', handleDragOver);
       node.addEventListener('drop', handleDrop);
+      
       return () => {
-        node.removeEventListener('dragstart', handleDragStart);
         node.removeEventListener('dragover', handleDragOver);
         node.removeEventListener('drop', handleDrop);
       };
     }
-  }, [phase.id, onDropClient, onReorderPhase]);
+  }, [phase.id, onDropClient]);
 
   const handleSortClients = (criteria) => {
     setShowSortMenu(false);
@@ -91,7 +83,11 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
   };
 
   return (
-    <View ref={columnRef} style={[styles.column, { backgroundColor: phase.color || '#F3F4F6' }]}>
+    <View 
+      ref={columnRef} 
+      dataSet={{ phaseid: phase.id }} 
+      style={[styles.column, { backgroundColor: phase.color || '#F3F4F6' }]}
+    >
       
       {showSortMenu && (
         <Pressable style={styles.backdropOverlay} onPress={() => setShowSortMenu(false)} />
@@ -105,13 +101,15 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
           </View>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <TouchableOpacity style={styles.sortToggleButton} onPress={() => setShowSortMenu(!showSortMenu)}>
-            <Text style={styles.sortToggleText}>Organizar</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {/* Botão Organizar (Ícone de Ordenação) */}
+          <TouchableOpacity style={styles.iconActionButton} onPress={() => setShowSortMenu(!showSortMenu)}>
+            <Text style={styles.actionSymbol}>⇄</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.editButton} onPress={() => onEditPhase(phase)}>
-            <Text style={styles.editButtonText}>Editar</Text>
+          {/* Botão Editar (Ícone de Engrenagem / Configuração) */}
+          <TouchableOpacity style={styles.iconActionButton} onPress={() => onEditPhase(phase)}>
+            <Text style={styles.actionSymbol}>⚙️</Text>
           </TouchableOpacity>
         </View>
 
@@ -142,7 +140,15 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
       
       <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollArea}>
         {phase.clients.map((client) => (
-          <ClientCard key={client.id} client={client} phaseId={phase.id} onDelete={onDeleteClient} onOpen={onOpenClient} onAddComment={onAddComment}/>
+          <ClientCard 
+            key={client.id} 
+            client={client} 
+            phaseId={phase.id} 
+            onDelete={onDeleteClient} 
+            onOpen={onOpenClient} 
+            onAddComment={onAddComment} 
+            onDropClient={onDropClient} 
+          />
         ))}
       </ScrollView>
     </View>
@@ -151,12 +157,12 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
 
 const styles = StyleSheet.create({
   column: { 
-    width: 320, 
+    width: 270,
     borderRadius: 12, 
     paddingHorizontal: 12, 
     paddingTop: 16,
     paddingBottom: 4,
-    marginRight: 20, 
+    marginRight: 16,
     maxHeight: '100%',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
@@ -169,12 +175,17 @@ const styles = StyleSheet.create({
   title: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '700', color: '#111827' },
   badge: { backgroundColor: 'rgba(0,0,0,0.06)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
   badgeText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700', color: '#4B5563' },
-  editButton: { padding: 4, marginLeft: 2 },
-  editButtonText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '600', color: '#3B82F6' },
-  
+  iconActionButton: { 
+    backgroundColor: 'rgba(0,0,0,0.04)', 
+    width: 28, 
+    height: 28, 
+    borderRadius: 6, 
+    justifyContent: 'center', 
+    alignItems: 'center'
+  },
+  actionSymbol: { fontSize: 14, fontWeight: '700', color: '#4b5563' },
   sortToggleButton: { backgroundColor: '#e0e7ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   sortToggleText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '600', color: '#4f46e5' },
-  
   sortMenuDropdown: {
     position: 'absolute', top: 35, right: 0, width: 200, backgroundColor: '#ffffff',
     borderRadius: 10, padding: 8, zIndex: 99999, borderWidth: 1, borderColor: '#e2e8f0',
