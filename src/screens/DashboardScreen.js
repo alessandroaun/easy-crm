@@ -581,14 +581,9 @@ export default function DashboardScreen() {
               style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
               onPress={() => setIsWhatsAppModalVisible(true)}
             >
-              <Text style={[styles.actionBtnSecondaryText, { color: '#fff' }]}>📣 Zap</Text>
+              <Text style={[styles.actionBtnSecondaryText, { color: '#fff' }]}>DisparaZap</Text>
             </TouchableOpacity>
           )}
-
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
-            <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
-          </TouchableOpacity>
-
 
           <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
             <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>

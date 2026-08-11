@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient'; // Ajuste o caminho conforme o seu projeto
+import ReportModal from './ReportModal'; // Ajuste o caminho se necessário
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Image } from 'react-native';
 
 let globalIsSending = false;
@@ -28,6 +29,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   const [qrCodeImage, setQrCodeImage] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [activeTab, setActiveTab] = useState('disparar');
+  const [selectedReport, setSelectedReport] = useState(null);
   
   const [isSending, setIsSending] = useState(globalIsSending);
   const [isPaused, setIsPaused] = useState(globalIsPaused);
@@ -312,15 +314,34 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     globalProgressText = finalStatusText;
     setProgressText(finalStatusText);
 
+    // Monte a lista de leads já incluindo o status individual de cada um
+    const leadsComStatus = validLeads.map(l => {
+      // Verifica se este lead específico falhou nos logs gerados durante o disparo
+      const logDoLead = globalLogs.find(log => log.text.includes(l.name) || log.text.includes(l.phone));
+      const deuErro = logDoLead && logDoLead.status === 'error';
+      
+      return {
+        name: l.name,
+        phone: l.phone,
+        status: deuErro ? 'Falha' : 'Sucesso'
+      };
+    });
+
+    const historicoDetalhado = {
+      fase: selectedPhaseId === 'all' ? 'Todas as Fases' : (boardData.phases.find(p => p.id === selectedPhaseId)?.title || selectedPhaseId),
+      tag: selectedTag === 'all' ? 'Todas as Tags / Origens' : selectedTag,
+      leads: leadsComStatus
+    };
+
     const novoHistorico = {
       status: globalCancelRequested ? 'Cancelado' : 'Concluído',
-      inicio: globalStats.startTime.toLocaleString(),
+      inicio: globalStats.startTime ? globalStats.startTime.toLocaleString() : new Date().toLocaleString(),
       fim: endTime.toLocaleString(),
-      total_alvos: globalStats.total,
-      enviados: globalStats.success + globalStats.error,
-      sucesso: globalStats.success,
-      falha: globalStats.error,
-      mensagem: globalStats.messageSummary,
+      total_alvos: parseInt(globalStats.total) || 0,
+      enviados: parseInt(globalStats.success + globalStats.error) || 0,
+      sucesso: parseInt(globalStats.success) || 0,
+      falha: parseInt(globalStats.error) || 0,
+      mensagem: `${activeMessages.filter(m => m.trim()).join(' | ')} [DADOS_EXTRA:${JSON.stringify(historicoDetalhado)}]`,
       whatsapp_numero: botNumber || 'Desconhecido'
     };
 
@@ -329,10 +350,13 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         .from('disparos_historico')
         .insert([novoHistorico]);
 
-      if (error) throw error;
-      fetchHistorico();
+      if (error) {
+        console.error('Erro ao salvar histórico:', error.message);
+      } else {
+        fetchHistorico();
+      }
     } catch (e) {
-      console.log('Erro ao salvar histórico no Supabase:', e.message);
+      console.log('Erro de conexão ao salvar histórico:', e.message);
     }
 
     globalIsSending = false;
@@ -385,12 +409,12 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         <View style={styles.modalContainer}>
           
           <View style={styles.header}>
-            <Text style={styles.title}>📣 Disparo em Massa</Text>
+            <Text style={styles.title}>Disparo de Mensagens</Text>
             
             <View style={styles.headerRightActions}>
               {isBotConnected && (
                 <View style={styles.connectedAccountInfo}>
-                  <Text style={styles.connectedNumberText}>📱 +{botNumber}</Text>
+                  <Text style={styles.connectedNumberText}>✅ +{botNumber}</Text>
                   <TouchableOpacity style={styles.disconnectTopBtn} onPress={handleDisconnect}>
                     <Text style={styles.disconnectTopBtnText}>Desconectar</Text>
                   </TouchableOpacity>
@@ -408,13 +432,13 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                 style={[styles.tabBtn, activeTab === 'disparar' && styles.tabBtnActive]} 
                 onPress={() => setActiveTab('disparar')}
               >
-                <Text style={[styles.tabText, activeTab === 'disparar' && styles.tabTextActive]}>🚀 Central de Disparos</Text>
+                <Text style={[styles.tabText, activeTab === 'disparar' && styles.tabTextActive]}>Central de Disparos</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.tabBtn, activeTab === 'historico' && styles.tabBtnActive]} 
                 onPress={() => { setActiveTab('historico'); fetchHistorico(); }}
               >
-                <Text style={[styles.tabText, activeTab === 'historico' && styles.tabTextActive]}>📊 Histórico</Text>
+                <Text style={[styles.tabText, activeTab === 'historico' && styles.tabTextActive]}>Histórico</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -444,36 +468,58 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                 {historicoList.length === 0 ? (
                   <Text style={styles.emptyText}>Nenhum disparo registrado ainda.</Text>
                 ) : (
-                  historicoList.map((item) => (
-                    <View key={item.id} style={styles.historyCard}>
-                      <View style={styles.historyHeader}>
-                        <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>
-                          {item.status}
-                        </Text>
-                        <Text style={styles.historyDate}>Início: {item.inicio}</Text>
-                      </View>
-                      
-                      {/* Exibe o número do WhatsApp que realizou o disparo */}
-                      <Text style={styles.historyMsg}>
-                        <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
-                      </Text>
+                  // Dentro do seu histórico no WhatsAppBulkModal:
+historicoList.map((item) => {
+  // Função para remover a tag técnica [DADOS_EXTRA:...] do card do histórico
+  const getCleanMessage = (fullText) => {
+    if (!fullText) return 'Sem mensagem.';
+    if (fullText.includes('[DADOS_EXTRA:')) {
+      return fullText.split('[DADOS_EXTRA:')[0].trim();
+    }
+    return fullText;
+  };
 
-                      <Text style={styles.historyMsg}><Text style={{fontWeight:'bold'}}>Resumo:</Text> {item.mensagem}</Text>
-                      <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
-                      
-                      <View style={styles.historyStatsRow}>
-                        <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
-                        <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
-                        <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
-                      </View>
-                    </View>
-                  ))
+  return (
+    <TouchableOpacity 
+      key={item.id} 
+      onPress={() => setSelectedReport(item)} 
+      style={styles.historyCard}
+    >
+      <View style={styles.historyHeader}>
+        <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>
+          {item.status}
+        </Text>
+        <Text style={styles.historyDate}>Início: {item.inicio}</Text>
+      </View>
+      
+      <Text style={styles.historyMsg}>
+        <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
+      </Text>
+
+      {/* MODIFICADO: Trocado de 'Resumo' para 'Mensagem Enviada' com o texto limpo */}
+      <View style={{ marginVertical: 4 }}>
+        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Mensagem Enviada:</Text>
+        <Text style={styles.historyMsgClean} numberOfLines={2}>
+          {getCleanMessage(item.mensagem)}
+        </Text>
+      </View>
+
+      <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+      
+      <View style={styles.historyStatsRow}>
+        <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
+        <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
+        <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+})
                 )}
               </ScrollView>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} style={{height: 450}}>
                 <View style={styles.connectedBadge}>
-                  <Text style={styles.connectedText}>🟢 WhatsApp Conectado e Pronto</Text>
+                  <Text style={styles.connectedText}>🟢 WhatsApp Conectado</Text>
                 </View>
 
                 {!isSending && logs.length === 0 && (
@@ -543,7 +589,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                     />
 
                     <TouchableOpacity style={[styles.primaryButton, {marginTop: 12, marginBottom: 20}]} onPress={handleStartBulkSend}>
-                      <Text style={styles.primaryButtonText}>Iniciar Disparo em Massa 🚀</Text>
+                      <Text style={styles.primaryButtonText}>Iniciar Disparo em Massa</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -570,12 +616,12 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                           onPress={handleTogglePause}
                         >
                           <Text style={styles.controlBtnText}>
-                            {isPaused ? 'Continuar Disparos ▶' : 'Pausar Disparos ⏸'}
+                            {isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}
                           </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
-                          <Text style={styles.controlBtnText}>Cancelar Disparos ✕</Text>
+                          <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -596,6 +642,12 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
         </View>
       </View>
+      <ReportModal 
+  visible={!!selectedReport} 
+  report={selectedReport} 
+  boardData={boardData}
+  onClose={() => setSelectedReport(null)} 
+/>
     </Modal>
   );
 }
@@ -664,5 +716,16 @@ const styles = StyleSheet.create({
   historyStatsRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 6 },
   historyStatItem: { fontSize: 12, fontWeight: '600', color: '#475569' },
   connectedAccountInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  connectedNumberText: { fontSize: 13, fontWeight: '600', color: '#475569' }
+  connectedNumberText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  historyMsgClean: {
+    fontSize: 13,
+    color: '#475569',
+    backgroundColor: '#ffffff',
+    padding: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    fontStyle: 'italic',
+    marginTop: 2
+  }
 });
