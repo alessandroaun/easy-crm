@@ -13,6 +13,7 @@ import NotificationModal from '../components/NotificationModal';
 import MinhaCentral from '../components/MinhaCentral';
 import InformacoesGerais from '../components/InformacoesGerais';
 import Configuracao from '../components/Configuracao';
+import WhatsAppBulkModal from '../components/WhatsAppBulkModal';
 
 // Fonte moderna injetada nativamente no Web
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
@@ -35,6 +36,8 @@ export default function DashboardScreen() {
   const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
   const [isImportModalVisible, setIsImportModalVisible] = useState(false);
+  const [isWhatsAppModalVisible, setIsWhatsAppModalVisible] = useState(false);
+  const [systemNotifications, setSystemNotifications] = useState([]);
   
   const [selectedClient, setSelectedClient] = useState(null);
   const [editingPhase, setEditingPhase] = useState(null);
@@ -213,6 +216,17 @@ export default function DashboardScreen() {
     } catch (error) {
       console.error("Erro ao salvar:", error.message);
     }
+  };
+
+  // Defina a função aqui fora, no escopo principal do DashboardScreen
+  const addSystemNotification = (title, message) => {
+    const newNotif = {
+      id: `sys_${Date.now()}`,
+      type: 'Sistema',
+      text: message,
+      date: new Date().toISOString()
+    };
+    setSystemNotifications(prev => [newNotif, ...prev]);
   };
 
   const handleSaveNewClient = (newClient) => {
@@ -420,24 +434,26 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleUpdatePhase = (phaseId, newTitle, newColor, newOrder) => {
+  const handleUpdatePhase = (phaseId, newTitle, newColor, updatedPhases) => {
     if (!boardData) return;
+
+    // Criamos um novo objeto do quadro
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
+
+    // A mágica: Substituímos o array de fases inteiro pelo que o modal nos enviou (já ordenado)
+    // O modal nos enviou 'updatedPhases' com a ordem correta baseada nas setinhas!
+    updatedBoard.phases = updatedPhases;
+
+    // Também atualizamos os dados da fase específica (título e cor)
     const phaseIndex = updatedBoard.phases.findIndex(p => p.id === phaseId);
-    
     if (phaseIndex !== -1) {
       updatedBoard.phases[phaseIndex].title = newTitle;
       updatedBoard.phases[phaseIndex].color = newColor;
-      
-      // Atualiza a posição (fallback para 99 se o usuário deixar em branco)
-      updatedBoard.phases[phaseIndex].order = parseInt(newOrder, 10) || 99; 
-      
-      // ORDENA todas as fases baseado no número de posição da esquerda pra direita
-      updatedBoard.phases.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-      setBoardData(updatedBoard);
-      syncBoardToDatabase(updatedBoard);
     }
+
+    // Salvamos
+    setBoardData(updatedBoard);
+    syncBoardToDatabase(updatedBoard);
   };
 
   const handleDeletePhase = (phaseId) => {
@@ -546,14 +562,33 @@ export default function DashboardScreen() {
         {/* DIREITA: Notificações, Lixeira, Importar e Novo */}
         <View style={[styles.headerRight, isMobile && styles.headerRightMobile]}>
           
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
-            <Text style={styles.iconBtnText}>🔔</Text>
-            {activeNotifications.length > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{activeNotifications.length}</Text>
-              </View>
-            )}
+          {/* No ícone do sino no Header, altere para somar os dois: */}
+<TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
+  <Text style={styles.iconBtnText}>🔔</Text>
+  {/* Soma as notificações de agendamento + as do sistema */}
+  {(activeNotifications.length + systemNotifications.length) > 0 && (
+    <View style={styles.notificationBadge}>
+      <Text style={styles.notificationBadgeText}>
+        {activeNotifications.length + systemNotifications.length}
+      </Text>
+    </View>
+  )}
+</TouchableOpacity>
+
+          {/* Botão de Disparo aparece APENAS no computador */}
+          {Platform.OS === 'web' && (
+            <TouchableOpacity 
+              style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
+              onPress={() => setIsWhatsAppModalVisible(true)}
+            >
+              <Text style={[styles.actionBtnSecondaryText, { color: '#fff' }]}>📣 Zap</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
+            <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
           </TouchableOpacity>
+
 
           <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
             <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
@@ -638,15 +673,31 @@ export default function DashboardScreen() {
       <TrashModal visible={isTrashModalVisible} onClose={() => setIsTrashModalVisible(false)} trashClients={boardData?.trash || []} onPermanentDelete={handlePermanentDelete} onRestore={handleRestoreFromTrash} />
       <FilterModal visible={isFilterModalVisible} onClose={() => setIsFilterModalVisible(false)} activeFilter={activeFilter} onSelectFilter={setActiveFilter} />
       <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} />
-      <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
+      <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
       <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} />
-        <NotificationModal 
-        visible={isNotifModalVisible} 
-        onClose={() => setIsNotifModalVisible(false)} 
-        notifications={activeNotifications}
-        onDismiss={handleDismissNotification}
+        {/* Substitua a chamada do NotificationModal por esta: */}
+<NotificationModal 
+  visible={isNotifModalVisible} 
+  onClose={() => setIsNotifModalVisible(false)} 
+  notifications={[...activeNotifications, ...systemNotifications]} 
+  onDismiss={handleDismissNotification}
+  // Adicione esta linha abaixo:
+  onDismissSystem={() => setSystemNotifications([])} 
+/>
+
+      {/* COLOQUE O MODAL DO WHATSAPP AQUI */}
+      <WhatsAppBulkModal 
+      visible={isWhatsAppModalVisible} 
+      onClose={() => setIsWhatsAppModalVisible(false)} 
+      boardData={boardData}
+      onComplete={(stats) => {
+      addSystemNotification('Disparo Concluído', `Os disparos para ${stats.total} leads foram finalizados. Sucesso: ${stats.success}, Erros: ${stats.error}.`);
+      setIsNotifModalVisible(true); // Abre o modal automaticamente
+      }}
       />
+
     </View>
+    
   );
 }
 

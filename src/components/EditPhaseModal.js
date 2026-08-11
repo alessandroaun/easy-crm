@@ -8,27 +8,40 @@ const LIGHT_COLORS = [
 export default function EditPhaseModal({ visible, onClose, phase, allPhases, onSave, onDelete }) {
   const [title, setTitle] = useState('');
   const [color, setColor] = useState('#f1f5f9');
-  const [selectedOrder, setSelectedOrder] = useState('1');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-
-  // Calcula o total de colunas para exibir na lista de opções
-  const totalColumns = allPhases && allPhases.length > 0 ? allPhases.length : 1;
+  const [localPhases, setLocalPhases] = useState([]);
 
   useEffect(() => {
     if (phase) {
-      setTitle(phase.title);
+      setTitle(phase.title || '');
       setColor(phase.color || '#f1f5f9');
       setIsConfirmingDelete(false);
       
-      // Define a ordem atual da fase como padrão no campo
-      const currentOrder = phase.order !== undefined && phase.order !== null ? phase.order : 1;
-      setSelectedOrder(String(currentOrder));
+      // BLINDAGEM: Se allPhases for indefinido ou vazio, usa um array contendo só a fase atual
+      const safePhases = (Array.isArray(allPhases) && allPhases.length > 0) ? allPhases : [phase];
+      const sorted = [...safePhases].sort((a, b) => (a.order || 0) - (b.order || 0));
+      setLocalPhases(sorted);
     }
-  }, [phase]);
+  }, [phase, allPhases]);
 
   const handleClose = () => {
     setIsConfirmingDelete(false);
     onClose();
+  };
+
+  const movePhase = (direction) => {
+    const currentIndex = localPhases.findIndex(p => p.id === phase.id);
+    if (currentIndex === -1) return;
+
+    const newIndex = currentIndex + direction;
+    if (newIndex < 0 || newIndex >= localPhases.length) return;
+
+    const newList = [...localPhases];
+    const temp = newList[currentIndex];
+    newList[currentIndex] = newList[newIndex];
+    newList[newIndex] = temp;
+
+    setLocalPhases(newList);
   };
 
   const handleSave = () => {
@@ -37,14 +50,11 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
       return;
     }
 
-    const numericOrder = parseInt(selectedOrder, 10) || 1;
-
-    // Reorganiza a fila enviando a nova ordem informada
-    const updatedPhases = (allPhases || []).map(p => {
+    const updatedPhases = localPhases.map((p, index) => {
       if (p.id === phase.id) {
-        return { ...p, title, color, order: numericOrder };
+        return { ...p, title, color, order: index + 1 };
       }
-      return p;
+      return { ...p, order: index + 1 };
     });
 
     onSave(phase.id, title, color, updatedPhases);
@@ -61,7 +71,7 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
           {!isConfirmingDelete ? (
             <>
               <View style={styles.header}>
-                <Text style={styles.title}>Editar Fase</Text>
+                <Text style={styles.title}>Configurar Fase</Text>
                 <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                   <Text style={styles.closeButtonText}>✕</Text>
                 </TouchableOpacity>
@@ -73,9 +83,10 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                   style={styles.input}
                   value={title}
                   onChangeText={setTitle}
+                  placeholder="Ex: Em Negociação"
                 />
 
-                <Text style={styles.label}>Cor da Coluna</Text>
+                <Text style={styles.label}>Cor de Destaque da Coluna</Text>
                 <View style={styles.colorPicker}>
                   {LIGHT_COLORS.map((c) => (
                     <TouchableOpacity
@@ -86,28 +97,53 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                   ))}
                 </View>
 
-                {/* SISTEMA DE LISTA NUMÉRICA PARA POSICIONAMENTO */}
-                <Text style={[styles.label, { marginTop: 20 }]}>Posição / Ordem no Quadro (1 a {totalColumns})</Text>
+                <View style={styles.kanbanOrgHeader}>
+                  <Text style={styles.label}>Posição no Quadro (Esquerda p/ Direita)</Text>
+                </View>
                 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.numberListContainer}>
-                  {Array.from({ length: totalColumns }, (_, index) => {
-                    const pos = index + 1;
-                    const isSelected = parseInt(selectedOrder, 10) === pos;
-                    
-                    return (
-                      <TouchableOpacity
-                        key={pos}
-                        style={[styles.numberCard, isSelected && styles.numberCardSelected]}
-                        onPress={() => setSelectedOrder(String(pos))}
-                      >
-                        <Text style={[styles.numberCardText, isSelected && styles.numberCardTextSelected]}>
-                          {pos}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-                <Text style={styles.helpText}>Toque no número correspondente à posição desejada para esta coluna da esquerda para a direita.</Text>
+                <View style={styles.orderingContainer}>
+                  <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
+                    {localPhases.map((p, index) => {
+                      const isEditing = p.id === phase.id;
+                      const displayTitle = isEditing ? (title || 'Fase sem nome') : p.title;
+                      const displayColor = isEditing ? color : (p.color || '#f1f5f9');
+
+                      return (
+                        <View key={p.id || index} style={[styles.phaseRow, isEditing && styles.phaseRowEditing]}>
+                          <View style={styles.phaseRowHeader}>
+                            <View style={styles.positionBadge}>
+                              <Text style={[styles.positionBadgeText, isEditing && styles.positionBadgeTextEditing]}>{index + 1}</Text>
+                            </View>
+                            <View style={[styles.colorIndicator, { backgroundColor: displayColor }]} />
+                            <Text style={[styles.phaseRowTitle, isEditing && styles.phaseRowTitleEditing]} numberOfLines={1}>
+                              {displayTitle}
+                            </Text>
+                          </View>
+
+                          {isEditing && (
+                            <View style={styles.phaseRowControls}>
+                              <TouchableOpacity 
+                                onPress={() => movePhase(-1)} 
+                                disabled={index === 0} 
+                                style={[styles.moveBtn, index === 0 && styles.moveBtnDisabled]}
+                              >
+                                <Text style={styles.moveBtnText}>▲</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                onPress={() => movePhase(1)} 
+                                disabled={index === localPhases.length - 1} 
+                                style={[styles.moveBtn, index === localPhases.length - 1 && styles.moveBtnDisabled]}
+                              >
+                                <Text style={styles.moveBtnText}>▼</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+                <Text style={styles.helpText}>Use as setas para reposicionar esta coluna no seu funil de vendas.</Text>
 
               </View>
 
@@ -121,7 +157,7 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                     <Text style={styles.cancelButtonText}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                    <Text style={styles.saveButtonText}>Salvar</Text>
+                    <Text style={styles.saveButtonText}>Salvar Organização</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -154,57 +190,77 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center' },
   modalContainer: {
-    width: '100%', maxWidth: 450, backgroundColor: '#ffffff', borderRadius: 16, padding: 24,
-    ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 20px rgba(0,0,0,0.1)' } })
+    width: '95%', maxWidth: 480, backgroundColor: '#ffffff', borderRadius: 16, padding: 24,
+    ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } })
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  title: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
-  closeButton: { padding: 4 },
-  closeButtonText: { fontSize: 20, color: '#64748b', fontWeight: 'bold' },
-  form: { marginBottom: 24 },
-  label: { fontSize: 14, fontWeight: '600', color: '#475569', marginBottom: 8, marginTop: 12 },
+  title: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
+  closeButton: { padding: 4, backgroundColor: '#f1f5f9', borderRadius: 8, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  closeButtonText: { fontSize: 16, color: '#64748b', fontWeight: 'bold' },
+  form: { marginBottom: 20 },
+  label: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, marginTop: 16 },
   input: {
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 15, color: '#0f172a',
+    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 14, fontSize: 15, color: '#0f172a',
     ...Platform.select({ web: { outlineStyle: 'none' } })
   },
-  colorPicker: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  colorSwatch: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0' },
-  colorSwatchSelected: { borderColor: '#3b82f6', transform: [{ scale: 1.1 }] },
+  colorPicker: { flexDirection: 'row', gap: 10, marginTop: 4, flexWrap: 'wrap' },
+  colorSwatch: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: '#e2e8f0' },
+  colorSwatchSelected: { borderColor: '#2563eb', transform: [{ scale: 1.1 }] },
   
-  // Estilos da Lista Numérica Horizontal
-  numberListContainer: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  numberCard: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
+  kanbanOrgHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  orderingContainer: {
     backgroundColor: '#f8fafc',
-    borderWidth: 1.5,
+    borderRadius: 12,
+    borderWidth: 1,
     borderColor: '#e2e8f0',
-    justifyContent: 'center',
+    minHeight: 80, // Garante que a caixa nunca suma
+    maxHeight: 220,
+    padding: 8,
+    marginTop: 4,
+  },
+  phaseRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    ...Platform.select({ web: { cursor: 'pointer' } })
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  numberCardSelected: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+  phaseRowEditing: {
+    borderColor: '#3b82f6',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1.5,
   },
-  numberCardText: { fontSize: 16, fontWeight: '700', color: '#475569' },
-  numberCardTextSelected: { color: '#ffffff' },
-
-  helpText: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', marginTop: 8 },
-
-  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  deletePhaseButton: { padding: 10 },
-  deletePhaseText: { color: '#ef4444', fontWeight: '600', fontSize: 14 },
-  cancelButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#f1f5f9' },
-  cancelButtonText: { color: '#475569', fontWeight: '600', fontSize: 14 },
-  saveButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#2563eb' },
-  saveButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+  phaseRowHeader: { flexDirection: 'row', alignItems: 'center', flex: 1, overflow: 'hidden', paddingRight: 10 },
+  positionBadge: { width: 24, height: 24, borderRadius: 6, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  positionBadgeText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+  positionBadgeTextEditing: { color: '#2563eb', backgroundColor: '#dbeafe', width: '100%', height: '100%', textAlign: 'center', lineHeight: 24, borderRadius: 6 },
+  colorIndicator: { width: 14, height: 14, borderRadius: 4, marginRight: 8, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
+  phaseRowTitle: { fontSize: 14, fontWeight: '600', color: '#334155', flexShrink: 1 },
+  phaseRowTitleEditing: { color: '#1e40af', fontWeight: '700' },
   
-  confirmContainer: { alignItems: 'center', paddingTop: 10 },
-  confirmTitle: { fontSize: 22, fontWeight: 'bold', color: '#ef4444', marginBottom: 12 },
-  confirmMessage: { fontSize: 16, color: '#1e293b', textAlign: 'center', marginBottom: 12 },
-  confirmSubMessage: { fontSize: 14, color: '#64748b', textAlign: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 8 },
+  phaseRowControls: { flexDirection: 'row', gap: 6 },
+  moveBtn: { paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#ffffff', borderRadius: 6, borderWidth: 1, borderColor: '#cbd5e1', ...Platform.select({ web: { cursor: 'pointer' } }) },
+  moveBtnDisabled: { opacity: 0.3, backgroundColor: '#f8fafc' },
+  moveBtnText: { fontSize: 12, color: '#334155', fontWeight: 'bold' },
+
+  helpText: { fontSize: 12, color: '#64748b', fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
+
+  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 },
+  deletePhaseButton: { padding: 8, backgroundColor: '#fee2e2', borderRadius: 8 },
+  deletePhaseText: { color: '#ef4444', fontWeight: '700', fontSize: 13 },
+  cancelButton: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#f1f5f9' },
+  cancelButtonText: { color: '#475569', fontWeight: '700', fontSize: 14 },
+  saveButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, backgroundColor: '#2563eb' },
+  saveButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+  
+  confirmContainer: { alignItems: 'center', paddingTop: 10, paddingBottom: 10 },
+  confirmTitle: { fontSize: 24, fontWeight: '900', color: '#ef4444', marginBottom: 16 },
+  confirmMessage: { fontSize: 16, color: '#1e293b', textAlign: 'center', marginBottom: 16, lineHeight: 24 },
+  confirmSubMessage: { fontSize: 13, color: '#64748b', textAlign: 'center', backgroundColor: '#f8fafc', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
 });

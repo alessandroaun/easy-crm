@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView } from 'react-native';
 
-export default function NotificationModal({ visible, onClose, notifications, onDismiss }) {
+export default function NotificationModal({ visible, onClose, notifications, onDismiss, onDismissSystem }) {
   
   const formatTime = (isoString) => {
     const d = new Date(isoString);
@@ -23,26 +23,44 @@ export default function NotificationModal({ visible, onClose, notifications, onD
           <ScrollView style={styles.listArea} showsVerticalScrollIndicator={false}>
             {notifications.length === 0 ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>Você não tem nenhum agendamento pendente para agora. 🎉</Text>
+                <Text style={styles.emptyText}>Sem notificações no momento. 🎉</Text>
               </View>
             ) : (
-              notifications.map(({ client, appt, phaseId }) => (
-                <View key={appt.id} style={styles.notificationCard}>
-                  <View style={styles.notifHeader}>
-                    <Text style={styles.notifType}>🗓️ Ação: {appt.type}</Text>
-                    <Text style={styles.notifTime}>{formatTime(appt.dateTime)}</Text>
+              notifications.map((item) => {
+                // Se o item tiver 'type: Sistema', é um aviso do Robô Zap
+                if (item.type === 'Sistema') {
+                  return (
+                    <View key={item.id} style={[styles.notificationCard, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}>
+                      <Text style={{ fontWeight: 'bold', color: '#166534', marginBottom: 5 }}>{item.text}</Text>
+                      <Text style={{ fontSize: 11, color: '#15803d', marginBottom: 10 }}>{formatTime(item.date)}</Text>
+                      <TouchableOpacity 
+                        style={[styles.dismissButton, { backgroundColor: '#16a34a' }]} 
+                        onPress={onDismissSystem}
+                      >
+                        <Text style={styles.dismissButtonText}>Entendido</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }
+
+                // Senão, é um agendamento original
+                const { client, appt, phaseId } = item;
+                return (
+                  <View key={appt.id} style={styles.notificationCard}>
+                    <View style={styles.notifHeader}>
+                      <Text style={styles.notifType}>🗓️ Ação: {appt.type}</Text>
+                      <Text style={styles.notifTime}>{formatTime(appt.dateTime)}</Text>
+                    </View>
+                    <Text style={styles.notifClient}>👤 Cliente: <Text style={{fontWeight: 'bold'}}>{client.name}</Text></Text>
+                    <TouchableOpacity 
+                      style={styles.dismissButton} 
+                      onPress={() => onDismiss(client.id, phaseId, appt.id)}
+                    >
+                      <Text style={styles.dismissButtonText}>✓ Marcar como Concluído</Text>
+                    </TouchableOpacity>
                   </View>
-                  
-                  <Text style={styles.notifClient}>👤 Cliente: <Text style={{fontWeight: 'bold'}}>{client.name}</Text></Text>
-                  
-                  <TouchableOpacity 
-                    style={styles.dismissButton} 
-                    onPress={() => onDismiss(client.id, phaseId, appt.id)}
-                  >
-                    <Text style={styles.dismissButtonText}>✓ Marcar como Concluído</Text>
-                  </TouchableOpacity>
-                </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
 

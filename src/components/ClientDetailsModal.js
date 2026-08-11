@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Linking, useWindowDimensions, Animated 
 } from 'react-native';
+import { setLeadUpdateCallback } from './WhatsAppBulkModal';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../services/supabaseClient';
 
@@ -64,6 +65,29 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       setApptDate(now.toLocaleDateString('pt-BR'));
       setApptTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     }
+  }, [clientData]);
+
+  // Integração com o Robô de WhatsApp
+  useEffect(() => {
+    setLeadUpdateCallback((leadId, messageText) => {
+      // Verifica se o lead que está aberto na tela é o mesmo que recebeu a mensagem
+      if (clientData?.id === leadId) {
+        const newComment = { 
+          id: `zap_${Date.now()}`, 
+          text: messageText, 
+          date: new Date().toISOString() 
+        };
+        
+        // Atualiza o estado local para exibir na tela instantaneamente
+        setFormData(prev => ({ 
+          ...prev, 
+          comments: [newComment, ...(prev.comments || [])] 
+        }));
+      }
+    });
+
+    // Limpeza ao desmontar o componente
+    return () => setLeadUpdateCallback(null);
   }, [clientData]);
 
   const handleChange = (field, value) => {

@@ -35,7 +35,6 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
         }
       };
 
-      // REMOVIDO o draggable="true" da coluna
       node.addEventListener('dragover', handleDragOver);
       node.addEventListener('drop', handleDrop);
       
@@ -167,7 +166,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
     position: 'relative',
-    ...Platform.select({ web: { cursor: 'grab' } })
+    // O cursor: 'grab' foi removido daqui!
   },
   backdropOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingHorizontal: 4, position: 'relative', zIndex: 1 },
