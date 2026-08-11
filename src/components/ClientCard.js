@@ -409,9 +409,24 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
             <Text style={styles.phoneText}>{client.phone || 'Sem telefone'}</Text>
             {client.phone && (
               <View style={styles.actionButtonsContainer}>
-                <TouchableOpacity style={styles.btnActionWA} onPress={handleWhatsAppClick}>
-                  <Text style={styles.btnActionTextWA}>WA</Text>
+                {/* BOTÃO WA DINÂMICO (VERMELHO SE HOUVER ERRO, VERDE SE ESTIVER OK) */}
+                <TouchableOpacity 
+                  style={[
+                    styles.btnActionWA, 
+                    client.whatsappError ? { backgroundColor: '#fee2e2' } : { backgroundColor: '#dcfce7' }
+                  ]} 
+                  onPress={handleWhatsAppClick}
+                >
+                  <Text 
+                    style={[
+                      styles.btnActionTextWA, 
+                      client.whatsappError ? { color: '#dc2626' } : { color: '#16a34a' }
+                    ]}
+                  >
+                    WA
+                  </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity style={styles.btnActionCall} onPress={handlePhoneCall}>
                   <Text style={styles.btnActionTextCall}>Ligar</Text>
                 </TouchableOpacity>

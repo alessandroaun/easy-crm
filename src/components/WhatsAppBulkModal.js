@@ -215,6 +215,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                 let clientIndex = phase.clients.findIndex(c => c.id === lead.id);
                 
                 if (clientIndex !== -1) {
+                  // Remove o erro do WhatsApp pois enviou com sucesso agora!
+                  phase.clients[clientIndex].whatsappError = false;
                   let existingComments = Array.isArray(phase.clients[clientIndex].comments) ? phase.clients[clientIndex].comments : [];
                   phase.clients[clientIndex].comments = [zapComment, ...existingComments];
                   leadFound = true;
@@ -235,6 +237,49 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         } else {
           globalStats.error++;
           newLogItem = { status: 'error', text: `❌ Falha para ${lead.name} (${lead.phone}): ${result.reason}` };
+
+          // Comentário especial de falha em destaque vermelho
+          const failComment = { 
+            id: `fail_${Date.now()}`, 
+            text: `🔴 Robô WhatsApp: Não foi possível enviar mensagem para o WhatsApp, o número está incorreto ou não possui WhatsApp.`, 
+            date: new Date().toISOString() 
+          };
+
+          try {
+            const { data: boardData, error: fetchError } = await supabase
+              .from('crm_boards')
+              .select('data_payload')
+              .eq('id', 'crm_principal')
+              .single();
+
+            if (!fetchError && boardData && boardData.data_payload) {
+              let updatedPayload = { ...boardData.data_payload };
+              let leadFound = false;
+
+              for (let phase of updatedPayload.phases) {
+                if (!phase.clients) continue;
+                let clientIndex = phase.clients.findIndex(c => c.id === lead.id);
+                
+                if (clientIndex !== -1) {
+                  // Marca a flag de erro no WhatsApp e adiciona o comentário de falha
+                  phase.clients[clientIndex].whatsappError = true;
+                  let existingComments = Array.isArray(phase.clients[clientIndex].comments) ? phase.clients[clientIndex].comments : [];
+                  phase.clients[clientIndex].comments = [failComment, ...existingComments];
+                  leadFound = true;
+                  break;
+                }
+              }
+
+              if (leadFound) {
+                await supabase
+                  .from('crm_boards')
+                  .update({ data_payload: updatedPayload })
+                  .eq('id', 'crm_principal');
+              }
+            }
+          } catch (e) {
+            console.error("Erro ao gravar comentário de falha no Supabase:", e);
+          }
         }
 
         globalLogs = [...globalLogs, newLogItem];
