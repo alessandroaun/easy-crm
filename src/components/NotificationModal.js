@@ -1,7 +1,9 @@
 import React from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView, useWindowDimensions } from 'react-native';
 
 export default function NotificationModal({ visible, onClose, notifications, onDismiss, onDismissSystem }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 850;
   
   const formatTime = (isoString) => {
     const d = new Date(isoString);
@@ -10,8 +12,8 @@ export default function NotificationModal({ visible, onClose, notifications, onD
 
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+      <View style={[styles.overlay, isMobile ? styles.overlayMobile : styles.overlayDesktop]}>
+        <View style={[styles.modalContainer, isMobile ? styles.modalContainerMobile : styles.modalContainerDesktop]}>
           
           <View style={styles.header}>
             <Text style={styles.title}>🔔 Central de Notificações</Text>
@@ -27,7 +29,6 @@ export default function NotificationModal({ visible, onClose, notifications, onD
               </View>
             ) : (
               notifications.map((item) => {
-                // Se o item tiver 'type: Sistema', é um aviso do Robô Zap
                 if (item.type === 'Sistema') {
                   return (
                     <View key={item.id} style={[styles.notificationCard, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}>
@@ -43,7 +44,6 @@ export default function NotificationModal({ visible, onClose, notifications, onD
                   );
                 }
 
-                // Senão, é um agendamento original
                 const { client, appt, phaseId } = item;
                 return (
                   <View key={appt.id} style={styles.notificationCard}>
@@ -71,12 +71,28 @@ export default function NotificationModal({ visible, onClose, notifications, onD
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'flex-start', alignItems: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)' },
+  overlayDesktop: { justifyContent: 'flex-start', alignItems: 'flex-end' },
+  overlayMobile: { justifyContent: 'center', alignItems: 'center', padding: 16 },
+
   modalContainer: {
-    width: '100%', maxWidth: 400, backgroundColor: '#ffffff', borderRadius: 16, padding: 24,
-    marginTop: 80, marginRight: 24, maxHeight: '80%',
+    width: '100%', 
+    maxWidth: 400, 
+    backgroundColor: '#ffffff', 
+    borderRadius: 16, 
+    padding: 24,
+    maxHeight: '80%',
     ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } })
   },
+  modalContainerDesktop: {
+    marginTop: 80, 
+    marginRight: 24,
+  },
+  modalContainerMobile: {
+    marginTop: 0,
+    marginRight: 0,
+  },
+
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   title: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
   closeButton: { padding: 4 },

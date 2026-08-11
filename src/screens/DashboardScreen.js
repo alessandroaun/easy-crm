@@ -15,17 +15,15 @@ import InformacoesGerais from '../components/InformacoesGerais';
 import Configuracao from '../components/Configuracao';
 import WhatsAppBulkModal from '../components/WhatsAppBulkModal';
 
-// Fonte moderna injetada nativamente no Web
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
 export default function DashboardScreen() {
-  // AQUI É O LUGAR CORRETO DOS ESTADOS (Dentro da função principal)
-  const [activeView, setActiveView] = useState('kanban'); // 'kanban', 'minha_central', 'info_gerais'
+  const [activeView, setActiveView] = useState('kanban'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Hook de Responsividade
   const { width } = useWindowDimensions();
-  const isMobile = width < 850; // Se a tela for menor que 850px, ativa o modo responsivo/mobile
+  const isMobile = width < 850; 
 
   const [boardData, setBoardData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,19 +44,15 @@ export default function DashboardScreen() {
   const [isNotifModalVisible, setIsNotifModalVisible] = useState(false);
   const [activeNotifications, setActiveNotifications] = useState([]);
   
-  // =========================================================================
-  // MOTOR DE AUTO-SCROLL (Rola a tela sozinho quando chega na borda)
-  // =========================================================================
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     let scrollInterval = null;
 
     const handleDragOver = (e) => {
-      const edgeSize = 100; // Distância da borda para acionar o scroll (em pixels)
-      const scrollSpeed = 15; // Velocidade da rolagem
+      const edgeSize = 100; 
+      const scrollSpeed = 15; 
       let scrollDelta = 0;
 
-      // Se o dedo/mouse estiver muito à esquerda ou muito à direita
       if (e.clientX < edgeSize) scrollDelta = -scrollSpeed;
       else if (e.clientX > window.innerWidth - edgeSize) scrollDelta = scrollSpeed;
 
@@ -71,7 +65,7 @@ export default function DashboardScreen() {
                 : boardScrollRef.current;
               node.scrollLeft += scrollDelta;
             }
-          }, 20); // 50 quadros por segundo para rolar suave
+          }, 20); 
         }
       } else {
         clearInterval(scrollInterval);
@@ -84,7 +78,6 @@ export default function DashboardScreen() {
       scrollInterval = null;
     };
 
-    // Escuta o arrastar globalmente na tela
     document.addEventListener('dragover', handleDragOver);
     document.addEventListener('dragend', handleDragEnd);
     document.addEventListener('drop', handleDragEnd);
@@ -98,9 +91,7 @@ export default function DashboardScreen() {
       clearInterval(scrollInterval);
     };
   }, []);
-  // =========================================================================
 
-  // Relógio interno que bate a cada 1 minuto para checar notificações
   useEffect(() => {
     const checkNotifications = () => {
       if (!boardData) return;
@@ -114,7 +105,6 @@ export default function DashboardScreen() {
             client.appointments.forEach(appt => {
               if (!appt.notified) {
                 const eventTime = new Date(appt.dateTime);
-                // Subtrai os minutos de antecedência para descobrir a hora do aviso
                 const notifyTime = new Date(eventTime.getTime() - appt.reminderMinutes * 60000);
                 
                 if (now >= notifyTime) {
@@ -128,25 +118,21 @@ export default function DashboardScreen() {
       setActiveNotifications(notifs);
     };
 
-    checkNotifications(); // Checa na hora
-    const timer = setInterval(checkNotifications, 60000); // Checa a cada 1 minuto
+    checkNotifications(); 
+    const timer = setInterval(checkNotifications, 60000); 
     
     return () => clearInterval(timer);
   }, [boardData]);
 
-  // Referência para o ScrollView do Kanban
   const boardScrollRef = useRef(null);
 
-  // Efeito para converter rolagem vertical do mouse em rolagem horizontal no Web
   useEffect(() => {
     if (Platform.OS === 'web' && boardScrollRef.current) {
-      // O React Native Web possui o método getScrollableNode()
       const node = boardScrollRef.current.getScrollableNode 
         ? boardScrollRef.current.getScrollableNode() 
         : boardScrollRef.current;
 
       const handleWheel = (e) => {
-        // Se a rolagem for vertical (deltaY), convertemos para horizontal (scrollLeft)
         if (e.deltaY !== 0) {
           e.preventDefault();
           node.scrollLeft += e.deltaY;
@@ -159,22 +145,19 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    // 1. Faz a busca inicial padrão quando a tela carrega
     fetchBoardData();
 
-    // 2. Inscreve o aplicativo no canal de tempo real do Supabase
     const boardSubscription = supabase
       .channel('realtime-board')
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE', // Escuta apenas quando há atualizações (edição de leads, mover de fase, etc)
+          event: 'UPDATE', 
           schema: 'public',
           table: 'crm_boards',
-          filter: "id=eq.crm_principal" // Filtra para escutar apenas as mudanças do Kanban principal
+          filter: "id=eq.crm_principal" 
         },
         (payload) => {
-          // Essa mágica acontece sempre que o banco é atualizado!
           if (payload.new && payload.new.data_payload) {
             setBoardData(payload.new.data_payload);
           }
@@ -182,7 +165,6 @@ export default function DashboardScreen() {
       )
       .subscribe();
 
-    // 3. Limpa a inscrição quando você sair da tela para economizar memória
     return () => {
       supabase.removeChannel(boardSubscription);
     };
@@ -218,7 +200,6 @@ export default function DashboardScreen() {
     }
   };
 
-  // Defina a função aqui fora, no escopo principal do DashboardScreen
   const addSystemNotification = (title, message) => {
     const newNotif = {
       id: `sys_${Date.now()}`,
@@ -234,7 +215,6 @@ export default function DashboardScreen() {
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     newClient.createdAt = new Date().toISOString();
     
-    // Novo padrão: +55 (xx) xxxxxxxxx (sem hífen)
     if (newClient.phone) {
       let cl = newClient.phone.replace(/\D/g, '');
       if (!cl.startsWith('55') && cl.length <= 11) cl = '55' + cl;
@@ -251,7 +231,6 @@ export default function DashboardScreen() {
     }
   };
 
-  // Função para dispensar (dar check) na notificação
   const handleDismissNotification = (clientId, phaseId, appointmentId) => {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
@@ -264,7 +243,7 @@ export default function DashboardScreen() {
         const apptIndex = client.appointments.findIndex(a => a.id === appointmentId);
         
         if (apptIndex !== -1) {
-          client.appointments[apptIndex].notified = true; // Marca como lido
+          client.appointments[apptIndex].notified = true; 
           setBoardData(updatedBoard);
           syncBoardToDatabase(updatedBoard);
         }
@@ -275,7 +254,6 @@ export default function DashboardScreen() {
   const handleSaveNewPhase = (phaseTitle) => {
     if (!boardData) return;
     
-    // Pega o maior número de ordem atual e soma +1
     const nextOrder = boardData.phases.length > 0 
       ? Math.max(...boardData.phases.map(p => p.order || 0)) + 1 
       : 1;
@@ -285,13 +263,12 @@ export default function DashboardScreen() {
       title: phaseTitle, 
       clients: [], 
       color: '#f1f5f9',
-      order: nextOrder // Guarda a ordem
+      order: nextOrder 
     };
     
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     updatedBoard.phases.push(newPhase);
     
-    // Opcional: já garante a ordenação
     updatedBoard.phases.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     setBoardData(updatedBoard); 
@@ -308,12 +285,10 @@ export default function DashboardScreen() {
     const clientIndex = updatedBoard.phases[sourcePhaseIndex].clients.findIndex(c => c.id === clientId);
     if (clientIndex === -1) return;
     
-    // 1. Remove o card da posição original
     const [movedClient] = updatedBoard.phases[sourcePhaseIndex].clients.splice(clientIndex, 1);
     
     movedClient.updatedAt = new Date().toISOString();
 
-    // 2. Se mudou de fase, adiciona o comentário automático
     if (sourcePhaseId !== targetPhaseId) {
       const sourcePhaseName = updatedBoard.phases[sourcePhaseIndex].title;
       const targetPhaseName = updatedBoard.phases[targetPhaseIndex].title;
@@ -325,23 +300,17 @@ export default function DashboardScreen() {
       movedClient.comments = [phaseChangeComment, ...(movedClient.comments || [])];
     }
 
-    // 3. LÓGICA INTELIGENTE DE REORDENAÇÃO MANUAL
     if (targetClientId && targetClientId !== clientId) {
-      // Procura a posição exata do card em que você soltou em cima
       const targetClientIndex = updatedBoard.phases[targetPhaseIndex].clients.findIndex(c => c.id === targetClientId);
       
       if (targetClientIndex !== -1) {
-        // Insere o card arrastado EXATAMENTE na posição daquele card
         updatedBoard.phases[targetPhaseIndex].clients.splice(targetClientIndex, 0, movedClient);
       } else {
-        // Fallback de segurança: joga no final da coluna
         updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
       }
     } else if (sourcePhaseId === targetPhaseId) {
-      // Se ele soltou o card no vazio da MESMA coluna de onde tirou, devolve pra posição original
       updatedBoard.phases[targetPhaseIndex].clients.splice(clientIndex, 0, movedClient);
     } else {
-      // Se soltou no fundo (vazio) de OUTRA coluna, vai pro final daquela lista
       updatedBoard.phases[targetPhaseIndex].clients.push(movedClient);
     }
 
@@ -349,7 +318,6 @@ export default function DashboardScreen() {
     syncBoardToDatabase(updatedBoard);
   };
 
-  // Função que injeta comentários automáticos via ações rápidas no Card
   const handleAddCommentToClient = (clientId, phaseId, commentText) => {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
@@ -436,22 +404,13 @@ export default function DashboardScreen() {
 
   const handleUpdatePhase = (phaseId, newTitle, newColor, updatedPhases) => {
     if (!boardData) return;
-
-    // Criamos um novo objeto do quadro
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
-
-    // A mágica: Substituímos o array de fases inteiro pelo que o modal nos enviou (já ordenado)
-    // O modal nos enviou 'updatedPhases' com a ordem correta baseada nas setinhas!
     updatedBoard.phases = updatedPhases;
-
-    // Também atualizamos os dados da fase específica (título e cor)
     const phaseIndex = updatedBoard.phases.findIndex(p => p.id === phaseId);
     if (phaseIndex !== -1) {
       updatedBoard.phases[phaseIndex].title = newTitle;
       updatedBoard.phases[phaseIndex].color = newColor;
     }
-
-    // Salvamos
     setBoardData(updatedBoard);
     syncBoardToDatabase(updatedBoard);
   };
@@ -497,20 +456,54 @@ export default function DashboardScreen() {
   const getFilteredBoard = () => {
     if (!boardData) return null;
     const query = searchQuery.toLowerCase();
+    
     const filteredPhases = boardData.phases.map(phase => {
       const filteredClients = phase.clients.filter(client => {
-        const matchesText = !query || (client.name?.toLowerCase().includes(query)) || (client.phone?.toLowerCase().includes(query)) || (client.initialInfo?.toLowerCase().includes(query));
+        
+        const matchesText = !query || 
+          (client.name?.toLowerCase().includes(query)) || 
+          (client.phone?.toLowerCase().includes(query)) || 
+          (client.initialInfo?.toLowerCase().includes(query));
+        
         let matchesTag = true;
-        if (activeFilter === 'QUENTE') matchesTag = client.leadTemp?.toLowerCase().includes('quente');
-        else if (activeFilter === 'COM_LANCE') matchesTag = !!(client.bidAmount && client.bidAmount.trim() !== '' && client.bidAmount.trim() !== '0' && client.bidAmount.trim().toLowerCase() !== 'não');
-        else if (activeFilter === 'ALTA_PROB') {
-          const prob = parseInt(client.winProbability?.replace(/\D/g, '') || '0');
-          matchesTag = prob >= 50;
+        
+        const cat = client.category?.toLowerCase() || '';
+        const plat = client.platform?.toLowerCase() || '';
+        const isWaError = client.whatsappError === true;
+
+        switch(activeFilter) {
+          case 'AUTO':
+            matchesTag = cat.includes('auto') || cat.includes('carro');
+            break;
+          case 'IMOVEL':
+            matchesTag = cat.includes('imóvel') || cat.includes('casa') || cat.includes('apartamento');
+            break;
+          case 'INVESTIMENTO':
+            matchesTag = cat.includes('investimento');
+            break;
+          case 'INSTAGRAM':
+            matchesTag = plat.includes('instagram') || plat === 'ig';
+            break;
+          case 'FACEBOOK':
+            matchesTag = plat.includes('facebook') || plat === 'fb';
+            break;
+          case 'COM_WA':
+            matchesTag = !isWaError; 
+            break;
+          case 'SEM_WA':
+            matchesTag = isWaError; 
+            break;
+          case 'TODOS':
+          default:
+            matchesTag = true;
+            break;
         }
+
         return matchesText && matchesTag;
       });
       return { ...phase, clients: filteredClients };
     });
+    
     return { ...boardData, phases: filteredPhases };
   };
 
@@ -527,18 +520,34 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       
-      {/* ===== INÍCIO DO NOVO HEADER COMPACTO E RESPONSIVO ===== */}
-      <View style={[styles.topHeader, isMobile && styles.topHeaderMobile]}>
-        
-        {/* LINHA SUPERIOR NO MOBILE / ESQUERDA NO DESKTOP: Menu, Logo, Busca e Filtro */}
-        <View style={styles.headerLeftGroup}>
-          <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
-            <Text style={styles.menuIcon}>☰</Text>
-          </TouchableOpacity>
-          <Text style={styles.logoText3D}>Easy CRM</Text>
+      {/* ===== INÍCIO DO CABEÇALHO CONDICIONAL ===== */}
+      {isMobile ? (
+        // LAYOUT EXCLUSIVO PARA CELULAR (Organizado em 3 linhas compactas)
+        <View style={styles.topHeaderMobileContainer}>
+          
+          {/* 1ª Linha: Menu + Logo + Notificações */}
+          <View style={styles.mobileRowTop}>
+            <View style={styles.headerLeftGroup}>
+              <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
+                <Text style={styles.menuIcon}>☰</Text>
+              </TouchableOpacity>
+              <Text style={styles.logoText3D}>ALÊ CRM</Text>
+            </View>
+            
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
+              <Text style={styles.iconBtnText}>🔔</Text>
+              {(activeNotifications.length + systemNotifications.length) > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {activeNotifications.length + systemNotifications.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
 
-          {/* Barra de busca e Filtro integrados ao lado do logo no mobile para economizar espaço */}
-          <View style={[styles.headerCenter, isMobile && styles.headerCenterMobile]}>
+          {/* 2ª Linha: Busca + Filtro (100% da largura) */}
+          <View style={styles.mobileRowMiddle}>
             <View style={styles.searchContainer}>
               <TextInput
                 style={styles.searchInput}
@@ -557,50 +566,85 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* DIREITA: Notificações, Lixeira, Importar e Novo */}
-        <View style={[styles.headerRight, isMobile && styles.headerRightMobile]}>
-          
-          {/* No ícone do sino no Header, altere para somar os dois: */}
-<TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
-  <Text style={styles.iconBtnText}>🔔</Text>
-  {/* Soma as notificações de agendamento + as do sistema */}
-  {(activeNotifications.length + systemNotifications.length) > 0 && (
-    <View style={styles.notificationBadge}>
-      <Text style={styles.notificationBadgeText}>
-        {activeNotifications.length + systemNotifications.length}
-      </Text>
-    </View>
-  )}
-</TouchableOpacity>
-
-          {/* Botão de Disparo aparece APENAS no computador */}
-          {Platform.OS === 'web' && (
-            <TouchableOpacity 
-              style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
-              onPress={() => setIsWhatsAppModalVisible(true)}
-            >
-              <Text style={[styles.actionBtnSecondaryText, { color: '#fff' }]}>DisparaZap</Text>
+          {/* 3ª Linha: Ações de Lixeira, Importar e Novo */}
+          <View style={styles.mobileRowBottom}>
+            <TouchableOpacity style={[styles.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsTrashModalVisible(true)}>
+              <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
             </TouchableOpacity>
-          )}
+            <TouchableOpacity style={[styles.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsImportModalVisible(true)}>
+              <Text style={styles.actionBtnSecondaryText}>Importar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtnPrimary, styles.mobileActionBtn, { flex: 1.2 }]} onPress={() => setIsClientModalVisible(true)}>
+              <Text style={styles.actionBtnPrimaryText}>+ Novo</Text>
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
-            <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsImportModalVisible(true)}>
-            <Text style={styles.actionBtnSecondaryText}>Importar</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => setIsClientModalVisible(true)}>
-            <Text style={styles.actionBtnPrimaryText}>Novo</Text>
-          </TouchableOpacity>
-          
         </View>
+      ) : (
+        // LAYOUT EXCLUSIVO PARA COMPUTADOR (Preservado exatamente como estava)
+        <View style={styles.topHeader}>
+          <View style={styles.headerLeftGroup}>
+            <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
+              <Text style={styles.menuIcon}>☰</Text>
+            </TouchableOpacity>
+            <Text style={styles.logoText3D}>ALÊ CRM</Text>
 
-      </View>
-      {/* ===== FIM DO NOVO HEADER ===== */}
+            <View style={styles.headerCenter}>
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar Lead..."
+                  placeholderTextColor="#94a3b8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+              </View>
+              <TouchableOpacity 
+                style={[styles.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
+                onPress={() => setIsFilterModalVisible(true)}
+              >
+                <Text style={[styles.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
+                  Filtro
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
+              <Text style={styles.iconBtnText}>🔔</Text>
+              {(activeNotifications.length + systemNotifications.length) > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {activeNotifications.length + systemNotifications.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {Platform.OS === 'web' && (
+              <TouchableOpacity 
+                style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
+                onPress={() => setIsWhatsAppModalVisible(true)}
+              >
+                <Text style={[styles.actionBtnSecondaryText, { color: '#fff' }]}>DisparaZap</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
+              <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsImportModalVisible(true)}>
+              <Text style={styles.actionBtnSecondaryText}>Importar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => setIsClientModalVisible(true)}>
+              <Text style={styles.actionBtnPrimaryText}>Novo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      {/* ===== FIM DO CABEÇALHO ===== */}
 
       {/* RENDERIZAÇÃO CONDICIONAL DAS TELAS */}
       
@@ -670,39 +714,35 @@ export default function DashboardScreen() {
       <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} />
       <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
       <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} />
-        {/* Substitua a chamada do NotificationModal por esta: */}
-<NotificationModal 
-  visible={isNotifModalVisible} 
-  onClose={() => setIsNotifModalVisible(false)} 
-  notifications={[...activeNotifications, ...systemNotifications]} 
-  onDismiss={handleDismissNotification}
-  // Adicione esta linha abaixo:
-  onDismissSystem={() => setSystemNotifications([])} 
-/>
+      <NotificationModal 
+        visible={isNotifModalVisible} 
+        onClose={() => setIsNotifModalVisible(false)} 
+        notifications={[...activeNotifications, ...systemNotifications]} 
+        onDismiss={handleDismissNotification}
+        onDismissSystem={() => setSystemNotifications([])} 
+      />
 
-      {/* COLOQUE O MODAL DO WHATSAPP AQUI */}
       <WhatsAppBulkModal 
-      visible={isWhatsAppModalVisible} 
-      onClose={() => setIsWhatsAppModalVisible(false)} 
-      boardData={boardData}
-      onComplete={(stats) => {
-      addSystemNotification('Disparo Concluído', `Os disparos para ${stats.total} leads foram finalizados. Sucesso: ${stats.success}, Erros: ${stats.error}.`);
-      setIsNotifModalVisible(true); // Abre o modal automaticamente
-      }}
+        visible={isWhatsAppModalVisible} 
+        onClose={() => setIsWhatsAppModalVisible(false)} 
+        boardData={boardData}
+        onComplete={(stats) => {
+          addSystemNotification('Disparo Concluído', `Os disparos para ${stats.total} leads foram finalizados. Sucesso: ${stats.success}, Erros: ${stats.error}.`);
+          setIsNotifModalVisible(true);
+        }}
       />
 
     </View>
-    
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB', // Fundo cinza ultraclaro super moderno
+    backgroundColor: '#F9FAFB', 
   },
   
-  /* --- ESTILOS DO CABEÇALHO OTIMIZADO PARA CELULAR --- */
+  /* --- ESTILOS DO CABEÇALHO DESKTOP (Preservados) --- */
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -715,16 +755,6 @@ const styles = StyleSheet.create({
     zIndex: 50,
     ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } })
   },
-  topHeaderMobile: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-  },
-
   headerLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -747,21 +777,13 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     letterSpacing: -1,
     ...Platform.select({
-      web: {
-        textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb'
-      }
+      web: { textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb' }
     })
   },
-
   headerCenter: {
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 8,
-  },
-  headerCenterMobile: {
-    marginLeft: 4,
-    flex: 1,
-    maxWidth: 210, // Mantém a barra de busca compacta ao lado do logo no celular
   },
   searchContainer: {
     flexDirection: 'row',
@@ -804,15 +826,11 @@ const styles = StyleSheet.create({
   filterBtnTextActive: {
     color: '#2563EB',
   },
-
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 6,
-  },
-  headerRightMobile: {
-    gap: 4,
   },
   iconBtn: {
     padding: 4,
@@ -867,6 +885,64 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
+  /* --- NOVOS ESTILOS EXCLUSIVOS DO CABEÇALHO MOBILE --- */
+  /* --- ESTILOS OTIMIZADOS E REDUZIDOS DO CABEÇALHO MOBILE --- */
+  topHeaderMobileContainer: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingTop: 6,      // Reduzido o topo
+    paddingBottom: 8,   // Reduzido a base
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    zIndex: 50,
+    ...Platform.select({ web: { boxShadow: '0px 1px 4px rgba(0,0,0,0.08)' } })
+  },
+  mobileRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,    // Reduzido o espaço para a próxima linha
+  },
+  mobileRowMiddle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 6,    // Reduzido o espaço para a próxima linha
+  },
+  mobileRowBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+    width: '100%',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    flex: 1,
+    height: 28,         // Altura da barra de pesquisa menor
+    paddingHorizontal: 6,
+  },
+  filterBtn: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 6,
+    height: 28,         // Altura do botão de filtro menor
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  mobileActionBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6, // Botões inferiores mais finos e compactos
+  },
+
   /* --- ÁREA DO KANBAN --- */
   boardContainer: {
     flex: 1,
@@ -892,6 +968,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+
   /* --- ESTILOS DO MENU LATERAL --- */
   sidebarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, flexDirection: 'row' },
   sidebarBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)' },

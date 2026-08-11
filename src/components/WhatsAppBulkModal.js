@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient'; // Ajuste o caminho conforme o seu projeto
 import ReportModal from './ReportModal'; // Ajuste o caminho se necessário
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Image } from 'react-native';
@@ -17,6 +17,8 @@ export const setLeadUpdateCallback = (callback) => {
 };
 
 export default function WhatsAppBulkModal({ visible, onClose, boardData, onComplete}) {
+  const hasTransitioned = useRef(false);
+  const [connectionStage, setConnectionStage] = useState('qr_code'); // 'qr_code', 'loading', 'success', 'ready'
   const [botNumber, setBotNumber] = useState('');  
   const [selectedPhaseId, setSelectedPhaseId] = useState('all');
   const [selectedTag, setSelectedTag] = useState('all'); // Filtro de Tag / Origem / Categoria
@@ -55,22 +57,42 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   }, [visible]);
 
   const checkBotStatus = async () => {
-  try {
-    const response = await fetch('http://localhost:3001/status');
-    const data = await response.json();
+    try {
+      const response = await fetch('http://localhost:3001/status');
+      const data = await response.json();
 
-    setIsBotConnected(data.connected);
-    if (data.number) setBotNumber(data.number);
-    else setBotNumber('');
+      if (data.connected) {
+        // Se ainda não fizemos a transição, vamos para o sucesso
+        if (!hasTransitioned.current) {
+          hasTransitioned.current = true;
+          setConnectionStage('success');
+          
+          // O usuário vê a mensagem de sucesso por 2 segundos antes de liberar o form
+          setTimeout(() => {
+            setIsBotConnected(true);
+            setConnectionStage('ready');
+          }, 2000);
+        } else {
+          // Se já passou pela transição, apenas mantém conectado
+          setIsBotConnected(true);
+        }
+        
+        if (data.number) setBotNumber(data.number);
+      } else {
+        // Se desconectou, reseta tudo
+        hasTransitioned.current = false;
+        setIsBotConnected(false);
+        setConnectionStage('qr_code');
+      }
 
-    if (data.qrCode) setQrCodeImage(data.qrCode);
-    else setQrCodeImage(null);
-  } catch (error) {
-    setIsBotConnected(false);
-  } finally {
-    setLoadingStatus(false);
-  }
-};
+      if (data.qrCode) setQrCodeImage(data.qrCode);
+      else setQrCodeImage(null);
+    } catch (error) {
+      setIsBotConnected(false);
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
 
   // BUSCA O HISTÓRICO DIRETAMENTE DO SUPABASE
   const fetchHistorico = async () => {
@@ -444,201 +466,180 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           )}
 
           <View style={styles.fixedContentBox}>
-            {loadingStatus ? (
-              <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#2563eb" />
-                <Text style={styles.infoText}>Conectando ao Robô Local...</Text>
+  {loadingStatus ? (
+    <View style={styles.centerBox}>
+      <ActivityIndicator size="large" color="#2563eb" />
+      <Text style={styles.infoText}>Conectando ao Robô Local...</Text>
+    </View>
+  ) : connectionStage === 'success' ? (
+    <View style={styles.centerBox}>
+      <Text style={{ fontSize: 80 }}>✅</Text>
+      <Text style={[styles.statusSuccess, { fontSize: 22, marginTop: 20 }]}>Conexão bem sucedida!</Text>
+    </View>
+  ) : connectionStage === 'qr_code' ? (
+    <View style={styles.centerBox}>
+      <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
+      <Text style={styles.infoText}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
+      {qrCodeImage ? (
+        <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
+      ) : (
+        <ActivityIndicator color="#64748b" />
+      )}
+    </View>
+  ) : activeTab === 'historico' ? (
+    <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
+      <Text style={styles.label}>Histórico de Disparos Realizados</Text>
+      {historicoList.length === 0 ? (
+        <Text style={styles.emptyText}>Nenhum disparo registrado ainda.</Text>
+      ) : (
+        historicoList.map((item) => {
+          const getCleanMessage = (fullText) => {
+            if (!fullText) return 'Sem mensagem.';
+            if (fullText.includes('[DADOS_EXTRA:')) {
+              return fullText.split('[DADOS_EXTRA:')[0].trim();
+            }
+            return fullText;
+          };
+
+          return (
+            <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={styles.historyCard}>
+              <View style={styles.historyHeader}>
+                <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>
+                  {item.status}
+                </Text>
+                <Text style={styles.historyDate}>Início: {item.inicio}</Text>
               </View>
-            ) : !isBotConnected ? (
-              <View style={styles.centerBox}>
-                <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
-                <Text style={styles.infoText}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
-                {qrCodeImage ? (
-                  <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
-                ) : (
-                  <View style={styles.qrCodePlaceholder}>
-                    <ActivityIndicator color="#64748b" />
-                    <Text style={styles.infoText}>Gerando QR Code...</Text>
-                  </View>
-                )}
+              
+              <Text style={styles.historyMsg}>
+                <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
+              </Text>
+
+              <View style={{ marginVertical: 4 }}>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Mensagem Enviada:</Text>
+                <Text style={styles.historyMsgClean} numberOfLines={2}>
+                  {getCleanMessage(item.mensagem)}
+                </Text>
               </View>
-            ) : activeTab === 'historico' ? (
-              <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
-                <Text style={styles.label}>Histórico de Disparos Realizados</Text>
-                {historicoList.length === 0 ? (
-                  <Text style={styles.emptyText}>Nenhum disparo registrado ainda.</Text>
-                ) : (
-                  // Dentro do seu histórico no WhatsAppBulkModal:
-historicoList.map((item) => {
-  // Função para remover a tag técnica [DADOS_EXTRA:...] do card do histórico
-  const getCleanMessage = (fullText) => {
-    if (!fullText) return 'Sem mensagem.';
-    if (fullText.includes('[DADOS_EXTRA:')) {
-      return fullText.split('[DADOS_EXTRA:')[0].trim();
-    }
-    return fullText;
-  };
 
-  return (
-    <TouchableOpacity 
-      key={item.id} 
-      onPress={() => setSelectedReport(item)} 
-      style={styles.historyCard}
-    >
-      <View style={styles.historyHeader}>
-        <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>
-          {item.status}
-        </Text>
-        <Text style={styles.historyDate}>Início: {item.inicio}</Text>
-      </View>
-      
-      <Text style={styles.historyMsg}>
-        <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
-      </Text>
-
-      {/* MODIFICADO: Trocado de 'Resumo' para 'Mensagem Enviada' com o texto limpo */}
-      <View style={{ marginVertical: 4 }}>
-        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Mensagem Enviada:</Text>
-        <Text style={styles.historyMsgClean} numberOfLines={2}>
-          {getCleanMessage(item.mensagem)}
-        </Text>
+              <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+              
+              <View style={styles.historyStatsRow}>
+                <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
+                <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
+                <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })
+      )}
+    </ScrollView>
+  ) : (
+    // ESTADO 'ready' (Formulário de Disparo)
+    <ScrollView showsVerticalScrollIndicator={false} style={{height: 450}}>
+      <View style={styles.connectedBadge}>
+        <Text style={styles.connectedText}>🟢 WhatsApp Conectado: +{botNumber}</Text>
       </View>
 
-      <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
-      
-      <View style={styles.historyStatsRow}>
-        <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
-        <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
-        <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-})
-                )}
-              </ScrollView>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false} style={{height: 450}}>
-                <View style={styles.connectedBadge}>
-                  <Text style={styles.connectedText}>🟢 WhatsApp Conectado</Text>
-                </View>
+      {!isSending && logs.length === 0 && (
+        <>
+          <View style={styles.filtersRow}>
+            <View style={{flex: 1}}>
+              <Text style={styles.label}>Coluna (Fase)</Text>
+              <View style={styles.pickerContainer}>
+                <select style={styles.webSelect} value={selectedPhaseId} onChange={(e) => setSelectedPhaseId(e.target.value)}>
+                  <option value="all">Todas as Fases</option>
+                  {boardData?.phases?.map(phase => (
+                    <option key={phase.id} value={phase.id}>{phase.title} ({phase.clients?.length || 0})</option>
+                  ))}
+                </select>
+              </View>
+            </View>
 
-                {!isSending && logs.length === 0 && (
-                  <>
-                    <View style={styles.filtersRow}>
-                      <View style={{flex: 1}}>
-                        <Text style={styles.label}>Coluna (Fase)</Text>
-                        <View style={styles.pickerContainer}>
-                          <select 
-                            style={styles.webSelect} 
-                            value={selectedPhaseId} 
-                            onChange={(e) => setSelectedPhaseId(e.target.value)}
-                          >
-                            <option value="all">Todas as Fases</option>
-                            {boardData?.phases?.map(phase => (
-                              <option key={phase.id} value={phase.id}>{phase.title} ({phase.clients?.length || 0})</option>
-                            ))}
-                          </select>
-                        </View>
-                      </View>
-
-                      <View style={{flex: 1}}>
-                        <Text style={styles.label}>Origem ou Categoria</Text>
-                        <View style={styles.pickerContainer}>
-                          <select 
-                            style={styles.webSelect} 
-                            value={selectedTag} 
-                            onChange={(e) => setSelectedTag(e.target.value)}
-                          >
-                            <option value="all">Todas as Tags / Origens</option>
-                            <optgroup label="Origem / Plataforma">
-                              <option value="Instagram">Instagram</option>
-                              <option value="Facebook">Facebook</option>
-                              <option value="TikTok">TikTok</option>
-                              <option value="Google">Google</option>
-                              <option value="Indicação">Indicação</option>
-                            </optgroup>
-                            <optgroup label="Categoria / Produto">
-                              <option value="Auto">Auto (Veículos)</option>
-                              <option value="Imóvel">Imóvel</option>
-                              <option value="Serviço">Serviço</option>
-                              <option value="Investimento">Investimento</option>
-                            </optgroup>
-                          </select>
-                        </View>
-                      </View>
-                    </View>
-
-                    <Text style={styles.label}>Mensagem 1 (Obrigatória - Use {'{nome}'})</Text>
-                    <TextInput
-                      style={styles.textAreaLarge}
-                      multiline
-                      numberOfLines={3}
-                      value={msg1}
-                      onChangeText={setMsg1}
-                      placeholder="Digite a primeira mensagem..."
-                    />
-
-                    <Text style={styles.label}>Mensagem 2 (Opcional - Variação Anti-ban)</Text>
-                    <TextInput
-                      style={styles.textAreaLarge}
-                      multiline
-                      numberOfLines={3}
-                      value={msg2}
-                      onChangeText={setMsg2}
-                      placeholder="Digite a segunda mensagem alternativa..."
-                    />
-
-                    <TouchableOpacity style={[styles.primaryButton, {marginTop: 12, marginBottom: 20}]} onPress={handleStartBulkSend}>
-                      <Text style={styles.primaryButtonText}>Iniciar Disparo em Massa</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                {(isSending || logs.length > 0) && (
-                  <View style={styles.logWrapper}>
-                    <View style={styles.logHeaderBar}>
-                      <Text style={styles.progressLabel}>{progressText}</Text>
-                      {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
-                    </View>
-
-                    <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
-                      {logs.map((log, index) => (
-                        <Text key={index} style={[styles.logItem, log.status === 'error' ? styles.logError : styles.logSuccess]}>
-                          {log.text}
-                        </Text>
-                      ))}
-                    </ScrollView>
-
-                    {isSending && (
-                      <View style={styles.controlButtonsRow}>
-                        <TouchableOpacity 
-                          style={[styles.controlBtn, isPaused ? styles.btnResume : styles.btnPause]} 
-                          onPress={handleTogglePause}
-                        >
-                          <Text style={styles.controlBtnText}>
-                            {isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
-                          <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {!isSending && (
-                      <TouchableOpacity 
-                        style={[styles.primaryButton, { marginTop: 16, marginBottom: 20 }]} 
-                        onPress={() => { globalLogs = []; setLogs([]); }}
-                      >
-                        <Text style={styles.primaryButtonText}>Fazer Novo Disparo</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-              </ScrollView>
-            )}
+            <View style={{flex: 1}}>
+              <Text style={styles.label}>Origem ou Categoria</Text>
+              <View style={styles.pickerContainer}>
+                <select style={styles.webSelect} value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)}>
+                  <option value="all">Todas as Tags / Origens</option>
+                  <optgroup label="Origem / Plataforma">
+                    <option value="Instagram">Instagram</option>
+                    <option value="Facebook">Facebook</option>
+                    <option value="TikTok">TikTok</option>
+                    <option value="Google">Google</option>
+                    <option value="Indicação">Indicação</option>
+                  </optgroup>
+                  <optgroup label="Categoria / Produto">
+                    <option value="Auto">Auto (Veículos)</option>
+                    <option value="Imóvel">Imóvel</option>
+                    <option value="Serviço">Serviço</option>
+                    <option value="Investimento">Investimento</option>
+                  </optgroup>
+                </select>
+              </View>
+            </View>
           </View>
+
+          <Text style={styles.label}>Mensagem 1 (Obrigatória - Use {'{nome}'})</Text>
+          <TextInput
+            style={styles.textAreaLarge}
+            multiline
+            numberOfLines={3}
+            value={msg1}
+            onChangeText={setMsg1}
+            placeholder="Digite a primeira mensagem..."
+          />
+
+          <Text style={styles.label}>Mensagem 2 (Opcional - Variação Anti-ban)</Text>
+          <TextInput
+            style={styles.textAreaLarge}
+            multiline
+            numberOfLines={3}
+            value={msg2}
+            onChangeText={setMsg2}
+            placeholder="Digite a segunda mensagem alternativa..."
+          />
+
+          <TouchableOpacity style={[styles.primaryButton, {marginTop: 12, marginBottom: 20}]} onPress={handleStartBulkSend}>
+            <Text style={styles.primaryButtonText}>Iniciar Disparo em Massa</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {(isSending || logs.length > 0) && (
+        <View style={styles.logWrapper}>
+          <View style={styles.logHeaderBar}>
+            <Text style={styles.progressLabel}>{progressText}</Text>
+            {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
+          </View>
+
+          <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
+            {logs.map((log, index) => (
+              <Text key={index} style={[styles.logItem, log.status === 'error' ? styles.logError : styles.logSuccess]}>
+                {log.text}
+              </Text>
+            ))}
+          </ScrollView>
+
+          {isSending && (
+            <View style={styles.controlButtonsRow}>
+              <TouchableOpacity style={[styles.controlBtn, isPaused ? styles.btnResume : styles.btnPause]} onPress={handleTogglePause}>
+                <Text style={styles.controlBtnText}>{isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
+                <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!isSending && (
+            <TouchableOpacity style={[styles.primaryButton, { marginTop: 16, marginBottom: 20 }]} onPress={() => { globalLogs = []; setLogs([]); }}>
+              <Text style={styles.primaryButtonText}>Fazer Novo Disparo</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </ScrollView>
+  )}
+</View>
 
         </View>
       </View>
@@ -727,5 +728,16 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     fontStyle: 'italic',
     marginTop: 2
+  },
+  statusSuccess: {
+    color: '#16a34a',
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  centerBox: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    padding: 20 
   }
 });

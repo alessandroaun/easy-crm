@@ -26,7 +26,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
 
-  // Função para exibir o alerta com animação suave
   const showCustomAlert = (type, title, message) => {
     setAlertConfig({ visible: true, type, title, message });
     alertScale.setValue(0.8);
@@ -37,7 +36,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     ]).start();
   };
 
-  // Função para fechar o alerta com animação de saída
   const closeCustomAlert = () => {
     Animated.parallel([
       Animated.timing(alertScale, { toValue: 0.8, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
@@ -67,10 +65,8 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     }
   }, [clientData]);
 
-  // Integração com o Robô de WhatsApp
   useEffect(() => {
     setLeadUpdateCallback((leadId, messageText) => {
-      // Verifica se o lead que está aberto na tela é o mesmo que recebeu a mensagem
       if (clientData?.id === leadId) {
         const newComment = { 
           id: `zap_${Date.now()}`, 
@@ -78,7 +74,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
           date: new Date().toISOString() 
         };
         
-        // Atualiza o estado local para exibir na tela instantaneamente
         setFormData(prev => ({ 
           ...prev, 
           comments: [newComment, ...(prev.comments || [])] 
@@ -86,7 +81,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       }
     });
 
-    // Limpeza ao desmontar o componente
     return () => setLeadUpdateCallback(null);
   }, [clientData]);
 
@@ -161,7 +155,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
       if (isNaN(eventDateTime.getTime())) throw new Error("Data inválida");
 
-      // VALIDAÇÃO: Impede agendamentos no passado
       if (eventDateTime <= new Date()) {
         showCustomAlert('error', 'Ação Inválida', 'A data e o horário do agendamento devem ser no futuro. Por favor, escolha um horário válido.');
         return;
@@ -184,7 +177,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
         ]
       }));
       
-      // Aciona o Modal de Sucesso Customizado
       showCustomAlert('success', 'Agendado!', 'Seu compromisso foi salvo e você será notificado no horário programado.');
       
     } catch (error) {
@@ -232,14 +224,29 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
   if (!clientData) return null;
 
-  const TabButton = ({ id, label }) => (
-    <TouchableOpacity 
-      style={[styles.tabButton, isMobile && styles.tabButtonMobile, activeTab === id && styles.tabButtonActive, isMobile && activeTab === id && styles.tabButtonMobileActive]} 
-      onPress={() => setActiveTab(id)}
-    >
-      <Text style={[styles.tabText, isMobile && styles.tabTextMobile, activeTab === id && styles.tabTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
+  const TabButton = ({ id, label }) => {
+    const isActive = activeTab === id;
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.tabButton, 
+          isMobile && styles.tabButtonMobile, 
+          isActive && styles.tabButtonActive, 
+          isMobile && isActive && styles.tabButtonMobileActive
+        ]} 
+        onPress={() => setActiveTab(id)}
+      >
+        <Text style={[
+          styles.tabText, 
+          isMobile && styles.tabTextMobile, 
+          isActive && styles.tabTextActive,
+          isMobile && isActive && styles.tabTextMobileActive
+        ]}>
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   const CommentsSection = () => (
     <View style={[styles.commentsContainer, isMobile && styles.commentsContainerMobile]}>
@@ -270,7 +277,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
         
-        {/* MODAL ANIMADO DE ALERTA (Sucesso / Erro) */}
         {alertConfig.visible && (
           <View style={styles.successAlertOverlay}>
             <Animated.View style={[styles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
@@ -301,7 +307,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
             
             {isMobile ? (
               <View style={styles.sidebarMobileContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sidebarMobile}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sidebarMobile} contentContainerStyle={{ paddingRight: 20 }}>
                   <TabButton id="informacoes" label="Informações" />
                   <TabButton id="dados" label="Dados Pessoais" />
                   <TabButton id="consorcio" label="Interesse" />
@@ -343,6 +349,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               {activeTab === 'agendamentos' && (
                 <View style={[styles.splitContainer, isMobile && styles.splitContainerMobile]}>
                   
+                  {/* Bloco da Esquerda: Criar Agendamento */}
                   <View style={[styles.splitLeft, isMobile && styles.splitLeftMobile]}>
                     <Text style={styles.sectionTitle}>Criar Novo Agendamento</Text>
                     
@@ -381,10 +388,11 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                     </TouchableOpacity>
                   </View>
 
+                  {/* Bloco da Direita: Agendamentos Ativos (Com espaçamento seguro no celular) */}
                   <View style={[styles.splitRight, isMobile && styles.splitRightMobile]}>
                     <Text style={styles.sectionTitle}>Agendamentos Ativos</Text>
                     
-                    <ScrollView style={{maxHeight: 400}} showsVerticalScrollIndicator={false}>
+                    <View style={{ width: '100%' }}>
                       {(!formData.appointments || formData.appointments.length === 0) ? (
                         <Text style={styles.noCommentsText}>Nenhum agendamento futuro.</Text>
                       ) : (
@@ -411,7 +419,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                           </View>
                         ))
                       )}
-                    </ScrollView>
+                    </View>
                   </View>
 
                 </View>
@@ -550,9 +558,10 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#2563eb' },
   sidebarMobileContainer: { borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: '#f8fafc' },
   sidebarMobile: { paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row' },
-  tabButtonMobile: { marginRight: 8, marginBottom: 0, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#e2e8f0' },
+  tabButtonMobile: { marginRight: 8, marginBottom: 0, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#e2e8f0', borderRadius: 20 },
   tabButtonMobileActive: { backgroundColor: '#2563eb' },
   tabTextMobile: { fontSize: 13, color: '#475569' },
+  tabTextMobileActive: { color: '#ffffff', fontWeight: '700' },
   contentArea: { flex: 1, padding: 24, backgroundColor: '#ffffff' },
   contentAreaMobile: { padding: 16 },
   formSection: { paddingBottom: 40 },
@@ -564,19 +573,20 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 14, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
   inputSmall: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, fontSize: 13, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
 
-  splitContainer: { flexDirection: 'row', width: '100%' },
-  splitContainerMobile: { flexDirection: 'column' },
-  splitLeft: { flex: 1.6, paddingRight: 24 },
-  splitLeftMobile: { paddingRight: 0, paddingBottom: 24 },
+  /* --- CORREÇÃO DEFINITIVA DO ESPAÇAMENTO MOBILE --- */
+  splitContainer: { flexDirection: 'row', width: '100%', gap: 24 },
+  splitContainerMobile: { flexDirection: 'column', width: '100%' },
+  splitLeft: { flex: 1.6 },
+  splitLeftMobile: { width: '100%', marginBottom: 28 }, // Espaçamento inferior generoso para afastar da lista
   splitRight: { flex: 1, borderLeftWidth: 1, borderColor: '#e2e8f0', paddingLeft: 24 },
-  splitRightMobile: { borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, paddingTop: 24 },
+  splitRightMobile: { width: '100%', borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 20, marginTop: 35 },
   
   apptTypeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   apptTypeBtn: { backgroundColor: '#f1f5f9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
   apptTypeBtnActive: { backgroundColor: '#e0e7ff', borderColor: '#4f46e5' },
   apptTypeText: { color: '#64748b', fontWeight: '600', fontSize: 12 },
   apptTypeTextActive: { color: '#4f46e5' },
-  saveApptBtn: { backgroundColor: '#f59e0b', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+  saveApptBtn: { backgroundColor: '#f59e0b', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 12, marginBottom: 8 },
   saveApptBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
   deleteApptBtn: { padding: 4, backgroundColor: '#fee2e2', borderRadius: 6 },
 
