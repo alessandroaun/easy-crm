@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions, Animated } from 'react-native';
 import KanbanColumn from '../components/KanbanColumn';
 import AddClientModal from '../components/AddClientModal';
 import AddPhaseModal from '../components/AddPhaseModal';
@@ -14,21 +14,60 @@ import MinhaCentral from '../components/MinhaCentral';
 import InformacoesGerais from '../components/InformacoesGerais';
 import Configuracao from '../components/Configuracao';
 import WhatsAppBulkModal from '../components/WhatsAppBulkModal';
+import AdminPanel from '../components/AdminPanel';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
 export default function DashboardScreen() {
   const [activeView, setActiveView] = useState('kanban'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSellersDropdownOpen, setIsSellersDropdownOpen] = useState(false);
 
   // Hook de Responsividade
   const { width } = useWindowDimensions();
   const isMobile = width < 850; 
 
   const [boardData, setBoardData] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [loggedUserId, setLoggedUserId] = useState(null);
+  const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  const [adminNotifications, setAdminNotifications] = useState([]);
   const [isClientModalVisible, setIsClientModalVisible] = useState(false);
+  const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+  
+  // Estados da Troca de Senha Própria
+  const [isChangePassModalVisible, setIsChangePassModalVisible] = useState(false);
+  const [newPass, setNewPass] = useState('');
+  const [newPassConfirm, setNewPassConfirm] = useState('');
+  const [isChangingPass, setIsChangingPass] = useState(false);
+
+  // Motor Dinâmico de Alertas (Sucesso / Erro)
+  const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
+  const alertScale = useRef(new Animated.Value(0.8)).current;
+  const alertOpacity = useRef(new Animated.Value(0)).current;
+
+  const showCustomAlert = (type, title, message) => {
+    setAlertConfig({ visible: true, type, title, message });
+    alertScale.setValue(0.8);
+    alertOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(alertScale, { toValue: 1, friction: 6, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(alertOpacity, { toValue: 1, duration: 250, useNativeDriver: Platform.OS !== 'web' })
+    ]).start();
+  };
+
+  const closeCustomAlert = () => {
+    Animated.parallel([
+      Animated.timing(alertScale, { toValue: 0.8, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(alertOpacity, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      setAlertConfig({ visible: false, type: 'success', title: '', message: '' });
+    });
+  };
+
   const [isPhaseModalVisible, setIsPhaseModalVisible] = useState(false);
   const [isTrashModalVisible, setIsTrashModalVisible] = useState(false);
   const [isDetailsModalVisible, setIsDetailsModalVisible] = useState(false);
@@ -43,6 +82,48 @@ export default function DashboardScreen() {
   const [activeFilter, setActiveFilter] = useState('TODOS');
   const [isNotifModalVisible, setIsNotifModalVisible] = useState(false);
   const [activeNotifications, setActiveNotifications] = useState([]);
+
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
+
+  const fetchInitialData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setLoggedUserId(user.id);
+
+      // 1. Busca o perfil para saber se tá ativo e se é admin
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      setUserProfile(profile);
+
+      // Se não for ativo, para aqui.
+      if (profile && profile.status === 'ativo') {
+        // Se for admin, busca todos os usuários ativos para o menu
+        if (profile.role === 'admin') {
+          const { data: users } = await supabase
+            .from('user_profiles')
+            .select('id, name, email')
+            .eq('status', 'ativo');
+          setUsersList(users || []);
+        }
+        
+        // Define o usuário atual (vai engatilhar o useEffect abaixo)
+        setCurrentUserId(user.id);
+      } else {
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error(error);
+      setLoading(false);
+    }
+  };
   
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -92,36 +173,79 @@ export default function DashboardScreen() {
     };
   }, []);
 
+  // ===== CORREÇÃO: O CÉREBRO DAS NOTIFICAÇÕES AGORA BUSCA DADOS DO ADMIN =====
   useEffect(() => {
-    const checkNotifications = () => {
-      if (!boardData) return;
+    const checkNotifications = async () => {
       
-      const now = new Date();
-      const notifs = [];
-
-      boardData.phases.forEach(phase => {
-        phase.clients.forEach(client => {
-          if (client.appointments) {
-            client.appointments.forEach(appt => {
-              if (!appt.notified) {
-                const eventTime = new Date(appt.dateTime);
-                const notifyTime = new Date(eventTime.getTime() - appt.reminderMinutes * 60000);
-                
-                if (now >= notifyTime) {
-                  notifs.push({ client, appt, phaseId: phase.id });
+      // 1. Notificações do Kanban (Leads)
+      if (boardData) {
+        const now = new Date();
+        const notifs = [];
+        boardData.phases.forEach(phase => {
+          phase.clients.forEach(client => {
+            if (client.appointments) {
+              client.appointments.forEach(appt => {
+                if (!appt.notified) {
+                  const eventTime = new Date(appt.dateTime);
+                  const notifyTime = new Date(eventTime.getTime() - appt.reminderMinutes * 60000);
+                  
+                  if (now >= notifyTime) {
+                    notifs.push({ client, appt, phaseId: phase.id });
+                  }
                 }
-              }
-            });
-          }
+              });
+            }
+          });
         });
-      });
-      setActiveNotifications(notifs);
+        setActiveNotifications(notifs);
+      }
+
+      // 2. Notificações do Admin (Pedidos de Reset)
+      if (userProfile && userProfile.role === 'admin') {
+        try {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('id, email, name')
+            .eq('reset_requested', true);
+            
+          if (data) {
+            const resetNotifs = data.map(user => ({
+              id: `req_${user.id}`,
+              userId: user.id,
+              email: user.email,
+              name: user.name || 'Nome não informado',
+              type: 'ResetRequest'
+            }));
+            setAdminNotifications(resetNotifs);
+          }
+        } catch (error) {
+          console.error("Erro ao checar admin notifications:", error);
+        }
+      }
     };
 
     checkNotifications(); 
     const timer = setInterval(checkNotifications, 60000); 
-    
     return () => clearInterval(timer);
+  }, [boardData, userProfile]);
+
+  useEffect(() => {
+    // Motor de Notificações Injetadas via Transferência
+    if (boardData && boardData.unreadNotifications && boardData.unreadNotifications.length > 0) {
+      
+      // Joga para a lista local visual
+      setSystemNotifications(prev => [...boardData.unreadNotifications, ...prev]);
+      
+      // Remove do banco de dados para não notificar duas vezes
+      const updatedBoard = JSON.parse(JSON.stringify(boardData));
+      delete updatedBoard.unreadNotifications;
+      
+      setBoardData(updatedBoard);
+      syncBoardToDatabase(updatedBoard);
+      
+      // Abre o modal de notificação para chamar a atenção
+      setIsNotifModalVisible(true);
+    }
   }, [boardData]);
 
   const boardScrollRef = useRef(null);
@@ -145,17 +269,42 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    fetchBoardData();
+    if (!currentUserId) return;
 
+    const fetchAndSubscribeBoard = async () => {
+      setLoading(true);
+      
+      // Busca o board do usuário atual selecionado na "lente"
+      const { data: board } = await supabase
+        .from('crm_boards')
+        .select('data_payload, id')
+        .eq('user_id', currentUserId)
+        .maybeSingle();
+
+      if (board) {
+        setBoardData(board.data_payload);
+      } else {
+        const defaultData = { phases: [{ id: "phase_1", title: "Novo Cliente", clients: [] }], trash: [] };
+        const newBoardId = `board_${Date.now()}`;
+        await supabase.from('crm_boards').insert([{ id: newBoardId, user_id: currentUserId, data_payload: defaultData }]);
+        setBoardData(defaultData);
+      }
+      
+      setLoading(false);
+    };
+
+    fetchAndSubscribeBoard();
+
+    // Inscreve no Realtime focando apenas no usuário da "lente"
     const boardSubscription = supabase
-      .channel('realtime-board')
+      .channel(`realtime-board-${currentUserId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE', 
           schema: 'public',
           table: 'crm_boards',
-          filter: "id=eq.crm_principal" 
+          filter: `user_id=eq.${currentUserId}` 
         },
         (payload) => {
           if (payload.new && payload.new.data_payload) {
@@ -165,34 +314,22 @@ export default function DashboardScreen() {
       )
       .subscribe();
 
+    // Limpa a inscrição antiga se o admin trocar de vendedor
     return () => {
       supabase.removeChannel(boardSubscription);
     };
-  }, []);
-
-  const fetchBoardData = async () => {
-    try {
-      const { data, error } = await supabase.from('crm_boards').select('data_payload').eq('id', 'crm_principal').maybeSingle();
-      if (error) throw error;
-
-      if (data) {
-        setBoardData(data.data_payload);
-      } else {
-        const defaultData = { boardId: "crm_principal", phases: [{ id: "phase_1", title: "Novo Cliente", clients: [] }] };
-        setBoardData(defaultData);
-        await supabase.from('crm_boards').insert([{ id: 'crm_principal', data_payload: defaultData }]);
-      }
-    } catch (error) {
-      console.error("Erro ao buscar dados:", error.message);
-      alert("Erro ao carregar o CRM.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [currentUserId]);
 
   const syncBoardToDatabase = async (updatedBoard) => {
     try {
-      const { data, error } = await supabase.from('crm_boards').update({ data_payload: updatedBoard }).eq('id', 'crm_principal').select();
+      if (!currentUserId) return;
+      
+      const { data, error } = await supabase
+        .from('crm_boards')
+        .update({ data_payload: updatedBoard })
+        .eq('user_id', currentUserId) 
+        .select();
+        
       if (error) throw error;
       if (!data || data.length === 0) console.error("Falha silenciosa no RLS.");
     } catch (error) {
@@ -227,7 +364,7 @@ export default function DashboardScreen() {
       setBoardData(updatedBoard); 
       syncBoardToDatabase(updatedBoard); 
     } else {
-      alert("Crie pelo menos uma fase.");
+      showCustomAlert('error', 'Atenção', 'Crie pelo menos uma fase.');
     }
   };
 
@@ -453,6 +590,67 @@ export default function DashboardScreen() {
     }
   };
 
+  const handleApproveReset = async (targetUserId, targetEmail) => {
+    try {
+      // 1. Reseta a senha do usuário via RPC para 'Senha123!'
+      const { error } = await supabase.rpc('admin_reset_user_credentials', {
+        target_user_id: targetUserId,
+        new_email: targetEmail,
+        new_password: 'Senha123!'
+      });
+      if (error) throw error;
+      
+      // 2. Remove a flag de pedido de reset
+      await supabase.from('user_profiles').update({ reset_requested: false }).eq('id', targetUserId);
+
+      // 3. Dispara o e-mail nativo de recuperação do Supabase informando o e-mail do usuário
+      await supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: 'https://seu-app.com/update-password', // Opcional: link para redirecionar se necessário
+      });
+
+      showCustomAlert('success', 'Sucesso', `Senha de ${targetEmail} redefinida para 'Senha123!' e e-mail de notificação enviado pelo Supabase.`);
+      setAdminNotifications(prev => prev.filter(n => n.userId !== targetUserId));
+    } catch (err) {
+      showCustomAlert('error', 'Erro', "Erro ao resetar: " + err.message);
+    }
+  };
+
+  // Função para o Admin recusar o reset
+  const handleRejectReset = async (targetUserId) => {
+    await supabase.from('user_profiles').update({ reset_requested: false }).eq('id', targetUserId);
+    setAdminNotifications(prev => prev.filter(n => n.userId !== targetUserId));
+  };
+
+  // ===== FUNÇÃO ATUALIZADA: O PRÓPRIO USUÁRIO TROCAR A SENHA (PADRÃO SENHA123!) =====
+  const handleUpdateOwnPassword = async () => {
+    const validatePassword = (pwd) => {
+      const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$/;
+      return regex.test(pwd);
+    };
+
+    if (!validatePassword(newPass)) {
+      showCustomAlert('error', 'Senha Inválida', 'A senha deve conter no mínimo 6 caracteres, incluindo letra maiúscula, minúscula, número e caractere especial (Ex: Senha123!).');
+      return;
+    }
+    if (newPass !== newPassConfirm) {
+      showCustomAlert('error', 'Erro', 'As senhas não coincidem.');
+      return;
+    }
+
+    setIsChangingPass(true);
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    setIsChangingPass(false);
+
+    if (error) {
+      showCustomAlert('error', 'Erro', "Erro ao alterar senha: " + error.message);
+    } else {
+      showCustomAlert('success', 'Sucesso', 'Sua senha foi atualizada com sucesso!');
+      setIsChangePassModalVisible(false);
+      setNewPass('');
+      setNewPassConfirm('');
+    }
+  };
+
   const getFilteredBoard = () => {
     if (!boardData) return null;
     const query = searchQuery.toLowerCase();
@@ -517,6 +715,108 @@ export default function DashboardScreen() {
     );
   }
 
+  // TELA DE BLOQUEIO (Conta Pendente ou Inativa)
+  if (!userProfile || userProfile.status !== 'ativo') {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc', padding: 24 }}>
+        <Text style={{ fontSize: 48, marginBottom: 16 }}>⏳</Text>
+        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1e293b', marginBottom: 8, textAlign: 'center' }}>
+          {userProfile?.status === 'inativo' ? 'Conta Desativada' : 'Aguardando Liberação'}
+        </Text>
+        <Text style={{ fontSize: 16, color: '#64748b', textAlign: 'center', maxWidth: 400 }}>
+          {userProfile?.status === 'inativo' 
+            ? 'Sua conta foi suspensa pelo administrador.' 
+            : 'Seu cadastro foi recebido! Aguarde o administrador aprovar o seu acesso ao CRM.'}
+        </Text>
+        <TouchableOpacity 
+          style={{ marginTop: 24, padding: 12, backgroundColor: '#e2e8f0', borderRadius: 8 }}
+          onPress={() => supabase.auth.signOut()}
+        >
+          <Text style={{ color: '#475569', fontWeight: 'bold' }}>Sair / Voltar ao Login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const handleTransferLead = async (leadData, targetUserId, withoutComment) => {
+    try {
+      if (!boardData) return;
+      
+      // 1. Remove do Kanban atual (de onde o lead está saindo)
+      const updatedCurrentBoard = JSON.parse(JSON.stringify(boardData));
+      let leadRemoved = false;
+      
+      for (let phase of updatedCurrentBoard.phases) {
+        const cIndex = phase.clients.findIndex(c => c.id === leadData.id);
+        if (cIndex !== -1) {
+          phase.clients.splice(cIndex, 1);
+          leadRemoved = true;
+          break;
+        }
+      }
+      
+      if (leadRemoved) {
+        setBoardData(updatedCurrentBoard);
+        syncBoardToDatabase(updatedCurrentBoard);
+      }
+
+      // 2. Busca o Kanban do vendedor destino diretamente do banco
+      const { data: targetBoardRow } = await supabase
+        .from('crm_boards')
+        .select('data_payload, id')
+        .eq('user_id', targetUserId)
+        .maybeSingle();
+
+      if (targetBoardRow && targetBoardRow.data_payload) {
+        let targetBoard = targetBoardRow.data_payload;
+        
+        // Insere comentário automático (se não foi desmarcado)
+        if (!withoutComment) {
+          const transferComment = {
+            id: `sys_transf_${Date.now()}`,
+            text: `⚙️ Sistema: Lead transferido pelo Administrador.`,
+            date: new Date().toISOString()
+          };
+          leadData.comments = [transferComment, ...(leadData.comments || [])];
+        }
+
+        // Reseta o "updatedAt" para aparecer lá em cima na fila
+        leadData.updatedAt = new Date().toISOString();
+
+        // Adiciona na primeira fase (Novo Cliente) do vendedor destino
+        if (targetBoard.phases.length > 0) {
+           targetBoard.phases[0].clients.unshift(leadData);
+        }
+        
+        // 3. Prepara a Notificação Cruzada para o destino
+        const fromUser = usersList.find(u => u.id === currentUserId);
+        const fromName = fromUser ? (fromUser.name || fromUser.email) : 'outro vendedor';
+        
+        const newNotif = {
+          id: `notif_${Date.now()}`,
+          type: 'Sistema',
+          text: `📢 Novo Lead! O administrador transferiu "${leadData.name || 'Sem Nome'}" do funil de ${fromName} para a sua coluna inicial.`,
+          date: new Date().toISOString()
+        };
+        
+        // Anexa a notificação na "caixa de entrada" do board dele
+        targetBoard.unreadNotifications = [newNotif, ...(targetBoard.unreadNotifications || [])];
+
+        // 4. Salva o Kanban atualizado do vendedor destino no banco
+        await supabase
+          .from('crm_boards')
+          .update({ data_payload: targetBoard })
+          .eq('id', targetBoardRow.id);
+          
+        showCustomAlert('success', 'Transferência Concluída', `O lead foi transferido com sucesso.`);
+      } else {
+        showCustomAlert('error', 'Erro', 'O quadro do vendedor destino não foi encontrado ou está vazio.');
+      }
+    } catch (err) {
+      showCustomAlert('error', 'Erro', 'Falha ao transferir lead: ' + err.message);
+    }
+  };
+
   return (
     <View style={styles.container}>
       
@@ -536,10 +836,10 @@ export default function DashboardScreen() {
             
             <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
               <Text style={styles.iconBtnText}>🔔</Text>
-              {(activeNotifications.length + systemNotifications.length) > 0 && (
+              {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>
-                    {activeNotifications.length + systemNotifications.length}
+                    {activeNotifications.length + systemNotifications.length + adminNotifications.length}
                   </Text>
                 </View>
               )}
@@ -582,7 +882,7 @@ export default function DashboardScreen() {
 
         </View>
       ) : (
-        // LAYOUT EXCLUSIVO PARA COMPUTADOR (Preservado exatamente como estava)
+        // LAYOUT EXCLUSIVO PARA COMPUTADOR
         <View style={styles.topHeader}>
           <View style={styles.headerLeftGroup}>
             <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
@@ -614,16 +914,16 @@ export default function DashboardScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
               <Text style={styles.iconBtnText}>🔔</Text>
-              {(activeNotifications.length + systemNotifications.length) > 0 && (
+              {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>
-                    {activeNotifications.length + systemNotifications.length}
+                    {activeNotifications.length + systemNotifications.length + adminNotifications.length}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
 
-            {Platform.OS === 'web' && (
+            {Platform.OS === 'web' && currentUserId === loggedUserId && (
               <TouchableOpacity 
                 style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
                 onPress={() => setIsWhatsAppModalVisible(true)}
@@ -680,7 +980,9 @@ export default function DashboardScreen() {
         <Configuracao />
       )}
 
-      {/* MODAL DO MENU LATERAL */}
+      {activeView === 'admin_panel' && (<AdminPanel />)}
+
+      {/* MODAL DO MENU LATERAL COM O BOTÃO DE TROCAR SENHA ADICIONADO */}
       {isMenuOpen && (
         <View style={styles.sidebarOverlay}>
           <TouchableOpacity style={styles.sidebarBackdrop} onPress={() => setIsMenuOpen(false)} />
@@ -702,6 +1004,79 @@ export default function DashboardScreen() {
             <TouchableOpacity style={[styles.menuItem, activeView === 'configuracao' && styles.menuItemActive]} onPress={() => { setActiveView('configuracao'); setIsMenuOpen(false); }}>
               <Text style={[styles.menuItemText, activeView === 'configuracao' && styles.menuItemTextActive]}>⚙️ Configuração</Text>
             </TouchableOpacity>
+
+            {userProfile?.role === 'admin' && (
+              <View style={{ flexShrink: 1 }}>
+                <TouchableOpacity 
+                  style={[styles.menuItem, { marginTop: 24, backgroundColor: '#fef2f2', borderLeftColor: '#ef4444' }, activeView === 'admin_panel' && { backgroundColor: '#fee2e2' }]} 
+                  onPress={() => { setActiveView('admin_panel'); setIsMenuOpen(false); }}
+                >
+                  <Text style={{ color: '#dc2626', fontWeight: 'bold', fontFamily: MODERN_FONT }}>🛡️ Painel Admin</Text>
+                </TouchableOpacity>
+
+                {/* Dropdown / Lista Suspensa de Vendedores */}
+                <TouchableOpacity 
+                  style={[styles.menuItem, { backgroundColor: '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                  onPress={() => setIsSellersDropdownOpen(!isSellersDropdownOpen)}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#475569' }}>
+                    CRM DOS VENDEDORES
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#475569' }}>
+                    {isSellersDropdownOpen ? '▲' : '▼'}
+                  </Text>
+                </TouchableOpacity>
+                
+                {isSellersDropdownOpen && (
+                  <ScrollView 
+                    style={{ maxHeight: 180, backgroundColor: '#f8fafc', borderRadius: 8, padding: 4, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 8 }} 
+                    nestedScrollEnabled={true}
+                  >
+                    {usersList.map(u => (
+                      <TouchableOpacity 
+                        key={u.id}
+                        style={[
+                          styles.menuItem, 
+                          { marginBottom: 4, paddingVertical: 10, minHeight: 40 },
+                          currentUserId === u.id && { backgroundColor: '#e0e7ff', borderLeftWidth: 4, borderLeftColor: '#4f46e5' }
+                        ]} 
+                        onPress={() => { 
+                          setCurrentUserId(u.id); 
+                          setActiveView('kanban'); 
+                          setIsMenuOpen(false); 
+                        }}
+                      >
+                        <Text 
+                          style={[styles.menuItemText, { fontSize: 13 }, currentUserId === u.id && { color: '#4f46e5' }]} 
+                          numberOfLines={1}
+                        >
+                          {u.id === loggedUserId ? '👤 Meu CRM (Próprio)' : `👀 ${u.name || u.email}`}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            )}
+
+            <View style={{ marginTop: 'auto', paddingTop: 20 }}>
+              
+              {/* ===== BOTÃO TROCAR SENHA ===== */}
+              <TouchableOpacity 
+                style={[styles.logoutButton, { marginBottom: 12, backgroundColor: '#e0e7ff', borderColor: '#c7d2fe' }]} 
+                onPress={() => { setIsChangePassModalVisible(true); setIsMenuOpen(false); }}
+              >
+                <Text style={[styles.logoutButtonText, { color: '#4338ca' }]}>🔐 Trocar Minha Senha</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.logoutButton} 
+                onPress={() => { setIsLogoutModalVisible(true); setIsMenuOpen(false); }}
+              >
+                <Text style={styles.logoutButtonText}>🚪 Sair da conta</Text>
+              </TouchableOpacity>
+            </View>
+
           </View>
         </View>
       )}
@@ -713,13 +1088,16 @@ export default function DashboardScreen() {
       <FilterModal visible={isFilterModalVisible} onClose={() => setIsFilterModalVisible(false)} activeFilter={activeFilter} onSelectFilter={setActiveFilter} />
       <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} />
       <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
-      <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} />
+      <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} isAdmin={userProfile?.role === 'admin'} usersList={usersList} currentUserId={currentUserId} onTransferLead={handleTransferLead} />
       <NotificationModal 
         visible={isNotifModalVisible} 
         onClose={() => setIsNotifModalVisible(false)} 
-        notifications={[...activeNotifications, ...systemNotifications]} 
+        // Junta todas as notificações (Leads + Sistema + Resets do Admin)
+        notifications={[...activeNotifications, ...systemNotifications, ...adminNotifications]} 
         onDismiss={handleDismissNotification}
         onDismissSystem={() => setSystemNotifications([])} 
+        onApproveReset={handleApproveReset} 
+        onRejectReset={handleRejectReset}   
       />
 
       <WhatsAppBulkModal 
@@ -731,6 +1109,90 @@ export default function DashboardScreen() {
           setIsNotifModalVisible(true);
         }}
       />
+
+      {/* ===== MODAL DE TROCA DE SENHA ===== */}
+      {isChangePassModalVisible && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Trocar Minha Senha</Text>
+            <Text style={styles.modalText}>Digite sua nova senha de acesso abaixo (mínimo de 6 caracteres, com maiúscula, minúscula, número e caractere especial).</Text>
+            
+            <TextInput
+              style={styles.passInput}
+              placeholder="Nova senha (ex: Senha123!)"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={newPass}
+              onChangeText={setNewPass}
+            />
+            <TextInput
+              style={styles.passInput}
+              placeholder="Confirme a nova senha"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={newPassConfirm}
+              onChangeText={setNewPassConfirm}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setIsChangePassModalVisible(false); setNewPass(''); setNewPassConfirm(''); }}>
+                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#4f46e5' }]} onPress={handleUpdateOwnPassword} disabled={isChangingPass}>
+                <Text style={styles.confirmBtnText}>{isChangingPass ? 'Salvando...' : 'Salvar Senha'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE LOGOUT */}
+      {isLogoutModalVisible && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Confirmar Saída</Text>
+            <Text style={styles.modalText}>Tem certeza que deseja sair? Certifique-se de que todas as alterações foram salvas.</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsLogoutModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtn} onPress={async () => {
+                
+                // 1. DESCONECTA O WHATSAPP AUTOMATICAMENTE DO SERVIDOR
+                try {
+                  await fetch('http://localhost:3001/desconectar', { method: 'POST' });
+                } catch (e) {
+                  console.log('API do WhatsApp offline ou inacessível no momento do logout:', e.message);
+                }
+
+                // 2. ENCERRA A SESSÃO DO SUPABASE
+                await supabase.auth.signOut();
+                setIsLogoutModalVisible(false);
+                
+              }}>
+                <Text style={styles.confirmBtnText}>Sair</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* MODAL DE ALERTA CUSTOMIZADO COM FADE */}
+      {alertConfig.visible && (
+        <View style={styles.successAlertOverlay}>
+          <Animated.View style={[styles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
+            <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
+            <Text style={styles.successAlertTitle}>{alertConfig.title}</Text>
+            <Text style={styles.successAlertMessage}>{alertConfig.message}</Text>
+            <TouchableOpacity 
+              style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
+              onPress={closeCustomAlert}
+            >
+              <Text style={styles.successAlertBtnText}>{alertConfig.type === 'success' ? 'Continuar' : 'Entendi'}</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      )}
 
     </View>
   );
@@ -886,12 +1348,11 @@ const styles = StyleSheet.create({
   },
 
   /* --- NOVOS ESTILOS EXCLUSIVOS DO CABEÇALHO MOBILE --- */
-  /* --- ESTILOS OTIMIZADOS E REDUZIDOS DO CABEÇALHO MOBILE --- */
   topHeaderMobileContainer: {
     backgroundColor: '#ffffff',
     paddingHorizontal: 10,
-    paddingTop: 6,      // Reduzido o topo
-    paddingBottom: 8,   // Reduzido a base
+    paddingTop: 6,      
+    paddingBottom: 8,   
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
     zIndex: 50,
@@ -901,13 +1362,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,    // Reduzido o espaço para a próxima linha
+    marginBottom: 6,    
   },
   mobileRowMiddle: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 6,    // Reduzido o espaço para a próxima linha
+    marginBottom: 6,    
   },
   mobileRowBottom: {
     flexDirection: 'row',
@@ -915,32 +1376,11 @@ const styles = StyleSheet.create({
     gap: 6,
     width: '100%',
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 6,
-    flex: 1,
-    height: 28,         // Altura da barra de pesquisa menor
-    paddingHorizontal: 6,
-  },
-  filterBtn: {
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 6,
-    height: 28,         // Altura do botão de filtro menor
-    paddingHorizontal: 8,
-    justifyContent: 'center',
-    marginLeft: 6,
-  },
   mobileActionBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6, // Botões inferiores mais finos e compactos
+    paddingVertical: 6, 
   },
 
   /* --- ÁREA DO KANBAN --- */
@@ -978,4 +1418,56 @@ const styles = StyleSheet.create({
   menuItemActive: { backgroundColor: '#eff6ff', borderLeftWidth: 4, borderLeftColor: '#2563eb' },
   menuItemText: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: '600', color: '#475569' },
   menuItemTextActive: { color: '#2563eb' },
+
+  logoutButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  logoutButtonText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+
+  /* --- ESTILOS DOS MODAIS CUSTOMIZADOS --- */
+  modalOverlay: { 
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+    backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 
+  },
+  modalContent: { 
+    backgroundColor: '#fff', padding: 24, borderRadius: 16, width: '90%', maxWidth: 320, 
+    alignItems: 'center' 
+  },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: '#1e293b' },
+  modalText: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 24 },
+  passInput: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    fontFamily: MODERN_FONT,
+    ...Platform.select({ web: { outlineStyle: 'none' } })
+  },
+  modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
+  cancelBtn: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center' },
+  cancelBtnText: { fontWeight: 'bold', color: '#475569' },
+  confirmBtn: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
+  confirmBtnText: { fontWeight: 'bold', color: '#ffffff' },
+
+  successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
+  successAlertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  successAlertIcon: { fontSize: 48, marginBottom: 12 },
+  successAlertTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
+  successAlertMessage: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
+  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 }
 });

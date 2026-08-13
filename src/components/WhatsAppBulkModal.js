@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../services/supabaseClient'; // Ajuste o caminho conforme o seu projeto
-import ReportModal from './ReportModal'; // Ajuste o caminho se necessário
+import { supabase } from '../services/supabaseClient';
+import ReportModal from './ReportModal';
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Image } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 
 let globalIsSending = false;
 let globalIsPaused = false;
@@ -9,23 +10,32 @@ let globalCancelRequested = false;
 let globalLogs = [];
 let globalProgressText = '';
 let globalStats = { success: 0, error: 0, total: 0, startTime: null, messageSummary: '' };
-// Variável para armazenar a função de atualização do Lead (se o modal estiver aberto)
 let onLeadUpdateCallback = null;
 
 export const setLeadUpdateCallback = (callback) => {
   onLeadUpdateCallback = callback;
 };
 
-export default function WhatsAppBulkModal({ visible, onClose, boardData, onComplete}) {
+// Componente CheckBox Customizado
+const CheckBox = ({ label, value, onValueChange }) => (
+  <TouchableOpacity style={styles.checkboxContainer} onPress={() => onValueChange(!value)}>
+    <View style={[styles.checkbox, value && styles.checkboxChecked]}>
+      {value && <Text style={styles.checkmark}>✓</Text>}
+    </View>
+    <Text style={styles.checkboxLabel}>{label}</Text>
+  </TouchableOpacity>
+);
+
+export default function WhatsAppBulkModal({ visible, onClose, boardData, onComplete }) {
   const hasTransitioned = useRef(false);
-  const [connectionStage, setConnectionStage] = useState('qr_code'); // 'qr_code', 'loading', 'success', 'ready'
+  const [connectionStage, setConnectionStage] = useState('connecting');
   const [botNumber, setBotNumber] = useState('');  
   const [selectedPhaseId, setSelectedPhaseId] = useState('all');
-  const [selectedTag, setSelectedTag] = useState('all'); // Filtro de Tag / Origem / Categoria
-  
-  // Apenas 2 Variações de Mensagem
-  const [msg1, setMsg1] = useState('Olá {nome}, tudo bem?');
-  const [msg2, setMsg2] = useState('Oi {nome}, como vão as coisas?');
+  const [selectedTag, setSelectedTag] = useState('all');
+
+  // Estrutura dinâmica de itens de disparo (Array de blocos)
+  const [messageItems, setMessageItems] = useState([]);
+  const [showAddMenu, setShowAddMenu] = useState(false);
 
   const [isBotConnected, setIsBotConnected] = useState(false);
   const [qrCodeImage, setQrCodeImage] = useState(null);
@@ -39,9 +49,37 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   const [progressText, setProgressText] = useState(globalProgressText);
   const [historicoList, setHistoricoList] = useState([]);
 
+  const [isAlertModalVisible, setIsAlertModalVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertActionType, setAlertActionType] = useState(null);
+
+  const showAlert = (title, message, actionType = 'info') => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertActionType(actionType);
+    setIsAlertModalVisible(true);
+  };
+
+  const handleAlertConfirm = () => {
+    if (alertActionType === 'cancel_send') {
+      globalCancelRequested = true;
+      globalIsPaused = false;
+      globalIsSending = false;
+      setIsSending(false);
+      setIsPaused(false);
+      setProgressText('❌ Disparos Cancelados');
+    } else if (alertActionType === 'disconnect') {
+      executeDisconnect();
+    }
+    setIsAlertModalVisible(false);
+  };
+
   useEffect(() => {
     let interval;
     if (visible) {
+      setConnectionStage('connecting');
+      hasTransitioned.current = false; 
       checkBotStatus();
       fetchHistorico();
       interval = setInterval(checkBotStatus, 3000);
@@ -62,44 +100,42 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       const data = await response.json();
 
       if (data.connected) {
-        // Se ainda não fizemos a transição, vamos para o sucesso
+        setIsBotConnected(true);
+        if (data.number) setBotNumber(data.number);
+
         if (!hasTransitioned.current) {
           hasTransitioned.current = true;
-          setConnectionStage('success');
-          
-          // O usuário vê a mensagem de sucesso por 2 segundos antes de liberar o form
-          setTimeout(() => {
-            setIsBotConnected(true);
-            setConnectionStage('ready');
-          }, 2000);
-        } else {
-          // Se já passou pela transição, apenas mantém conectado
-          setIsBotConnected(true);
+          setConnectionStage('ready');
         }
-        
-        if (data.number) setBotNumber(data.number);
       } else {
-        // Se desconectou, reseta tudo
-        hasTransitioned.current = false;
         setIsBotConnected(false);
-        setConnectionStage('qr_code');
+        
+        if (data.qrCode) {
+          hasTransitioned.current = false;
+          setConnectionStage('qr_code');
+          setQrCodeImage(data.qrCode);
+        } else {
+          setQrCodeImage(null);
+          setConnectionStage(prev => prev === 'disconnecting' ? 'disconnecting' : 'connecting');
+        }
       }
-
-      if (data.qrCode) setQrCodeImage(data.qrCode);
-      else setQrCodeImage(null);
     } catch (error) {
       setIsBotConnected(false);
+      setConnectionStage(prev => prev === 'disconnecting' ? 'disconnecting' : 'connecting');
     } finally {
       setLoadingStatus(false);
     }
   };
 
-  // BUSCA O HISTÓRICO DIRETAMENTE DO SUPABASE
   const fetchHistorico = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('disparos_historico')
         .select('*')
+        .eq('user_id', user.id)
         .order('id', { ascending: false });
 
       if (error) throw error;
@@ -109,10 +145,82 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     }
   };
 
+  const handleAddItem = (type) => {
+    setShowAddMenu(false);
+    const newItem = {
+      id: Date.now() + Math.random(),
+      type, 
+      content: type === 'text' ? 'Olá {nome}, tudo bem?' : '',
+      caption: '',
+      file: null,
+      isVariation: false
+    };
+    setMessageItems([...messageItems, newItem]);
+  };
+
+  const handleRemoveItem = (id) => {
+    setMessageItems(messageItems.filter(item => item.id !== id));
+  };
+
+  const handleUpdateItem = (id, field, value) => {
+    setMessageItems(messageItems.map(item => {
+      if (item.id === id) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
+
+  const handlePickFileForItem = async (id, allowedTypes) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: allowedTypes,
+        copyToCacheDirectory: true
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const reader = new FileReader();
+      
+      reader.onloadend = () => {
+        const fileObj = {
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: asset.mimeType || 'application/octet-stream',
+          base64: reader.result
+        };
+        handleUpdateItem(id, 'file', fileObj);
+      };
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      showAlert('Erro', 'Não foi possível carregar o arquivo selecionado.');
+    }
+  };
+
   const handleStartBulkSend = async () => {
-    const activeMessages = [msg1, msg2].filter(m => m.trim().length > 0);
-    if (activeMessages.length === 0) {
-      alert('Preencha pelo menos a Mensagem 1.');
+    const fixedItems = [];
+    const varItems = [];
+
+    for (const item of messageItems) {
+      if (item.type === 'text') {
+        if (!item.content.trim()) continue;
+        const formattedItem = { type: 'text', text: item.content };
+        item.isVariation ? varItems.push(formattedItem) : fixedItems.push(formattedItem);
+      } else if (item.type === 'image' || item.type === 'video') {
+        if (!item.file) continue;
+        const formattedItem = { type: 'media', file: item.file, caption: item.caption };
+        item.isVariation ? varItems.push(formattedItem) : fixedItems.push(formattedItem);
+      } else if (item.type === 'audio') {
+        if (!item.file) continue;
+        const formattedItem = { type: 'audio', file: item.file };
+        item.isVariation ? varItems.push(formattedItem) : fixedItems.push(formattedItem);
+      }
+    }
+
+    if (fixedItems.length === 0 && varItems.length === 0) {
+      showAlert('Atenção', 'Adicione e configure pelo menos uma mensagem, imagem, vídeo ou áudio.');
       return;
     }
 
@@ -126,12 +234,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       if (phase && phase.clients) leadsToMessage = [...phase.clients];
     }
 
-    // =========================================================================
-    // FILTRAGEM AMPLA E BLINDADA (COMBINAÇÃO PERFEITA DE ORIGENS E CATEGORIAS)
-    // =========================================================================
     if (selectedTag !== 'all') {
       const tagLower = selectedTag.toLowerCase().trim();
-      
       leadsToMessage = leadsToMessage.filter(lead => {
         const source = lead.interest?.source ? String(lead.interest.source).toLowerCase() : '';
         const category = lead.interest?.category ? String(lead.interest.category).toLowerCase() : '';
@@ -142,13 +246,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         const rawInterest = lead.interesse ? String(lead.interesse).toLowerCase() : '';
 
         return (
-          source.includes(tagLower) || 
-          category.includes(tagLower) || 
-          directCategory.includes(tagLower) ||
-          rawTags.includes(tagLower) || 
-          rawOrigin.includes(tagLower) || 
-          rawPlatform.includes(tagLower) || 
-          rawInterest.includes(tagLower)
+          source.includes(tagLower) || category.includes(tagLower) || directCategory.includes(tagLower) ||
+          rawTags.includes(tagLower) || rawOrigin.includes(tagLower) || rawPlatform.includes(tagLower) || rawInterest.includes(tagLower)
         );
       });
     }
@@ -156,7 +255,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     const validLeads = leadsToMessage.filter(lead => lead.phone && lead.phone.replace(/\D/g, '').length >= 10);
 
     if (validLeads.length === 0) {
-      alert('Nenhum lead encontrado com os filtros selecionados e telefone válido.');
+      showAlert('Atenção', 'Nenhum lead encontrado com os filtros selecionados e telefone válido.');
       return;
     }
 
@@ -174,8 +273,10 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       error: 0,
       total: validLeads.length,
       startTime: new Date(),
-      messageSummary: `Variantes (${activeMessages.length}): ${msg1.substring(0, 25)}...`
+      messageSummary: `Itens na fila: Fixos (${fixedItems.length}) / Variações (${varItems.length})`
     };
+
+    const boardId = boardData?.id || 'crm_principal'; 
 
     for (let i = 0; i < validLeads.length; i++) {
       if (globalCancelRequested) break;
@@ -193,128 +294,182 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       globalProgressText = currentProgress;
       setProgressText(currentProgress);
 
-      const templateToUse = activeMessages[i % activeMessages.length];
+      const leadItems = [...fixedItems];
+      if (varItems.length > 0) {
+        leadItems.push(varItems[i % varItems.length]);
+      }
 
-      try {
-        const response = await fetch('http://localhost:3001/disparar-unico', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: lead.phone,
-            name: lead.name,
-            messageTemplate: templateToUse
-          })
-        });
+      let leadSuccess = true;
+      let leadErrorMsg = '';
+      let sentDescriptions = [];
 
-        const result = await response.json();
-        let newLogItem;
+      for (const item of leadItems) {
+        if (globalCancelRequested) break;
 
-        if (result.success) {
-          globalStats.success++;
-          newLogItem = { status: 'success', text: `✅ Enviado para ${lead.name} (${lead.phone})` };
+        let formData = new FormData();
+        formData.append('phone', lead.phone);
+        formData.append('name', lead.name);
 
-          if (onLeadUpdateCallback) {
-            onLeadUpdateCallback(lead.id, `🤖 Robô WhatsApp: Disparo realizado. Msg: "${templateToUse.substring(0, 30)}..."`);
+        if (item.type === 'text') {
+          formData.append('messageTemplate', item.text);
+        } else if (item.type === 'media') {
+          formData.append('messageTemplate', item.caption || '');
+          const responseBlob = await fetch(item.file.uri);
+          const blobData = await responseBlob.blob();
+          formData.append('file', blobData, item.file.name);
+        } else if (item.type === 'audio') {
+          formData.append('messageTemplate', '');
+          const responseBlob = await fetch(item.file.uri);
+          const blobData = await responseBlob.blob();
+          formData.append('file', blobData, item.file.name);
+        }
+
+        try {
+          const response = await fetch('http://localhost:3001/disparar-unico', {
+            method: 'POST',
+            body: formData
+          });
+          const result = await response.json();
+
+          if (result.success) {
+            sentDescriptions.push(item.type === 'text' ? 'Texto' : item.type === 'media' ? 'Mídia' : 'Áudio');
+          } else {
+            leadSuccess = false;
+            leadErrorMsg = result.reason;
+            break;
           }
+        } catch (err) {
+          leadSuccess = false;
+          leadErrorMsg = 'Erro de conexão com o servidor';
+          break;
+        }
+      }
 
-          const zapComment = { 
-            id: `zap_${Date.now()}`, 
-            text: `🤖 Robô WhatsApp: Disparo automático realizado com sucesso para o número ${lead.phone}. Mensagem: "${templateToUse.substring(0, 30)}..."`, 
-            date: new Date().toISOString() 
-          };
+      let newLogItem;
+      const summaryDesc = sentDescriptions.join(' + ');
 
+      if (leadSuccess) {
+        globalStats.success++;
+        newLogItem = { status: 'success', text: `✅ Enviado para ${lead.name} (${summaryDesc})` };
+
+        const zapComment = { 
+          id: `zap_${Date.now()}`, 
+          text: `🤖 Robô WhatsApp: Disparo automático realizado com sucesso para o número ${lead.phone}. Itens: ${summaryDesc}`, 
+          date: new Date().toISOString() 
+        };
+
+        // Notifica o componente pai instantaneamente para atualizar a interface
+        if (onLeadUpdateCallback) {
+          onLeadUpdateCallback(lead.id, zapComment.text);
+        }
+
+        // SALVAMENTO IMEDIATO E ATUALIZAÇÃO DO BOARD NA MEMÓRIA E BANCO
+        if (boardId) {
           try {
-            const { data: boardData, error: fetchError } = await supabase
-              .from('crm_boards')
-              .select('data_payload')
-              .eq('id', 'crm_principal')
-              .single();
+            let query = supabase.from('crm_boards').select('id, data_payload');
+            if (isNaN(boardId)) {
+              query = query.eq('id', boardId);
+            } else {
+              query = query.eq('id', `board_${boardId}`);
+            }
+            
+            let { data: freshBoard, error: fetchErr } = await query.maybeSingle();
+            
+            if (fetchErr || !freshBoard) {
+              const fallbackRes = await supabase.from('crm_boards').select('id, data_payload').limit(1).maybeSingle();
+              if (fallbackRes.data) freshBoard = fallbackRes.data;
+            }
 
-            if (!fetchError && boardData && boardData.data_payload) {
-              let updatedPayload = { ...boardData.data_payload };
-              let leadFound = false;
+            if (freshBoard && freshBoard.data_payload?.phases) {
+              let targetBoardTableId = freshBoard.id;
+              let updatedPhases = freshBoard.data_payload.phases.map(phase => {
+                if (!phase.clients) return phase;
+                let clients = phase.clients.map(c => {
+                  if (String(c.id) === String(lead.id)) {
+                    let comments = Array.isArray(c.comments) ? c.comments : [];
+                    return { ...c, whatsappError: false, comments: [zapComment, ...comments] };
+                  }
+                  return c;
+                });
+                return { ...phase, clients };
+              });
 
-              for (let phase of updatedPayload.phases) {
-                if (!phase.clients) continue;
-                let clientIndex = phase.clients.findIndex(c => c.id === lead.id);
-                
-                if (clientIndex !== -1) {
-                  // Remove o erro do WhatsApp pois enviou com sucesso agora!
-                  phase.clients[clientIndex].whatsappError = false;
-                  let existingComments = Array.isArray(phase.clients[clientIndex].comments) ? phase.clients[clientIndex].comments : [];
-                  phase.clients[clientIndex].comments = [zapComment, ...existingComments];
-                  leadFound = true;
-                  break;
-                }
-              }
-
-              if (leadFound) {
-                await supabase
-                  .from('crm_boards')
-                  .update({ data_payload: updatedPayload })
-                  .eq('id', 'crm_principal');
+              await supabase
+                .from('crm_boards')
+                .update({ data_payload: { ...freshBoard.data_payload, phases: updatedPhases } })
+                .eq('id', targetBoardTableId);
+              
+              // ATUALIZA O BOARD LOCAL NA MEMÓRIA PARA REFLETIR NA TELA
+              if (boardData && boardData.phases) {
+                boardData.phases = updatedPhases;
               }
             }
-          } catch (e) {
-            console.error("Erro ao gravar comentário no JSON do Supabase:", e);
-          }
-        } else {
-          globalStats.error++;
-          newLogItem = { status: 'error', text: `❌ Falha para ${lead.name} (${lead.phone}): ${result.reason}` };
-
-          // Comentário especial de falha em destaque vermelho
-          const failComment = { 
-            id: `fail_${Date.now()}`, 
-            text: `🔴 Robô WhatsApp: Não foi possível enviar mensagem para o WhatsApp, o número está incorreto ou não possui WhatsApp.`, 
-            date: new Date().toISOString() 
-          };
-
-          try {
-            const { data: boardData, error: fetchError } = await supabase
-              .from('crm_boards')
-              .select('data_payload')
-              .eq('id', 'crm_principal')
-              .single();
-
-            if (!fetchError && boardData && boardData.data_payload) {
-              let updatedPayload = { ...boardData.data_payload };
-              let leadFound = false;
-
-              for (let phase of updatedPayload.phases) {
-                if (!phase.clients) continue;
-                let clientIndex = phase.clients.findIndex(c => c.id === lead.id);
-                
-                if (clientIndex !== -1) {
-                  // Marca a flag de erro no WhatsApp e adiciona o comentário de falha
-                  phase.clients[clientIndex].whatsappError = true;
-                  let existingComments = Array.isArray(phase.clients[clientIndex].comments) ? phase.clients[clientIndex].comments : [];
-                  phase.clients[clientIndex].comments = [failComment, ...existingComments];
-                  leadFound = true;
-                  break;
-                }
-              }
-
-              if (leadFound) {
-                await supabase
-                  .from('crm_boards')
-                  .update({ data_payload: updatedPayload })
-                  .eq('id', 'crm_principal');
-              }
-            }
-          } catch (e) {
-            console.error("Erro ao gravar comentário de falha no Supabase:", e);
+          } catch (dbErr) {
+            console.error('Erro ao salvar comentário de sucesso no banco:', dbErr);
           }
         }
 
-        globalLogs = [...globalLogs, newLogItem];
-        setLogs([...globalLogs]);
-
-      } catch (err) {
+      } else {
         globalStats.error++;
-        const errorItem = { status: 'error', text: `❌ Erro de conexão ao enviar para ${lead.name}` };
-        globalLogs = [...globalLogs, errorItem];
-        setLogs([...globalLogs]);
+        newLogItem = { status: 'error', text: `❌ Falha para ${lead.name} (${lead.phone}): ${leadErrorMsg}` };
+
+        const failComment = { 
+          id: `fail_${Date.now()}`, 
+          text: `🔴 Robô WhatsApp: Falha ao enviar itens. Motivo: ${leadErrorMsg}`, 
+          date: new Date().toISOString() 
+        };
+
+        if (onLeadUpdateCallback) {
+          onLeadUpdateCallback(lead.id, failComment.text);
+        }
+
+        if (boardId) {
+          try {
+            let query = supabase.from('crm_boards').select('id, data_payload');
+            if (isNaN(boardId)) {
+              query = query.eq('id', boardId);
+            } else {
+              query = query.eq('id', `board_${boardId}`);
+            }
+            
+            let { data: freshBoard, error: fetchErr } = await query.maybeSingle();
+            
+            if (fetchErr || !freshBoard) {
+              const fallbackRes = await supabase.from('crm_boards').select('id, data_payload').limit(1).maybeSingle();
+              if (fallbackRes.data) freshBoard = fallbackRes.data;
+            }
+
+            if (freshBoard && freshBoard.data_payload?.phases) {
+              let targetBoardTableId = freshBoard.id;
+              let updatedPhases = freshBoard.data_payload.phases.map(phase => {
+                if (!phase.clients) return phase;
+                let clients = phase.clients.map(c => {
+                  if (String(c.id) === String(lead.id)) {
+                    let comments = Array.isArray(c.comments) ? c.comments : [];
+                    return { ...c, whatsappError: true, comments: [failComment, ...comments] };
+                  }
+                  return c;
+                });
+                return { ...phase, clients };
+              });
+
+              await supabase
+                .from('crm_boards')
+                .update({ data_payload: { ...freshBoard.data_payload, phases: updatedPhases } })
+                .eq('id', targetBoardTableId);
+              
+              if (boardData && boardData.phases) {
+                boardData.phases = updatedPhases;
+              }
+            }
+          } catch (dbErr) {
+            console.error('Erro ao salvar comentário de falha no banco:', dbErr);
+          }
+        }
       }
+
+      globalLogs = [...globalLogs, newLogItem];
+      setLogs([...globalLogs]);
 
       if (i < validLeads.length - 1 && !globalCancelRequested) {
         const delay = Math.floor(Math.random() * (14000 - 8000 + 1)) + 8000;
@@ -328,7 +483,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
-    }
+    } 
 
     const endTime = new Date();
     const finalStatusText = globalCancelRequested ? '❌ Disparo Cancelado pelo Usuário' : '🎉 Disparo em Massa Concluído!';
@@ -336,17 +491,10 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     globalProgressText = finalStatusText;
     setProgressText(finalStatusText);
 
-    // Monte a lista de leads já incluindo o status individual de cada um
     const leadsComStatus = validLeads.map(l => {
-      // Verifica se este lead específico falhou nos logs gerados durante o disparo
       const logDoLead = globalLogs.find(log => log.text.includes(l.name) || log.text.includes(l.phone));
       const deuErro = logDoLead && logDoLead.status === 'error';
-      
-      return {
-        name: l.name,
-        phone: l.phone,
-        status: deuErro ? 'Falha' : 'Sucesso'
-      };
+      return { name: l.name, phone: l.phone, status: deuErro ? 'Falha' : 'Sucesso' };
     });
 
     const historicoDetalhado = {
@@ -355,7 +503,10 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       leads: leadsComStatus
     };
 
+    const { data: { user } } = await supabase.auth.getUser();
+
     const novoHistorico = {
+      user_id: user?.id,
       status: globalCancelRequested ? 'Cancelado' : 'Concluído',
       inicio: globalStats.startTime ? globalStats.startTime.toLocaleString() : new Date().toLocaleString(),
       fim: endTime.toLocaleString(),
@@ -363,20 +514,14 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       enviados: parseInt(globalStats.success + globalStats.error) || 0,
       sucesso: parseInt(globalStats.success) || 0,
       falha: parseInt(globalStats.error) || 0,
-      mensagem: `${activeMessages.filter(m => m.trim()).join(' | ')} [DADOS_EXTRA:${JSON.stringify(historicoDetalhado)}]`,
+      mensagem: `${globalStats.messageSummary} [DADOS_EXTRA:${JSON.stringify(historicoDetalhado)}]`,
       whatsapp_numero: botNumber || 'Desconhecido'
     };
 
     try {
-      const { error } = await supabase
-        .from('disparos_historico')
-        .insert([novoHistorico]);
-
-      if (error) {
-        console.error('Erro ao salvar histórico:', error.message);
-      } else {
-        fetchHistorico();
-      }
+      const { error } = await supabase.from('disparos_historico').insert([novoHistorico]);
+      if (error) console.error('Erro ao salvar histórico:', error.message);
+      else fetchHistorico();
     } catch (e) {
       console.log('Erro de conexão ao salvar histórico:', e.message);
     }
@@ -386,12 +531,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     setIsSending(false);
     setIsPaused(false);
 
-    // AGORA SIM: Dispara a notificação de conclusão ao final do processo
-    if (onComplete) {
-      onComplete(globalStats);
-    }
+    if (onComplete) onComplete(globalStats);
   };
-  
 
   const handleTogglePause = () => {
     globalIsPaused = !globalIsPaused;
@@ -399,28 +540,24 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   };
 
   const handleCancelSend = () => {
-    if (confirm('Tem certeza que deseja cancelar os disparos permanentemente?')) {
-      globalCancelRequested = true;
-      globalIsPaused = false;
+    showAlert('Cancelar Disparos', 'Tem certeza que deseja cancelar os disparos permanentemente?', 'cancel_send');
+  };
+
+  const executeDisconnect = async () => {
+    try {
+      setConnectionStage('disconnecting');
+      await fetch('http://localhost:3001/desconectar', { method: 'POST' });
+      setIsBotConnected(false);
+      setQrCodeImage(null);
       globalIsSending = false;
       setIsSending(false);
-      setIsPaused(false);
-      setProgressText('❌ Disparos Cancelados');
+    } catch (e) {
+      showAlert('Erro', 'Erro ao tentar desconectar.');
     }
   };
 
-  const handleDisconnect = async () => {
-    if (confirm('Deseja realmente desconectar o WhatsApp?')) {
-      try {
-        await fetch('http://localhost:3001/desconectar', { method: 'POST' });
-        setIsBotConnected(false);
-        setQrCodeImage(null);
-        globalIsSending = false;
-        setIsSending(false);
-      } catch (e) {
-        alert('Erro ao tentar desconectar.');
-      }
-    }
+  const handleDisconnect = () => {
+    showAlert('Desconectar WhatsApp', 'Deseja realmente desconectar o WhatsApp?', 'disconnect');
   };
 
   if (!visible) return null;
@@ -432,11 +569,14 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           
           <View style={styles.header}>
             <Text style={styles.title}>Disparo de Mensagens</Text>
-            
             <View style={styles.headerRightActions}>
               {isBotConnected && (
                 <View style={styles.connectedAccountInfo}>
-                  <Text style={styles.connectedNumberText}>✅ +{botNumber}</Text>
+                  {!isSending && logs.length === 0 && activeTab === 'disparar' && (
+                    <TouchableOpacity style={styles.startTopBtn} onPress={handleStartBulkSend}>
+                      <Text style={styles.startTopBtnText}>Iniciar Disparo</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity style={styles.disconnectTopBtn} onPress={handleDisconnect}>
                     <Text style={styles.disconnectTopBtnText}>Desconectar</Text>
                   </TouchableOpacity>
@@ -450,219 +590,306 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
           {isBotConnected && (
             <View style={styles.tabsRow}>
-              <TouchableOpacity 
-                style={[styles.tabBtn, activeTab === 'disparar' && styles.tabBtnActive]} 
-                onPress={() => setActiveTab('disparar')}
-              >
+              <TouchableOpacity style={[styles.tabBtn, activeTab === 'disparar' && styles.tabBtnActive]} onPress={() => setActiveTab('disparar')}>
                 <Text style={[styles.tabText, activeTab === 'disparar' && styles.tabTextActive]}>Central de Disparos</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.tabBtn, activeTab === 'historico' && styles.tabBtnActive]} 
-                onPress={() => { setActiveTab('historico'); fetchHistorico(); }}
-              >
+              <TouchableOpacity style={[styles.tabBtn, activeTab === 'historico' && styles.tabBtnActive]} onPress={() => { setActiveTab('historico'); fetchHistorico(); }}>
                 <Text style={[styles.tabText, activeTab === 'historico' && styles.tabTextActive]}>Histórico</Text>
               </TouchableOpacity>
             </View>
           )}
 
           <View style={styles.fixedContentBox}>
-  {loadingStatus ? (
-    <View style={styles.centerBox}>
-      <ActivityIndicator size="large" color="#2563eb" />
-      <Text style={styles.infoText}>Conectando ao Robô Local...</Text>
-    </View>
-  ) : connectionStage === 'success' ? (
-    <View style={styles.centerBox}>
-      <Text style={{ fontSize: 80 }}>✅</Text>
-      <Text style={[styles.statusSuccess, { fontSize: 22, marginTop: 20 }]}>Conexão bem sucedida!</Text>
-    </View>
-  ) : connectionStage === 'qr_code' ? (
-    <View style={styles.centerBox}>
-      <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
-      <Text style={styles.infoText}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
-      {qrCodeImage ? (
-        <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
-      ) : (
-        <ActivityIndicator color="#64748b" />
-      )}
-    </View>
-  ) : activeTab === 'historico' ? (
-    <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
-      <Text style={styles.label}>Histórico de Disparos Realizados</Text>
-      {historicoList.length === 0 ? (
-        <Text style={styles.emptyText}>Nenhum disparo registrado ainda.</Text>
-      ) : (
-        historicoList.map((item) => {
-          const getCleanMessage = (fullText) => {
-            if (!fullText) return 'Sem mensagem.';
-            if (fullText.includes('[DADOS_EXTRA:')) {
-              return fullText.split('[DADOS_EXTRA:')[0].trim();
-            }
-            return fullText;
-          };
-
-          return (
-            <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={styles.historyCard}>
-              <View style={styles.historyHeader}>
-                <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>
-                  {item.status}
-                </Text>
-                <Text style={styles.historyDate}>Início: {item.inicio}</Text>
+            {loadingStatus ? (
+              <View style={styles.centerBox}>
+                <ActivityIndicator size="large" color="#2563eb" />
+                <Text style={styles.infoText}>Conectando Conta do WhatsApp...</Text>
               </View>
-              
-              <Text style={styles.historyMsg}>
-                <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
-              </Text>
-
-              <View style={{ marginVertical: 4 }}>
-                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Mensagem Enviada:</Text>
-                <Text style={styles.historyMsgClean} numberOfLines={2}>
-                  {getCleanMessage(item.mensagem)}
-                </Text>
+            ) : connectionStage === 'connecting' ? (
+              <View style={styles.centerBox}>
+                <ActivityIndicator size="large" color="#2563eb" />
+                <Text style={styles.infoText}>Conectando Conta do WhatsApp...</Text>
               </View>
-
-              <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
-              
-              <View style={styles.historyStatsRow}>
-                <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
-                <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
-                <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
+            ) : connectionStage === 'disconnecting' ? (
+              <View style={styles.centerBox}>
+                <ActivityIndicator size="large" color="#dc2626" />
+                <Text style={styles.infoText}>Desconectando Conta do WhatsApp...</Text>
               </View>
-            </TouchableOpacity>
-          );
-        })
-      )}
-    </ScrollView>
-  ) : (
-    // ESTADO 'ready' (Formulário de Disparo)
-    <ScrollView showsVerticalScrollIndicator={false} style={{height: 450}}>
-      <View style={styles.connectedBadge}>
-        <Text style={styles.connectedText}>🟢 WhatsApp Conectado: +{botNumber}</Text>
+            ) : connectionStage === 'success' ? (
+              <View style={styles.centerBox}>
+                <Text style={{ fontSize: 80 }}>✅</Text>
+                <Text style={[styles.statusSuccess, { fontSize: 22, marginTop: 20 }]}>Conexão bem sucedida!</Text>
+              </View>
+            ) : connectionStage === 'qr_code' ? (
+              <View style={styles.centerBox}>
+                <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
+                <Text style={styles.infoText}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
+                {qrCodeImage ? (
+                  <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
+                ) : (
+                  <ActivityIndicator color="#64748b" />
+                )}
+              </View>
+            ) : activeTab === 'historico' ? (
+              <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
+                <Text style={styles.label}>Histórico de Disparos Realizados</Text>
+                {historicoList.length === 0 ? (
+                  <Text style={styles.emptyText}>Nenhum disparo registrado ainda.</Text>
+                ) : (
+                  historicoList.map((item) => {
+                    const getCleanMessage = (fullText) => {
+                      if (!fullText) return 'Sem mensagem.';
+                      if (fullText.includes('[DADOS_EXTRA:')) {
+                        return fullText.split('[DADOS_EXTRA:')[0].trim();
+                      }
+                      return fullText;
+                    };
+
+                    return (
+                      <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={styles.historyCard}>
+                        <View style={styles.historyHeader}>
+                          <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>{item.status}</Text>
+                          <Text style={styles.historyDate}>Início: {item.inicio}</Text>
+                        </View>
+                        <Text style={styles.historyMsg}>
+                          <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
+                        </Text>
+                        <View style={{ marginVertical: 4 }}>
+                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Informações:</Text>
+                          <Text style={styles.historyMsgClean} numberOfLines={2}>
+                            {getCleanMessage(item.mensagem)}
+                          </Text>
+                        </View>
+                        <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+                        <View style={styles.historyStatsRow}>
+                          <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
+                          <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
+                          <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer} style={{height: 450}}>
+                
+                {!isSending && logs.length === 0 && (
+                  <View style={styles.topActionRow}>
+                    <View style={styles.connectedBadgeInline}>
+                      <Text style={styles.connectedText}>🟢 WhatsApp Conectado: +{botNumber}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {!isSending && logs.length === 0 && (
+                  <>
+                    <View style={styles.filtersRow}>
+                      <View style={{flex: 1}}>
+                        <Text style={styles.label}>Coluna (Fase)</Text>
+                        <View style={styles.pickerContainer}>
+                          <select style={styles.webSelect} value={selectedPhaseId} onChange={(e) => setSelectedPhaseId(e.target.value)}>
+                            <option value="all">Todas as Fases</option>
+                            {boardData?.phases?.map(phase => (
+                              <option key={phase.id} value={phase.id}>{phase.title} ({phase.clients?.length || 0})</option>
+                            ))}
+                          </select>
+                        </View>
+                      </View>
+                      <View style={{flex: 1}}>
+                        <Text style={styles.label}>Origem ou Categoria</Text>
+                        <View style={styles.pickerContainer}>
+                          <select style={styles.webSelect} value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)}>
+                            <option value="all">Todas as Tags / Origens</option>
+                            <optgroup label="Origem / Plataforma">
+                              <option value="Instagram">Instagram</option>
+                              <option value="Facebook">Facebook</option>
+                              <option value="TikTok">TikTok</option>
+                              <option value="Google">Google</option>
+                              <option value="Indicação">Indicação</option>
+                            </optgroup>
+                            <optgroup label="Categoria / Produto">
+                              <option value="Auto">Auto (Veículos)</option>
+                              <option value="Imóvel">Imóvel</option>
+                              <option value="Serviço">Serviço</option>
+                              <option value="Investimento">Investimento</option>
+                            </optgroup>
+                          </select>
+                        </View>
+                      </View>
+                    </View>
+
+                    {messageItems.map((item, index) => (
+                      <View key={item.id} style={styles.itemBlock}>
+                        <View style={styles.blockHeader}>
+                          <Text style={styles.label}>
+                            Item {index + 1}: {item.type === 'text' ? 'Texto' : item.type === 'image' ? 'Imagem' : item.type === 'video' ? 'Vídeo' : 'Áudio'}
+                          </Text>
+                          <TouchableOpacity onPress={() => handleRemoveItem(item.id)}>
+                            <Text style={styles.removeText}>Remover</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {item.type === 'text' && (
+                          <>
+                            <TextInput
+                              style={styles.textAreaLarge}
+                              multiline
+                              numberOfLines={3}
+                              value={item.content}
+                              onChangeText={(val) => handleUpdateItem(item.id, 'content', val)}
+                              placeholder="Digite a mensagem aqui... Use {nome} para personalizar."
+                            />
+                            <CheckBox label="Esta mensagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                          </>
+                        )}
+
+                        {item.type === 'image' && (
+                          <>
+                            <TouchableOpacity style={styles.mediaPickerBtn} onPress={() => handlePickFileForItem(item.id, ['image/*'])}>
+                              <Text style={styles.mediaPickerBtnText}>🖼️ {item.file ? 'Trocar Imagem' : 'Selecionar Imagem'}</Text>
+                            </TouchableOpacity>
+                            {item.file && (
+                              <View style={{ marginTop: 8 }}>
+                                <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
+                                <TextInput style={[styles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda da imagem (opcional)..." />
+                              </View>
+                            )}
+                            <CheckBox label="Esta imagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                          </>
+                        )}
+
+                        {item.type === 'video' && (
+                          <>
+                            <TouchableOpacity style={styles.mediaPickerBtn} onPress={() => handlePickFileForItem(item.id, ['video/*'])}>
+                              <Text style={styles.mediaPickerBtnText}>🎥 {item.file ? 'Trocar Vídeo' : 'Selecionar Vídeo'}</Text>
+                            </TouchableOpacity>
+                            {item.file && (
+                              <View style={{ marginTop: 8 }}>
+                                <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
+                                <TextInput style={[styles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda do vídeo (opcional)..." />
+                              </View>
+                            )}
+                            <CheckBox label="Este vídeo é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                          </>
+                        )}
+
+                        {item.type === 'audio' && (
+                          <>
+                            <TouchableOpacity style={styles.mediaPickerBtn} onPress={() => handlePickFileForItem(item.id, ['audio/*'])}>
+                              <Text style={styles.mediaPickerBtnText}>🎵 {item.file ? 'Trocar Áudio' : 'Selecionar Arquivo de Áudio'}</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.audioFormatHint}>Formatos aceitos: MP3, WAV, OGG</Text>
+                            {item.file && (
+                              <View style={{ marginTop: 8 }}>
+                                <Text style={styles.selectedFileText}>Áudio: {item.file.name}</Text>
+                              </View>
+                            )}
+                            <CheckBox label="Este áudio é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                          </>
+                        )}
+                      </View>
+                    ))}
+
+                    <View style={{ marginVertical: 12, position: 'relative' }}>
+                      {!showAddMenu ? (
+                        <TouchableOpacity onPress={() => setShowAddMenu(true)} style={styles.addBtn}>
+                          <Text style={styles.addBtnText}>+ Adicionar Mensagem</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.floatingMenu}>
+                          <Text style={styles.menuTitle}>Selecione o tipo de item:</Text>
+                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('text')}><Text style={styles.menuItemText}>📝 Texto</Text></TouchableOpacity>
+                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('image')}><Text style={styles.menuItemText}>🖼️ Imagem</Text></TouchableOpacity>
+                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('video')}><Text style={styles.menuItemText}>🎥 Vídeo</Text></TouchableOpacity>
+                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('audio')}><Text style={styles.menuItemText}>🎵 Áudio</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, backgroundColor: '#f1f5f9' }]} onPress={() => setShowAddMenu(false)}>
+                            <Text style={[styles.menuItemText, { color: '#ef4444', textAlign: 'center' }]}>Cancelar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </>
+                )}
+
+                {(isSending || logs.length > 0) && (
+                  <View style={styles.logWrapper}>
+                    <View style={styles.logHeaderBar}>
+                      <Text style={styles.progressLabel}>{progressText}</Text>
+                      {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
+                    </View>
+                    <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
+                      {logs.map((log, index) => (
+                        <Text key={index} style={[styles.logItem, log.status === 'error' ? styles.logError : styles.logSuccess]}>{log.text}</Text>
+                      ))}
+                    </ScrollView>
+                    {isSending && (
+                      <View style={styles.controlButtonsRow}>
+                        <TouchableOpacity style={[styles.controlBtn, isPaused ? styles.btnResume : styles.btnPause]} onPress={handleTogglePause}>
+                          <Text style={styles.controlBtnText}>{isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
+                          <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    {!isSending && (
+                      <TouchableOpacity style={[styles.primaryButton, { marginTop: 16, marginBottom: 20 }]} onPress={() => { globalLogs = []; setLogs([]); }}>
+                        <Text style={styles.primaryButtonText}>Fazer Novo Disparo</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </View>
 
-      {!isSending && logs.length === 0 && (
-        <>
-          <View style={styles.filtersRow}>
-            <View style={{flex: 1}}>
-              <Text style={styles.label}>Coluna (Fase)</Text>
-              <View style={styles.pickerContainer}>
-                <select style={styles.webSelect} value={selectedPhaseId} onChange={(e) => setSelectedPhaseId(e.target.value)}>
-                  <option value="all">Todas as Fases</option>
-                  {boardData?.phases?.map(phase => (
-                    <option key={phase.id} value={phase.id}>{phase.title} ({phase.clients?.length || 0})</option>
-                  ))}
-                </select>
-              </View>
-            </View>
-
-            <View style={{flex: 1}}>
-              <Text style={styles.label}>Origem ou Categoria</Text>
-              <View style={styles.pickerContainer}>
-                <select style={styles.webSelect} value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)}>
-                  <option value="all">Todas as Tags / Origens</option>
-                  <optgroup label="Origem / Plataforma">
-                    <option value="Instagram">Instagram</option>
-                    <option value="Facebook">Facebook</option>
-                    <option value="TikTok">TikTok</option>
-                    <option value="Google">Google</option>
-                    <option value="Indicação">Indicação</option>
-                  </optgroup>
-                  <optgroup label="Categoria / Produto">
-                    <option value="Auto">Auto (Veículos)</option>
-                    <option value="Imóvel">Imóvel</option>
-                    <option value="Serviço">Serviço</option>
-                    <option value="Investimento">Investimento</option>
-                  </optgroup>
-                </select>
-              </View>
+      <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
+        <View style={styles.alertOverlay}>
+          <View style={styles.alertContent}>
+            <Text style={styles.alertTitle}>{alertTitle}</Text>
+            <Text style={styles.alertSubtitle}>{alertMessage}</Text>
+            <View style={styles.alertButtonsRow}>
+              {alertActionType !== 'info' ? (
+                <>
+                  <TouchableOpacity style={[styles.alertBtn, styles.alertCancelBtn]} onPress={() => setIsAlertModalVisible(false)}>
+                    <Text style={styles.alertCancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.alertBtn, styles.alertConfirmBtn]} onPress={handleAlertConfirm}>
+                    <Text style={styles.alertConfirmBtnText}>Confirmar</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity style={[styles.alertBtn, styles.alertConfirmBtn, { width: '100%' }]} onPress={() => setIsAlertModalVisible(false)}>
+                  <Text style={styles.alertConfirmBtnText}>OK</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
-
-          <Text style={styles.label}>Mensagem 1 (Obrigatória - Use {'{nome}'})</Text>
-          <TextInput
-            style={styles.textAreaLarge}
-            multiline
-            numberOfLines={3}
-            value={msg1}
-            onChangeText={setMsg1}
-            placeholder="Digite a primeira mensagem..."
-          />
-
-          <Text style={styles.label}>Mensagem 2 (Opcional - Variação Anti-ban)</Text>
-          <TextInput
-            style={styles.textAreaLarge}
-            multiline
-            numberOfLines={3}
-            value={msg2}
-            onChangeText={setMsg2}
-            placeholder="Digite a segunda mensagem alternativa..."
-          />
-
-          <TouchableOpacity style={[styles.primaryButton, {marginTop: 12, marginBottom: 20}]} onPress={handleStartBulkSend}>
-            <Text style={styles.primaryButtonText}>Iniciar Disparo em Massa</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {(isSending || logs.length > 0) && (
-        <View style={styles.logWrapper}>
-          <View style={styles.logHeaderBar}>
-            <Text style={styles.progressLabel}>{progressText}</Text>
-            {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
-          </View>
-
-          <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
-            {logs.map((log, index) => (
-              <Text key={index} style={[styles.logItem, log.status === 'error' ? styles.logError : styles.logSuccess]}>
-                {log.text}
-              </Text>
-            ))}
-          </ScrollView>
-
-          {isSending && (
-            <View style={styles.controlButtonsRow}>
-              <TouchableOpacity style={[styles.controlBtn, isPaused ? styles.btnResume : styles.btnPause]} onPress={handleTogglePause}>
-                <Text style={styles.controlBtnText}>{isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
-                <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {!isSending && (
-            <TouchableOpacity style={[styles.primaryButton, { marginTop: 16, marginBottom: 20 }]} onPress={() => { globalLogs = []; setLogs([]); }}>
-              <Text style={styles.primaryButtonText}>Fazer Novo Disparo</Text>
-            </TouchableOpacity>
-          )}
         </View>
-      )}
-    </ScrollView>
-  )}
-</View>
+      </Modal>
 
-        </View>
-      </View>
-      <ReportModal 
-  visible={!!selectedReport} 
-  report={selectedReport} 
-  boardData={boardData}
-  onClose={() => setSelectedReport(null)} 
-/>
+      <ReportModal visible={!!selectedReport} report={selectedReport} boardData={boardData} onClose={() => setSelectedReport(null)} />
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { width: '100%', maxWidth: 620, backgroundColor: '#ffffff', borderRadius: 16, padding: 24, height: 630 },
-  fixedContentBox: { height: 450, overflow: 'hidden' },
+  modalContainer: { width: '100%', maxWidth: 620, backgroundColor: '#ffffff', borderRadius: 16, padding: 24, height: 680 },
+  fixedContentBox: { height: 500, overflow: 'hidden' },
+  scrollContentContainer: { alignItems: 'stretch' },
   
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
   headerRightActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   
-  disconnectTopBtn: { backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#fca5a5', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6 },
+  startTopBtn: { backgroundColor: '#2563eb', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6, justifyContent: 'center' },
+  startTopBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
+
+  disconnectTopBtn: { backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#fca5a5', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6, justifyContent: 'center' },
   disconnectTopBtnText: { color: '#dc2626', fontWeight: 'bold', fontSize: 12 },
   
   closeButton: { padding: 4 },
@@ -677,26 +904,67 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 4, marginTop: 8 },
   filtersRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
 
-  centerBox: { alignItems: 'center', paddingVertical: 40 },
+  itemBlock: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12 },
+  blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  removeText: { fontSize: 12, color: '#ef4444', fontWeight: 'bold' },
+  addBtn: { paddingVertical: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#2563eb', borderRadius: 8, backgroundColor: '#eff6ff' },
+  addBtnText: { color: '#2563eb', fontWeight: '700', fontSize: 14 },
+  
+  floatingMenu: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 8, ...Platform.select({ web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.1)' } }) },
+  menuTitle: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6, textAlign: 'center' },
+  menuItem: { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  menuItemText: { fontSize: 14, fontWeight: '600', color: '#334155' },
+
+  mediaPickerBtn: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, alignItems: 'center', width: '100%' },
+  mediaPickerBtnText: { color: '#334155', fontWeight: '600', fontSize: 13 },
+  selectedFileText: { fontSize: 12, color: '#16a34a', fontWeight: '600', marginTop: 4 },
+  audioFormatHint: { fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 4 },
+
+  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 6 },
+  checkbox: { width: 18, height: 18, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 4, marginRight: 8, justifyContent: 'center', alignItems: 'center' },
+  checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  checkmark: { color: '#ffffff', fontSize: 12, fontWeight: 'bold' },
+  checkboxLabel: { fontSize: 13, color: '#475569', flex: 1 },
+
   infoText: { fontSize: 15, color: '#475569', textAlign: 'center', marginTop: 12, marginBottom: 12 },
   statusError: { fontSize: 18, fontWeight: 'bold', color: '#ef4444' },
   qrCode: { width: 220, height: 220, marginTop: 10 },
-  qrCodePlaceholder: { width: 220, height: 220, marginTop: 10, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   
-  connectedBadge: { backgroundColor: '#dcfce7', paddingVertical: 8, borderRadius: 8, alignItems: 'center', marginBottom: 12 },
-  connectedText: { color: '#16a34a', fontWeight: 'bold', fontSize: 13 },
-
-  pickerContainer: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, overflow: 'hidden', marginBottom: 8 },
+  topActionRow: { 
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12 
+  },
+  connectedBadgeInline: { 
+    backgroundColor: '#dcfce7', 
+    paddingVertical: 8, 
+    paddingHorizontal: 16, 
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    display: 'inline-flex'
+  },
+  connectedText: { 
+    color: '#16a34a', 
+    fontWeight: 'bold', 
+    fontSize: 13, 
+    whiteSpace: 'nowrap',
+    textAlign: 'center'
+  },
+  
+  pickerContainer: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, overflow: 'hidden', marginBottom: 8 },
   webSelect: { width: '100%', padding: 10, borderWidth: 0, backgroundColor: 'transparent', outlineStyle: 'none', fontSize: 14, color: '#0f172a', fontFamily: 'inherit' },
   
-  textAreaLarge: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, fontSize: 14, color: '#0f172a', minHeight: 75, textAlignVertical: 'top', marginBottom: 6, outlineStyle: 'none' },
+  textAreaLarge: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, fontSize: 14, color: '#0f172a', minHeight: 70, textAlignVertical: 'top', marginBottom: 6, outlineStyle: 'none' },
   primaryButton: { backgroundColor: '#2563eb', paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
   primaryButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
 
   logWrapper: { marginTop: 4 },
   logHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   progressLabel: { fontSize: 13, fontWeight: 'bold', color: '#2563eb' },
-  logContainer: { backgroundColor: '#0f172a', borderRadius: 8, padding: 10, height: 220 },
+  logContainer: { backgroundColor: '#0f172a', borderRadius: 8, padding: 10, height: 180 },
   logItem: { fontSize: 12, fontFamily: 'monospace', marginBottom: 4, lineHeight: 16 },
   logSuccess: { color: '#4ade80' },
   logError: { color: '#f87171' },
@@ -718,26 +986,18 @@ const styles = StyleSheet.create({
   historyStatItem: { fontSize: 12, fontWeight: '600', color: '#475569' },
   connectedAccountInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   connectedNumberText: { fontSize: 13, fontWeight: '600', color: '#475569' },
-  historyMsgClean: {
-    fontSize: 13,
-    color: '#475569',
-    backgroundColor: '#ffffff',
-    padding: 6,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    fontStyle: 'italic',
-    marginTop: 2
-  },
-  statusSuccess: {
-    color: '#16a34a',
-    fontWeight: '800',
-    textAlign: 'center'
-  },
-  centerBox: { 
-    flex: 1, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    padding: 20 
-  }
+  historyMsgClean: { fontSize: 13, color: '#475569', backgroundColor: '#ffffff', padding: 6, borderRadius: 4, borderWidth: 1, borderColor: '#e2e8f0', fontStyle: 'italic', marginTop: 2 },
+  statusSuccess: { color: '#16a34a', fontWeight: '800', textAlign: 'center' },
+  centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
+
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  alertContent: { backgroundColor: '#ffffff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 20px rgba(0,0,0,0.15)'} }) },
+  alertTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8, textAlign: 'center' },
+  alertSubtitle: { fontSize: 13, color: '#64748b', marginBottom: 20, textAlign: 'center', lineHeight: 18 },
+  alertButtonsRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  alertBtn: { flex: 1, paddingVertical: 12, borderRadius: '8px', alignItems: 'center' },
+  alertCancelBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1' },
+  alertCancelBtnText: { color: '#475569', fontWeight: 'bold', fontSize: 13 },
+  alertConfirmBtn: { backgroundColor: '#2563eb' },
+  alertConfirmBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 }
 });

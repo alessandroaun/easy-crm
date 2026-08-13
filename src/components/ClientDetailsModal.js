@@ -6,7 +6,7 @@ import { setLeadUpdateCallback } from './WhatsAppBulkModal';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../services/supabaseClient';
 
-export default function ClientDetailsModal({ visible, onClose, clientData, onSave }) {
+export default function ClientDetailsModal({ visible, onClose, clientData, onSave, isAdmin, usersList, currentUserId, onTransferLead }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
 
@@ -20,6 +20,9 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const [apptDate, setApptDate] = useState(''); 
   const [apptTime, setApptTime] = useState(''); 
   const [apptReminder, setApptReminder] = useState(0); 
+
+  const [selectedTransferUserId, setSelectedTransferUserId] = useState('');
+  const [transferWithoutComment, setTransferWithoutComment] = useState(false);
   
   // Motor Dinâmico de Alertas (Sucesso / Erro)
   const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
@@ -58,6 +61,8 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       setOriginalData(JSON.parse(JSON.stringify(dataToSet))); 
       setActiveTab('informacoes');
       setNewCommentText('');
+      setSelectedTransferUserId('');
+      setTransferWithoutComment(false);
       
       const now = new Date();
       setApptDate(now.toLocaleDateString('pt-BR'));
@@ -102,6 +107,19 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   };
 
   const handleSave = () => {
+    // INTERCEPTADOR DE TRANSFERÊNCIA
+    if (activeTab === 'transferir') {
+      if (!selectedTransferUserId) {
+        showCustomAlert('error', 'Atenção', 'Selecione um vendedor de destino para transferir o lead.');
+        return;
+      }
+      if (onTransferLead) {
+        onTransferLead(formData, selectedTransferUserId, transferWithoutComment);
+      }
+      onClose();
+      return;
+    }
+
     let updatedData = { ...formData };
     
     if (updatedData.phone && updatedData.phone !== originalData.phone) {
@@ -144,7 +162,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
   const handleAddAppointment = () => {
     if (!apptDate || !apptTime || apptDate.length < 10 || apptTime.length < 5) {
-      alert("Preencha a data e o horário completos do agendamento.");
+      showCustomAlert('error', 'Campos Incompletos', 'Preencha a data e o horário completos do agendamento.');
       return;
     }
 
@@ -180,7 +198,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       showCustomAlert('success', 'Agendado!', 'Seu compromisso foi salvo e você será notificado no horário programado.');
       
     } catch (error) {
-      alert("Formato de data ou hora inválido. Use DD/MM/AAAA e HH:MM.");
+      showCustomAlert('error', 'Formato Inválido', 'Formato de data ou hora inválido. Use DD/MM/AAAA e HH:MM.');
     }
   };
 
@@ -213,10 +231,10 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       if (error) throw error;
       const { data: publicUrlData } = supabase.storage.from('crm_documents').getPublicUrl(filePath);
       handleChange(fieldKey, publicUrlData.publicUrl);
-      alert('Upload concluído com sucesso!');
+      showCustomAlert('success', 'Sucesso', 'Upload concluído com sucesso!');
     } catch (error) {
       console.error("Erro no upload:", error);
-      alert("Erro ao fazer o upload do documento.");
+      showCustomAlert('error', 'Erro', 'Erro ao fazer o upload do documento.');
     } finally {
       setUploadingDoc(false);
     }
@@ -316,6 +334,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <TabButton id="kpis" label="Inteligência" />
                   <TabButton id="comentarios" label="Comentários" />
                   <TabButton id="agendamentos" label="Agendamentos" />
+                  {isAdmin && <TabButton id="transferir" label="🔄 Transferir Lead" />}
                 </ScrollView>
               </View>
             ) : (
@@ -327,6 +346,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 <TabButton id="docs" label="Documentos" />
                 <TabButton id="kpis" label="Inteligência" />
                 <TabButton id="agendamentos" label="Agendamentos" />
+                {isAdmin && <TabButton id="transferir" label="🔄 Transferir Lead" />}
               </View>
             )}
 
@@ -388,7 +408,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                     </TouchableOpacity>
                   </View>
 
-                  {/* Bloco da Direita: Agendamentos Ativos (Com espaçamento seguro no celular) */}
+                  {/* Bloco da Direita: Agendamentos Ativos */}
                   <View style={[styles.splitRight, isMobile && styles.splitRightMobile]}>
                     <Text style={styles.sectionTitle}>Agendamentos Ativos</Text>
                     
@@ -512,6 +532,37 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 </View>
               )}
 
+              {isAdmin && activeTab === 'transferir' && (
+                <View style={styles.formSection}>
+                  <Text style={styles.sectionTitle}>Transferência de Lead</Text>
+                  
+                  <Text style={styles.label}>Selecione o Vendedor Destino:</Text>
+                  <ScrollView nestedScrollEnabled={true} style={styles.userListContainer}>
+                    {usersList?.filter(u => u.id !== currentUserId).map(u => (
+                      <TouchableOpacity 
+                        key={u.id} 
+                        style={[styles.userOption, selectedTransferUserId === u.id && styles.userOptionSelected]} 
+                        onPress={() => setSelectedTransferUserId(u.id)}
+                      >
+                        <Text style={[styles.userOptionText, selectedTransferUserId === u.id && styles.userOptionTextSelected]}>
+                          {u.name || u.email}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    {usersList?.filter(u => u.id !== currentUserId).length === 0 && (
+                       <Text style={{ padding: 12, color: '#94a3b8', fontStyle: 'italic' }}>Nenhum outro vendedor disponível.</Text>
+                    )}
+                  </ScrollView>
+
+                  <TouchableOpacity style={styles.checkboxContainer} onPress={() => setTransferWithoutComment(!transferWithoutComment)}>
+                    <View style={[styles.checkbox, transferWithoutComment && styles.checkboxChecked]}>
+                      {transferWithoutComment && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Transferir sem registrar comentário automático no card</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {isMobile && activeTab === 'comentarios' && <CommentsSection />}
             </ScrollView>
 
@@ -528,7 +579,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               <Text style={styles.cancelButtonText}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.saveButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>Salvar Alterações</Text>
+              <Text style={styles.saveButtonText}>{activeTab === 'transferir' ? 'Confirmar Transferência' : 'Salvar Alterações'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -573,11 +624,10 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 14, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
   inputSmall: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, fontSize: 13, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
 
-  /* --- CORREÇÃO DEFINITIVA DO ESPAÇAMENTO MOBILE --- */
   splitContainer: { flexDirection: 'row', width: '100%', gap: 24 },
   splitContainerMobile: { flexDirection: 'column', width: '100%' },
   splitLeft: { flex: 1.6 },
-  splitLeftMobile: { width: '100%', marginBottom: 28 }, // Espaçamento inferior generoso para afastar da lista
+  splitLeftMobile: { width: '100%', marginBottom: 28 }, 
   splitRight: { flex: 1, borderLeftWidth: 1, borderColor: '#e2e8f0', paddingLeft: 24 },
   splitRightMobile: { width: '100%', borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 20, marginTop: 35 },
   
@@ -633,5 +683,17 @@ const styles = StyleSheet.create({
   successAlertTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
   successAlertMessage: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
-  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 }
+  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+
+  // NOVOS ESTILOS PARA TRANSFERÊNCIA DE LEAD
+  userListContainer: { maxHeight: 180, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc', marginBottom: 20 },
+  userOption: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  userOptionSelected: { backgroundColor: '#e0e7ff' },
+  userOptionText: { fontSize: 13, color: '#475569', fontWeight: '600' },
+  userOptionTextSelected: { color: '#4f46e5', fontWeight: 'bold' },
+  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  checkbox: { width: 22, height: 22, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, marginRight: 10, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  checkmark: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
+  checkboxLabel: { fontSize: 13, color: '#475569', flex: 1, flexWrap: 'wrap' }
 });

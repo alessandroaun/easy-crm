@@ -1,11 +1,15 @@
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView, useWindowDimensions } from 'react-native';
 
-export default function NotificationModal({ visible, onClose, notifications, onDismiss, onDismissSystem }) {
+export default function NotificationModal({ 
+  visible, onClose, notifications, onDismiss, onDismissSystem, 
+  onApproveReset, onRejectReset 
+}) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
   
   const formatTime = (isoString) => {
+    if (!isoString) return '';
     const d = new Date(isoString);
     return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   };
@@ -29,6 +33,37 @@ export default function NotificationModal({ visible, onClose, notifications, onD
               </View>
             ) : (
               notifications.map((item) => {
+                
+                // NOTIFICAÇÃO DE RESET DE SENHA (Para o Admin)
+                if (item.type === 'ResetRequest') {
+                  return (
+                    <View key={item.id} style={[styles.notificationCard, { borderColor: '#fca5a5', backgroundColor: '#fef2f2' }]}>
+                      <Text style={{ fontWeight: 'bold', color: '#991b1b', marginBottom: 5 }}>🔑 Solicitação de Nova Senha</Text>
+                      {item.name && (
+                        <Text style={{ fontSize: 13, color: '#7f1d1d', marginBottom: 3 }}>Nome: <Text style={{fontWeight: 'bold'}}>{item.name}</Text></Text>
+                      )}
+                      <Text style={{ fontSize: 13, color: '#7f1d1d', marginBottom: 5 }}>E-mail: <Text style={{fontWeight: 'bold'}}>{item.email}</Text></Text>
+                      <Text style={{ fontSize: 11, color: '#b91c1c', marginBottom: 12 }}>Por favor, autorize o reset para a senha padrão (Senha123!).</Text>
+                      
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity 
+                          style={[styles.dismissButton, { flex: 1, backgroundColor: '#ef4444' }]} 
+                          onPress={() => onApproveReset(item.userId, item.email)}
+                        >
+                          <Text style={styles.dismissButtonText}>✓ Resetar p/ "Senha123!"</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={[styles.dismissButton, { flex: 1, backgroundColor: '#f87171' }]} 
+                          onPress={() => onRejectReset(item.userId)}
+                        >
+                          <Text style={styles.dismissButtonText}>✕ Recusar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                }
+
+                // NOTIFICAÇÃO DO SISTEMA PADRÃO
                 if (item.type === 'Sistema') {
                   return (
                     <View key={item.id} style={[styles.notificationCard, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}>
@@ -44,6 +79,7 @@ export default function NotificationModal({ visible, onClose, notifications, onD
                   );
                 }
 
+                // NOTIFICAÇÃO DE AGENDAMENTO (LEADS)
                 const { client, appt, phaseId } = item;
                 return (
                   <View key={appt.id} style={styles.notificationCard}>
@@ -84,14 +120,8 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
     ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } })
   },
-  modalContainerDesktop: {
-    marginTop: 80, 
-    marginRight: 24,
-  },
-  modalContainerMobile: {
-    marginTop: 0,
-    marginRight: 0,
-  },
+  modalContainerDesktop: { marginTop: 80, marginRight: 24 },
+  modalContainerMobile: { marginTop: 0, marginRight: 0 },
 
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   title: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
