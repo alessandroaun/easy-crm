@@ -4,11 +4,10 @@ import ClientCard from './ClientCard';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOpenClient, onEditPhase, onReorderPhase, onAddComment }) {
+export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOpenClient, onEditPhase, onReorderPhase, onAddComment, isBulkSelecting, selectedLeadIds, onToggleSelectLead, onSelectAllInPhase, onDeselectAllInPhase }) {
   const columnRef = useRef(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
 
-  // KanbanColumn - APENAS RECEBE OS CARDS (Drop Zone)
   useEffect(() => {
     if (Platform.OS === 'web' && columnRef.current) {
       const node = columnRef.current;
@@ -21,7 +20,6 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
         
         const dragType = e.dataTransfer.getData('dragType');
         
-        // Só aceita cards de clientes agora
         if (dragType === 'client') {
           const clientId = e.dataTransfer.getData('clientId');
           const sourcePhaseId = e.dataTransfer.getData('sourcePhaseId');
@@ -81,6 +79,19 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
     phase.clients = sorted;
   };
 
+  // Verifica se todos os leads desta fase já estão selecionados
+  // Verifica se todos os leads desta fase já estão selecionados
+  const phaseClientIds = phase.clients.map(c => c.id);
+  const isAllSelected = phaseClientIds.length > 0 && phaseClientIds.every(id => selectedLeadIds?.includes(id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      if (onDeselectAllInPhase) onDeselectAllInPhase(phaseClientIds);
+    } else {
+      if (onSelectAllInPhase) onSelectAllInPhase(phaseClientIds);
+    }
+  };
+
   return (
     <View 
       ref={columnRef} 
@@ -101,12 +112,10 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          {/* Botão Organizar (Ícone de Ordenação) */}
           <TouchableOpacity style={styles.iconActionButton} onPress={() => setShowSortMenu(!showSortMenu)}>
             <Text style={styles.actionSymbol}>⇄</Text>
           </TouchableOpacity>
 
-          {/* Botão Editar (Ícone de Engrenagem / Configuração) */}
           <TouchableOpacity style={styles.iconActionButton} onPress={() => onEditPhase(phase)}>
             <Text style={styles.actionSymbol}>⚙️</Text>
           </TouchableOpacity>
@@ -136,6 +145,16 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
           </View>
         )}
       </View>
+
+      {/* CAIXINHA DE SELECIONAR TODOS DA FASE */}
+      {isBulkSelecting && phase.clients.length > 0 && (
+        <TouchableOpacity style={styles.selectAllContainer} onPress={handleToggleSelectAll}>
+          <View style={[styles.checkbox, isAllSelected && styles.checkboxSelected]}>
+            {isAllSelected && <Text style={styles.checkmark}>✓</Text>}
+          </View>
+          <Text style={styles.selectAllText}>Selecionar Todos ({phase.clients.length})</Text>
+        </TouchableOpacity>
+      )}
       
       <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollArea}>
         {phase.clients.map((client) => (
@@ -146,7 +165,10 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
             onDelete={onDeleteClient} 
             onOpen={onOpenClient} 
             onAddComment={onAddComment} 
-            onDropClient={onDropClient} 
+            onDropClient={onDropClient}
+            isBulkSelecting={isBulkSelecting}
+            isSelected={selectedLeadIds?.includes(client.id)}
+            onToggleSelect={onToggleSelectLead}
           />
         ))}
       </ScrollView>
@@ -166,10 +188,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
     position: 'relative',
-    // O cursor: 'grab' foi removido daqui!
   },
   backdropOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingHorizontal: 4, position: 'relative', zIndex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, paddingHorizontal: 4, position: 'relative', zIndex: 1 },
   titleContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, flexWrap: 'wrap', gap: 8 },
   title: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '700', color: '#111827' },
   badge: { backgroundColor: 'rgba(0,0,0,0.06)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
@@ -183,8 +204,43 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   actionSymbol: { fontSize: 14, fontWeight: '700', color: '#4b5563' },
-  sortToggleButton: { backgroundColor: '#e0e7ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  sortToggleText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '600', color: '#4f46e5' },
+  selectAllContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginBottom: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  checkboxSelected: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  checkmark: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  selectAllText: {
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '700',
+    fontFamily: MODERN_FONT,
+  },
   sortMenuDropdown: {
     position: 'absolute', top: 35, right: 0, width: 200, backgroundColor: '#ffffff',
     borderRadius: 10, padding: 8, zIndex: 99999, borderWidth: 1, borderColor: '#e2e8f0',

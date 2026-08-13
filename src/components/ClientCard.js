@@ -3,8 +3,7 @@ import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking,
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-// ATENÇÃO AQUI: onDropClient adicionado nas props!
-export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment, onDropClient }) {
+export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment, onDropClient, isBulkSelecting, isSelected, onToggleSelect }) {
   const cardRef = useRef(null);
   const [pulseColor, setPulseColor] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -73,14 +72,13 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       if (!isTouchDevice) node.setAttribute('draggable', 'true');
 
       const handleDragStart = (e) => {
-        if (isTouchDevice) return e.preventDefault();
+        if (isBulkSelecting || isTouchDevice) return e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.setData('dragType', 'client');
         e.dataTransfer.setData('clientId', client.id);
         e.dataTransfer.setData('sourcePhaseId', phaseId);
       };
 
-      // VARIÁVEIS DO MOTOR
       let pressTimer = null;
       let isDragging = false;
       let ghost = null;
@@ -88,7 +86,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       let offsetX = 0, offsetY = 0;
       let touchStartTime = 0;
       
-      // VARIÁVEIS DO AUTO-SCROLL DA TELA
       let scrollInterval = null;
       let currentTouchX = 0;
       let scrollContainer = null;
@@ -100,7 +97,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         node.style.opacity = '1';
         document.body.style.overflow = '';
         
-        // Desliga o motor de rolagem
         if (scrollInterval) {
           clearInterval(scrollInterval);
           scrollInterval = null;
@@ -108,6 +104,13 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       };
 
       const handleClick = (e) => {
+        if (isBulkSelecting) {
+          e.stopPropagation();
+          e.preventDefault();
+          if (onToggleSelect) onToggleSelect(client.id);
+          return;
+        }
+
         const pressDuration = Date.now() - touchStartTime;
 
         if (isDragging || (isTouchDevice && touchStartTime > 0 && pressDuration > 300)) {
@@ -123,7 +126,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       };
 
       const handleTouchStart = (e) => {
-        if (!isTouchDevice || e.touches.length > 1) return;
+        if (isBulkSelecting || !isTouchDevice || e.touches.length > 1) return;
         
         const text = e.target.innerText || '';
         if (text === '✕' || text.includes('WA') || text.includes('Ligar')) return;
@@ -144,7 +147,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
           offsetX = touch.clientX - rect.left;
           offsetY = touch.clientY - rect.top;
 
-          // Cria o Fantasma
           ghost = node.cloneNode(true);
           ghost.style.position = 'fixed';
           ghost.style.zIndex = '999999';
@@ -162,11 +164,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
           document.body.appendChild(ghost);
           node.style.opacity = '0.4';
 
-          // ==============================================================
-          // INICIA O RADAR DE AUTO-SCROLL AO CRIAR O FANTASMA
-          // ==============================================================
-          
-          // 1. Acha quem rola horizontalmente (O ScrollView do Dashboard)
           scrollContainer = node.parentElement;
           while (scrollContainer && scrollContainer !== document.body) {
             if (scrollContainer.scrollWidth > scrollContainer.clientWidth) break;
@@ -174,17 +171,15 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
           }
           if (!scrollContainer) scrollContainer = document.scrollingElement || document.documentElement;
 
-          // 2. Liga o radar 60 vezes por segundo
           scrollInterval = setInterval(() => {
             if (!isDragging) return;
-            
-            const edge = 80; // Zona de borda em pixels
-            const speed = 12; // Velocidade que a tela anda
+            const edge = 80; 
+            const speed = 12; 
 
             if (currentTouchX < edge) {
-              scrollContainer.scrollLeft -= speed; // Rola pra esquerda
+              scrollContainer.scrollLeft -= speed; 
             } else if (currentTouchX > window.innerWidth - edge) {
-              scrollContainer.scrollLeft += speed; // Rola pra direita
+              scrollContainer.scrollLeft += speed; 
             }
           }, 16);
 
@@ -192,8 +187,9 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       };
 
       const handleTouchMove = (e) => {
+        if (isBulkSelecting) return;
         const touch = e.touches[0];
-        currentTouchX = touch.clientX; // Atualiza a mira do radar em tempo real
+        currentTouchX = touch.clientX;
 
         if (!isDragging) {
           if (Math.abs(touch.clientX - initialX) > 10 || Math.abs(touch.clientY - initialY) > 10) {
@@ -211,6 +207,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       };
 
       const handleTouchEnd = (e) => {
+        if (isBulkSelecting) return;
         clearTimeout(pressTimer);
         
         if (!isDragging) {
@@ -258,10 +255,9 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         node.removeEventListener('touchcancel', handleTouchCancel);
       };
     }
-  }, [client, phaseId, onOpen, onDropClient]);
+  }, [client, phaseId, onOpen, onDropClient, isBulkSelecting, isSelected, onToggleSelect]);
 
 
-  // Funções do Modal Animado
   const openDeleteModal = (e) => {
     if (Platform.OS === 'web' && e && e.stopPropagation) e.stopPropagation();
     setIsDeleting(true);
@@ -360,12 +356,32 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
 
   return (
     <>
-      <View ref={cardRef} dataSet={{ clientid: client.id }} style={[styles.card, pulseColor && { borderColor: pulseColor, borderWidth: 2 }]}>
+      <View 
+        ref={cardRef} 
+        dataSet={{ clientid: client.id }} 
+        style={[
+          styles.card, 
+          pulseColor && { borderColor: pulseColor, borderWidth: 2 },
+          isBulkSelecting && isSelected && { backgroundColor: '#eff6ff', borderColor: '#2563eb', borderWidth: 2 }
+        ]}
+      >
+        {/* CHECKBOX PARA SELEÇÃO EM MASSA */}
+        {isBulkSelecting && (
+          <TouchableOpacity 
+            style={styles.checkboxContainer} 
+            onPress={() => onToggleSelect && onToggleSelect(client.id)}
+          >
+            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+              {isSelected && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.checkboxLabel}>Selecionar para transferência</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.headerContainer}>
           <View style={styles.headerTextContainer}>
             <View style={styles.nameRow}>
               
-              {/* RELÓGINHO COM ANIMAÇÃO */}
               {pulseColor && (
                 <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
                   <Text style={styles.pulsingClock}>⏰</Text>
@@ -380,7 +396,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
                 </View>
               )}
 
-              {/* TAG DE HISTÓRICO DE AGENDAMENTOS */}
               {completedApptsCount > 0 && (
                 <View style={styles.apptBadge}>
                   <Text style={styles.apptBadgeText}>{completedApptsCount}A</Text>
@@ -403,13 +418,12 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
           </TouchableOpacity>
         </View>
         
-        <Pressable style={styles.clickableArea} onPress={() => { if (Platform.OS !== 'web' && onOpen) onOpen(client, phaseId); }}>
+        <Pressable style={styles.clickableArea} onPress={() => { if (!isBulkSelecting && Platform.OS !== 'web' && onOpen) onOpen(client, phaseId); }}>
           
           <View style={styles.phoneRow}>
             <Text style={styles.phoneText}>{client.phone || 'Sem telefone'}</Text>
             {client.phone && (
               <View style={styles.actionButtonsContainer}>
-                {/* BOTÃO WA DINÂMICO (VERMELHO SE HOUVER ERRO, VERDE SE ESTIVER OK) */}
                 <TouchableOpacity 
                   style={[
                     styles.btnActionWA, 
@@ -445,7 +459,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         </Pressable>
       </View>
 
-      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
       {isDeleting && (
         <Modal transparent={true} visible={isDeleting} onRequestClose={() => closeDeleteModal()}>
           <View style={styles.modalOverlay}>
@@ -489,6 +502,40 @@ const styles = StyleSheet.create({
       default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } 
     }) 
   },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 8,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  checkboxSelected: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  checkmark: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  checkboxLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+    fontFamily: MODERN_FONT,
+  },
   headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   headerTextContainer: { flex: 1, marginRight: 8 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap' },
@@ -514,8 +561,6 @@ const styles = StyleSheet.create({
   info: { fontSize: 12, color: '#475569', marginBottom: 6, lineHeight: 16 },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, 
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontWeight: '600' },
-  
-  // Estilos do Modal de Exclusão
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
   alertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
   alertIcon: { fontSize: 48, marginBottom: 12 },

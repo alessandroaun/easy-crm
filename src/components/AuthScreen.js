@@ -73,6 +73,9 @@ export default function AuthScreen({ onRequirePasswordChange }) {
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
+              returnKeyType="done"
+              onSubmitEditing={handleAuth}
+              blurOnSubmit={false}
             />
           </View>
 
@@ -91,6 +94,9 @@ export default function AuthScreen({ onRequirePasswordChange }) {
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
+                returnKeyType="done"
+                onSubmitEditing={handleAuth}
+                blurOnSubmit={false}
               />
             </View>
           )}

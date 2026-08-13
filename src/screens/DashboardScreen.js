@@ -22,6 +22,9 @@ export default function DashboardScreen() {
   const [activeView, setActiveView] = useState('kanban'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSellersDropdownOpen, setIsSellersDropdownOpen] = useState(false);
+  
+  // Estado para detectar se o app está rodando via Electron
+  const [isElectron, setIsElectron] = useState(false);
 
   // Hook de Responsividade
   const { width } = useWindowDimensions();
@@ -38,6 +41,12 @@ export default function DashboardScreen() {
   const [isClientModalVisible, setIsClientModalVisible] = useState(false);
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
   
+  // Estados da Transferência em Massa de Leads
+  const [isBulkTransferActive, setIsBulkTransferActive] = useState(false);
+  const [bulkTargetUserId, setBulkTargetUserId] = useState(null);
+  const [isBulkDropdownOpen, setIsBulkDropdownOpen] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState([]);
+
   // Estados da Troca de Senha Própria
   const [isChangePassModalVisible, setIsChangePassModalVisible] = useState(false);
   const [newPass, setNewPass] = useState('');
@@ -85,6 +94,13 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     fetchInitialData();
+    
+    // Detecta se está rodando no ambiente Electron
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isElectronEnv = userAgent.includes('electron') || window.electron || (window.process && window.process.versions && window.process.versions.electron);
+      setIsElectron(!!isElectronEnv);
+    }
   }, []);
 
   const fetchInitialData = async () => {
@@ -207,7 +223,7 @@ export default function DashboardScreen() {
             .from('user_profiles')
             .select('id, email, name')
             .eq('reset_requested', true);
-            
+          
           if (data) {
             const resetNotifs = data.map(user => ({
               id: `req_${user.id}`,
@@ -329,7 +345,7 @@ export default function DashboardScreen() {
         .update({ data_payload: updatedBoard })
         .eq('user_id', currentUserId) 
         .select();
-        
+      
       if (error) throw error;
       if (!data || data.length === 0) console.error("Falha silenciosa no RLS.");
     } catch (error) {
@@ -817,6 +833,85 @@ export default function DashboardScreen() {
     }
   };
 
+  const handleBulkTransferExecute = async () => {
+    if (!bulkTargetUserId || selectedLeadIds.length === 0 || !boardData) return;
+    try {
+      const updatedCurrentBoard = JSON.parse(JSON.stringify(boardData));
+      const extractedLeads = [];
+
+      // 1. Remove os leads selecionados do board atual
+      updatedCurrentBoard.phases.forEach(phase => {
+        phase.clients = phase.clients.filter(client => {
+          if (selectedLeadIds.includes(client.id)) {
+            const transferComment = {
+              id: `sys_transf_${Date.now()}_${Math.random()}`,
+              text: `⚙️ Sistema: Lead transferido em massa pelo Administrador.`,
+              date: new Date().toISOString()
+            };
+            client.comments = [transferComment, ...(client.comments || [])];
+            client.updatedAt = new Date().toISOString();
+            extractedLeads.push(client);
+            return false;
+          }
+          return true;
+        });
+      });
+
+      if (extractedLeads.length === 0) return;
+
+      // Atualiza o board de origem
+      setBoardData(updatedCurrentBoard);
+      await syncBoardToDatabase(updatedCurrentBoard);
+
+      // 2. Busca o board do vendedor destino
+      const { data: targetBoardRow } = await supabase
+        .from('crm_boards')
+        .select('data_payload, id')
+        .eq('user_id', bulkTargetUserId)
+        .maybeSingle();
+
+      if (targetBoardRow && targetBoardRow.data_payload) {
+        let targetBoard = targetBoardRow.data_payload;
+
+        if (targetBoard.phases.length > 0) {
+          targetBoard.phases[0].clients.unshift(...extractedLeads);
+        }
+
+        const fromUser = usersList.find(u => u.id === currentUserId);
+        const fromName = fromUser ? (fromUser.name || fromUser.email) : 'administrador';
+        
+        const newNotif = {
+          id: `notif_${Date.now()}`,
+          type: 'Sistema',
+          text: `📢 Novos Leads! O administrador transferiu ${extractedLeads.length} leads do funil de ${fromName} para a sua fase de "Novo Cliente".`,
+          date: new Date().toISOString()
+        };
+
+        targetBoard.unreadNotifications = [newNotif, ...(targetBoard.unreadNotifications || [])];
+
+        await supabase
+          .from('crm_boards')
+          .update({ data_payload: targetBoard })
+          .eq('id', targetBoardRow.id);
+      }
+
+      // Resetar os estados da transferência em massa
+      setIsBulkTransferActive(false);
+      setBulkTargetUserId(null);
+      setSelectedLeadIds([]);
+      setIsBulkDropdownOpen(false);
+
+      showCustomAlert('success', 'Sucesso na Transferência', `Os ${extractedLeads.length} leads foram transferidos com sucesso.`);
+    } catch (err) {
+      showCustomAlert('error', 'Erro', 'Falha na transferência em massa: ' + err.message);
+    }
+  };
+
+  const selectedTargetUserObj = usersList.find(u => u.id === bulkTargetUserId);
+  const bulkButtonLabel = selectedTargetUserObj 
+    ? `Transferir Leads (${(selectedTargetUserObj.name || selectedTargetUserObj.email).split(' ')[0]})`
+    : 'Transferir Leads';
+
   return (
     <View style={styles.container}>
       
@@ -867,8 +962,48 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* 3ª Linha: Ações de Lixeira, Importar e Novo */}
+          {/* 3ª Linha: Ações de Lixeira, Importar, Transferir Leads (se admin) e Novo */}
           <View style={styles.mobileRowBottom}>
+            {userProfile?.role === 'admin' && (
+              <View style={{ position: 'relative', flex: 1 }}>
+                <TouchableOpacity 
+                  style={[styles.actionBtnSecondary, styles.mobileActionBtn, isBulkTransferActive && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]} 
+                  onPress={() => {
+                    if (!isBulkTransferActive) {
+                      setIsBulkTransferActive(true);
+                      setIsBulkDropdownOpen(true);
+                    } else {
+                      setIsBulkTransferActive(false);
+                      setBulkTargetUserId(null);
+                      setSelectedLeadIds([]);
+                      setIsBulkDropdownOpen(false);
+                    }
+                  }}
+                >
+                  <Text style={[styles.actionBtnSecondaryText, isBulkTransferActive && { color: '#2563eb' }]} numberOfLines={1}>
+                    {bulkButtonLabel}
+                  </Text>
+                </TouchableOpacity>
+
+                {isBulkTransferActive && isBulkDropdownOpen && (
+                  <View style={styles.bulkDropdownMenu}>
+                    <Text style={styles.bulkDropdownTitle}>Selecione o Vendedor:</Text>
+                    {usersList.map(u => (
+                      <TouchableOpacity 
+                        key={u.id} 
+                        style={styles.bulkDropdownItem}
+                        onPress={() => {
+                          setBulkTargetUserId(u.id);
+                          setIsBulkDropdownOpen(false);
+                        }}
+                      >
+                        <Text style={styles.bulkDropdownItemText} numberOfLines={1}>{u.name || u.email}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
             <TouchableOpacity style={[styles.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsTrashModalVisible(true)}>
               <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
             </TouchableOpacity>
@@ -923,13 +1058,55 @@ export default function DashboardScreen() {
               )}
             </TouchableOpacity>
 
-            {Platform.OS === 'web' && currentUserId === loggedUserId && (
+            {/* O BOTÃO DISPARAZAP SÓ APARECE SE FOR NO ELECTRON E USUÁRIO LOGADO PRÓPRIO */}
+            {Platform.OS === 'web' && isElectron && currentUserId === loggedUserId && (
               <TouchableOpacity 
                 style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
                 onPress={() => setIsWhatsAppModalVisible(true)}
               >
                 <Text style={[styles.actionBtnSecondaryText, { color: '#fff' }]}>DisparaZap</Text>
               </TouchableOpacity>
+            )}
+
+            {userProfile?.role === 'admin' && (
+              <View style={{ position: 'relative' }}>
+                <TouchableOpacity 
+                  style={[styles.actionBtnSecondary, isBulkTransferActive && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]} 
+                  onPress={() => {
+                    if (!isBulkTransferActive) {
+                      setIsBulkTransferActive(true);
+                      setIsBulkDropdownOpen(true);
+                    } else {
+                      setIsBulkTransferActive(false);
+                      setBulkTargetUserId(null);
+                      setSelectedLeadIds([]);
+                      setIsBulkDropdownOpen(false);
+                    }
+                  }}
+                >
+                  <Text style={[styles.actionBtnSecondaryText, isBulkTransferActive && { color: '#2563eb' }]}>
+                    {bulkButtonLabel}
+                  </Text>
+                </TouchableOpacity>
+
+                {isBulkTransferActive && isBulkDropdownOpen && (
+                  <View style={styles.bulkDropdownMenu}>
+                    <Text style={styles.bulkDropdownTitle}>Selecione o Vendedor:</Text>
+                    {usersList.map(u => (
+                      <TouchableOpacity 
+                        key={u.id} 
+                        style={styles.bulkDropdownItem}
+                        onPress={() => {
+                          setBulkTargetUserId(u.id);
+                          setIsBulkDropdownOpen(false);
+                        }}
+                      >
+                        <Text style={styles.bulkDropdownItemText}>{u.name || u.email}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             )}
 
             <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
@@ -949,24 +1126,37 @@ export default function DashboardScreen() {
       {/* RENDERIZAÇÃO CONDICIONAL DAS TELAS */}
       
       {activeView === 'kanban' && (
-        <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
-          {filteredBoardData?.phases?.map((phase) => (
-            <KanbanColumn 
-              key={phase.id} 
-              phase={phase} 
-              onDropClient={handleDropClient} 
-              onDeleteClient={handleMoveToTrash}
-              onOpenClient={handleOpenClientDetails}
-              onEditPhase={(p) => setEditingPhase(p)}
-              onReorderPhase={handleReorderPhase}
-              onAddComment={handleAddCommentToClient}
-            />
-          ))}
-          <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
-            <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      )}
+  <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
+    {filteredBoardData?.phases?.map((phase) => (
+      <KanbanColumn 
+        key={phase.id} 
+        phase={phase} 
+        onDropClient={handleDropClient} 
+        onDeleteClient={handleMoveToTrash}
+        onOpenClient={handleOpenClientDetails}
+        onEditPhase={(p) => setEditingPhase(p)}
+        onReorderPhase={handleReorderPhase}
+        onAddComment={handleAddCommentToClient}
+        isBulkSelecting={isBulkTransferActive}
+        selectedLeadIds={selectedLeadIds}
+        onToggleSelectLead={(clientId) => {
+          setSelectedLeadIds(prev => 
+            prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
+          );
+        }}
+        onSelectAllInPhase={(phaseClientIds) => {
+          setSelectedLeadIds(prev => Array.from(new Set([...prev, ...phaseClientIds])));
+        }}
+        onDeselectAllInPhase={(phaseClientIds) => {
+          setSelectedLeadIds(prev => prev.filter(id => !phaseClientIds.includes(id)));
+        }}
+      />
+    ))}
+    <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
+      <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
+    </TouchableOpacity>
+  </ScrollView>
+)}
 
       {activeView === 'minha_central' && (
         <MinhaCentral boardData={boardData} onOpenClient={handleOpenClientDetails} />
@@ -982,98 +1172,130 @@ export default function DashboardScreen() {
 
       {activeView === 'admin_panel' && (<AdminPanel />)}
 
-      {/* MODAL DO MENU LATERAL COM O BOTÃO DE TROCAR SENHA ADICIONADO */}
+      {/* BOTÃO FLUTUANTE DE TRANSFERÊNCIA EM MASSA */}
+      {isBulkTransferActive && selectedLeadIds.length > 0 && bulkTargetUserId && (
+        <TouchableOpacity 
+          style={styles.floatingBulkBtn} 
+          onPress={handleBulkTransferExecute}
+        >
+          <Text style={styles.floatingBulkBtnText}>Transferir ({selectedLeadIds.length})</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ===== MODAL DO MENU LATERAL REFINADO (LARGURA REDUZIDA, CLEAN) ===== */}
       {isMenuOpen && (
         <View style={styles.sidebarOverlay}>
           <TouchableOpacity style={styles.sidebarBackdrop} onPress={() => setIsMenuOpen(false)} />
-          <View style={[styles.sidebarContent, isMobile && { width: '80%' }]}>
-            <Text style={styles.sidebarTitle}>Navegação</Text>
+          <View style={[styles.sidebarContent, isMobile && { width: '70%' }]}>
+            <View style={styles.sidebarHeaderContainer}>
+              <Text style={styles.sidebarTitle}>Navegação</Text>
+              <TouchableOpacity style={styles.sidebarCloseBtn} onPress={() => setIsMenuOpen(false)}>
+                <Text style={styles.sidebarCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
             
-            <TouchableOpacity style={[styles.menuItem, activeView === 'kanban' && styles.menuItemActive]} onPress={() => { setActiveView('kanban'); setIsMenuOpen(false); }}>
-              <Text style={[styles.menuItemText, activeView === 'kanban' && styles.menuItemTextActive]}>📊 Painel Kanban</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={[styles.menuItem, activeView === 'minha_central' && styles.menuItemActive]} onPress={() => { setActiveView('minha_central'); setIsMenuOpen(false); }}>
-              <Text style={[styles.menuItemText, activeView === 'minha_central' && styles.menuItemTextActive]}>🎯 Minha Central</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.menuItem, activeView === 'info_gerais' && styles.menuItemActive]} onPress={() => { setActiveView('info_gerais'); setIsMenuOpen(false); }}>
-              <Text style={[styles.menuItemText, activeView === 'info_gerais' && styles.menuItemTextActive]}>ℹ️ Informações Gerais</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.menuItem, activeView === 'configuracao' && styles.menuItemActive]} onPress={() => { setActiveView('configuracao'); setIsMenuOpen(false); }}>
-              <Text style={[styles.menuItemText, activeView === 'configuracao' && styles.menuItemTextActive]}>⚙️ Configuração</Text>
-            </TouchableOpacity>
-
-            {userProfile?.role === 'admin' && (
-              <View style={{ flexShrink: 1 }}>
-                <TouchableOpacity 
-                  style={[styles.menuItem, { marginTop: 24, backgroundColor: '#fef2f2', borderLeftColor: '#ef4444' }, activeView === 'admin_panel' && { backgroundColor: '#fee2e2' }]} 
-                  onPress={() => { setActiveView('admin_panel'); setIsMenuOpen(false); }}
-                >
-                  <Text style={{ color: '#dc2626', fontWeight: 'bold', fontFamily: MODERN_FONT }}>🛡️ Painel Admin</Text>
-                </TouchableOpacity>
-
-                {/* Dropdown / Lista Suspensa de Vendedores */}
-                <TouchableOpacity 
-                  style={[styles.menuItem, { backgroundColor: '#f1f5f9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
-                  onPress={() => setIsSellersDropdownOpen(!isSellersDropdownOpen)}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#475569' }}>
-                    CRM DOS VENDEDORES
-                  </Text>
-                  <Text style={{ fontSize: 12, color: '#475569' }}>
-                    {isSellersDropdownOpen ? '▲' : '▼'}
-                  </Text>
-                </TouchableOpacity>
-                
-                {isSellersDropdownOpen && (
-                  <ScrollView 
-                    style={{ maxHeight: 180, backgroundColor: '#f8fafc', borderRadius: 8, padding: 4, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 8 }} 
-                    nestedScrollEnabled={true}
-                  >
-                    {usersList.map(u => (
-                      <TouchableOpacity 
-                        key={u.id}
-                        style={[
-                          styles.menuItem, 
-                          { marginBottom: 4, paddingVertical: 10, minHeight: 40 },
-                          currentUserId === u.id && { backgroundColor: '#e0e7ff', borderLeftWidth: 4, borderLeftColor: '#4f46e5' }
-                        ]} 
-                        onPress={() => { 
-                          setCurrentUserId(u.id); 
-                          setActiveView('kanban'); 
-                          setIsMenuOpen(false); 
-                        }}
-                      >
-                        <Text 
-                          style={[styles.menuItemText, { fontSize: 13 }, currentUserId === u.id && { color: '#4f46e5' }]} 
-                          numberOfLines={1}
-                        >
-                          {u.id === loggedUserId ? '👤 Meu CRM (Próprio)' : `👀 ${u.name || u.email}`}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-            )}
-
-            <View style={{ marginTop: 'auto', paddingTop: 20 }}>
-              
-              {/* ===== BOTÃO TROCAR SENHA ===== */}
+            <View style={styles.sidebarMenuContainer}>
               <TouchableOpacity 
-                style={[styles.logoutButton, { marginBottom: 12, backgroundColor: '#e0e7ff', borderColor: '#c7d2fe' }]} 
-                onPress={() => { setIsChangePassModalVisible(true); setIsMenuOpen(false); }}
+                style={[styles.menuItem, activeView === 'kanban' && styles.menuItemActive]} 
+                onPress={() => { setActiveView('kanban'); setIsMenuOpen(false); }}
               >
-                <Text style={[styles.logoutButtonText, { color: '#4338ca' }]}>🔐 Trocar Minha Senha</Text>
+                <Text style={[styles.menuItemText, activeView === 'kanban' && styles.menuItemTextActive]}>Painel Kanban</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.menuItem, activeView === 'minha_central' && styles.menuItemActive]} 
+                onPress={() => { setActiveView('minha_central'); setIsMenuOpen(false); }}
+              >
+                <Text style={[styles.menuItemText, activeView === 'minha_central' && styles.menuItemTextActive]}>Minha Central</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={styles.logoutButton} 
-                onPress={() => { setIsLogoutModalVisible(true); setIsMenuOpen(false); }}
+                style={[styles.menuItem, activeView === 'info_gerais' && styles.menuItemActive]} 
+                onPress={() => { setActiveView('info_gerais'); setIsMenuOpen(false); }}
               >
-                <Text style={styles.logoutButtonText}>🚪 Sair da conta</Text>
+                <Text style={[styles.menuItemText, activeView === 'info_gerais' && styles.menuItemTextActive]}>Informações Gerais</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.menuItem, activeView === 'configuracao' && styles.menuItemActive]} 
+                onPress={() => { setActiveView('configuracao'); setIsMenuOpen(false); }}
+              >
+                <Text style={[styles.menuItemText, activeView === 'configuracao' && styles.menuItemTextActive]}>Configuração</Text>
+              </TouchableOpacity>
+
+              {userProfile?.role === 'admin' && (
+                <View style={styles.adminSectionContainer}>
+                  <TouchableOpacity 
+                    style={[styles.menuItem, styles.adminMenuItem, activeView === 'admin_panel' && styles.adminMenuItemActive]} 
+                    onPress={() => { setActiveView('admin_panel'); setIsMenuOpen(false); }}
+                  >
+                    <Text style={styles.adminMenuItemText}>Painel Administrativo</Text>
+                  </TouchableOpacity>
+
+                  {/* Seção Simples e Moderna de Vendedores */}
+                  <View style={styles.sellersBox}>
+                    <TouchableOpacity 
+                      style={styles.sellersHeaderToggle}
+                      onPress={() => setIsSellersDropdownOpen(!isSellersDropdownOpen)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.sellersHeaderTitle}>CRM dos Vendedores</Text>
+                      <Text style={styles.sellersHeaderArrow}>{isSellersDropdownOpen ? '▴' : '▾'}</Text>
+                    </TouchableOpacity>
+                    
+                    {isSellersDropdownOpen && (
+                      <ScrollView 
+                        style={styles.sellersDropdownList} 
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={false}
+                      >
+                        {usersList.map(u => {
+                          const isSelectedUser = currentUserId === u.id;
+                          return (
+                            <TouchableOpacity 
+                              key={u.id}
+                              style={[
+                                styles.sellerItemRow,
+                                isSelectedUser && styles.sellerItemRowActive
+                              ]} 
+                              onPress={() => { 
+                                setCurrentUserId(u.id); 
+                                setActiveView('kanban'); 
+                                setIsMenuOpen(false); 
+                              }}
+                            >
+                              <View style={[styles.sellerIndicatorDot, isSelectedUser && styles.sellerIndicatorDotActive]} />
+                              <Text 
+                                style={[styles.sellerItemText, isSelectedUser && styles.sellerItemTextActive]} 
+                                numberOfLines={1}
+                              >
+                                {u.id === loggedUserId ? 'Meu CRM (Próprio)' : (u.name || u.email)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.sidebarFooterContainer}>
+              <TouchableOpacity 
+                style={styles.sidebarFooterButtonChangePass} 
+                onPress={() => { setIsChangePassModalVisible(true); setIsMenuOpen(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.sidebarFooterButtonChangePassText}>Trocar Minha Senha</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.sidebarFooterButtonLogout} 
+                onPress={() => { setIsLogoutModalVisible(true); setIsMenuOpen(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.sidebarFooterButtonLogoutText}>Encerrar Sessão</Text>
               </TouchableOpacity>
             </View>
 
@@ -1409,30 +1631,214 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  /* --- ESTILOS DO MENU LATERAL --- */
-  sidebarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, flexDirection: 'row' },
-  sidebarBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)' },
-  sidebarContent: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 280, backgroundColor: '#ffffff', padding: 24, ...Platform.select({ web: { boxShadow: '4px 0px 15px rgba(0,0,0,0.1)' } }) },
-  sidebarTitle: { fontFamily: MODERN_FONT, fontSize: 18, fontWeight: '800', color: '#1e293b', marginBottom: 24 },
-  menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 8, marginBottom: 8, backgroundColor: '#f8fafc' },
-  menuItemActive: { backgroundColor: '#eff6ff', borderLeftWidth: 4, borderLeftColor: '#2563eb' },
-  menuItemText: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: '600', color: '#475569' },
-  menuItemTextActive: { color: '#2563eb' },
-
-  logoutButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+  /* --- ESTILOS DO MENU LATERAL (REFINADO, COMPACTO, CLEAN) --- */
+  sidebarOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    zIndex: 9999, 
+    flexDirection: 'row' 
+  },
+  sidebarBackdrop: { 
+    flex: 1, 
+    backgroundColor: 'rgba(15, 23, 42, 0.45)' 
+  },
+  sidebarContent: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    bottom: 0, 
+    width: 220, // Largura compacta otimizada
+    backgroundColor: '#ffffff', 
+    paddingHorizontal: 14,
+    paddingTop: 24,
+    paddingBottom: 20,
+    justifyContent: 'space-between',
+    ...Platform.select({ web: { boxShadow: '6px 0px 25px rgba(0,0,0,0.08)' } }) 
+  },
+  sidebarHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  sidebarTitle: { 
+    fontFamily: MODERN_FONT, 
+    fontSize: 16, 
+    fontWeight: '800', 
+    color: '#0f172a',
+    letterSpacing: -0.3,
+  },
+  sidebarCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  sidebarCloseText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  sidebarMenuContainer: {
+    flex: 1,
+    gap: 6,
+  },
+  menuItem: { 
+    paddingVertical: 12, 
+    paddingHorizontal: 14, 
+    borderRadius: 8, 
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  menuItemActive: { 
+    backgroundColor: '#f8fafc', 
+    borderColor: '#e2e8f0',
+    borderLeftWidth: 3, 
+    borderLeftColor: '#2563eb' 
+  },
+  menuItemText: { 
+    fontFamily: MODERN_FONT, 
+    fontSize: 13, 
+    fontWeight: '600', 
+    color: '#475569' 
+  },
+  menuItemTextActive: { 
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  adminSectionContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    gap: 8,
+  },
+  adminMenuItem: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  adminMenuItemActive: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#dbeafe',
+    borderLeftWidth: 3,
+    borderLeftColor: '#3b82f6',
+  },
+  adminMenuItemText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e40af',
+  },
+  sellersBox: {
+    backgroundColor: '#f8fafc',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+  },
+  sellersHeaderToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+  },
+  sellersHeaderTitle: {
+    fontFamily: MODERN_FONT,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.2,
+  },
+  sellersHeaderArrow: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: 'bold',
+  },
+  sellersDropdownList: {
+    maxHeight: 160,
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingVertical: 4,
+  },
+  sellerItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  sellerItemRowActive: {
     backgroundColor: '#f1f5f9',
+  },
+  sellerIndicatorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#cbd5e1',
+  },
+  sellerIndicatorDotActive: {
+    backgroundColor: '#2563eb',
+  },
+  sellerItemText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#475569',
+    flex: 1,
+  },
+  sellerItemTextActive: {
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  sidebarFooterContainer: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    gap: 8,
+  },
+  sidebarFooterButtonChangePass: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#f8fafc',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  logoutButtonText: {
+  sidebarFooterButtonChangePassText: {
     fontFamily: MODERN_FONT,
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  sidebarFooterButtonLogout: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#fff1f2',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffe4e6',
+  },
+  sidebarFooterButtonLogoutText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#475569',
+    color: '#e11d48',
   },
 
   /* --- ESTILOS DOS MODAIS CUSTOMIZADOS --- */
@@ -1469,5 +1875,53 @@ const styles = StyleSheet.create({
   successAlertTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
   successAlertMessage: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
-  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 }
+  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+
+  bulkDropdownMenu: {
+    position: 'absolute',
+    top: 40,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    padding: 6,
+    zIndex: 1000,
+    ...Platform.select({ web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.1)' } })
+  },
+  bulkDropdownTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#64748b',
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  bulkDropdownItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  bulkDropdownItemText: {
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  floatingBulkBtn: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    backgroundColor: '#2563eb',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    zIndex: 999,
+    ...Platform.select({ web: { boxShadow: '0px 6px 16px rgba(37, 99, 235, 0.4)' } })
+  },
+  floatingBulkBtnText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 14,
+    fontFamily: MODERN_FONT,
+  }
 });
