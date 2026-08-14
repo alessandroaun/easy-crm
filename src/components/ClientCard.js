@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Platform, TouchableOpacity, Pressable, Linking,
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment, onDropClient, isBulkSelecting, isSelected, onToggleSelect }) {
+export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddComment, onDropClient, isBulkSelecting, isSelected, onToggleSelect, isDarkMode }) {
   const cardRef = useRef(null);
   const [pulseColor, setPulseColor] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -293,10 +293,10 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
 
   const getTempStyle = (temp) => {
     const t = temp?.toLowerCase() || '';
-    if (t.includes('quente')) return { bg: '#fee2e2', color: '#dc2626' };
-    if (t.includes('morno')) return { bg: '#fef3c7', color: '#d97706' };
-    if (t.includes('frio')) return { bg: '#e0f2fe', color: '#0284c7' };
-    return { bg: '#f1f5f9', color: '#475569' };
+    if (t.includes('quente')) return { bg: isDarkMode ? '#7f1d1d' : '#fee2e2', color: isDarkMode ? '#fca5a5' : '#dc2626' };
+    if (t.includes('morno')) return { bg: isDarkMode ? '#78350f' : '#fef3c7', color: isDarkMode ? '#fde047' : '#d97706' };
+    if (t.includes('frio')) return { bg: isDarkMode ? '#0c4a6e' : '#e0f2fe', color: isDarkMode ? '#7dd3fc' : '#0284c7' };
+    return { bg: isDarkMode ? '#334155' : '#f1f5f9', color: isDarkMode ? '#cbd5e1' : '#475569' };
   };
 
   const formatDateTime = (isoString) => {
@@ -335,24 +335,25 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
   const buildTags = () => {
     const tags = [];
     const cleanCategory = formatCategory(client.category);
-    if (cleanCategory) tags.push({ id: 'cat', text: cleanCategory, bg: '#f3e8ff', color: '#7e22ce' });
+    if (cleanCategory) tags.push({ id: 'cat', text: cleanCategory, bg: isDarkMode ? '#581c87' : '#f3e8ff', color: isDarkMode ? '#d8b4fe' : '#7e22ce' });
     if (client.leadTemp) {
       const style = getTempStyle(client.leadTemp);
       tags.push({ id: 'temp', text: client.leadTemp, bg: style.bg, color: style.color });
     }
     if (client.bidAmount && client.bidAmount.trim() !== '' && client.bidAmount.trim().toLowerCase() !== 'não') {
-      tags.push({ id: 'bid', text: 'Com Lance', bg: '#dcfce7', color: '#16a34a' });
+      tags.push({ id: 'bid', text: 'Com Lance', bg: isDarkMode ? '#064e3b' : '#dcfce7', color: isDarkMode ? '#86efac' : '#16a34a' });
     }
     if (client.winProbability) {
-      tags.push({ id: 'prob', text: `${client.winProbability}%`, bg: '#ecfdf5', color: '#059669' });
+      tags.push({ id: 'prob', text: `${client.winProbability}%`, bg: isDarkMode ? '#065f46' : '#ecfdf5', color: isDarkMode ? '#6ee7b7' : '#059669' });
     }
     if (client.platform) {
-      tags.push({ id: 'plat', text: client.platform, bg: '#e0e7ff', color: '#4f46e5' });
+      tags.push({ id: 'plat', text: client.platform, bg: isDarkMode ? '#1e3a8a' : '#e0e7ff', color: isDarkMode ? '#93c5fd' : '#4f46e5' });
     }
     return tags.slice(0, 4);
   };
 
   const tagsToRender = buildTags();
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
 
   return (
     <>
@@ -361,20 +362,21 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         dataSet={{ clientid: client.id }} 
         style={[
           styles.card, 
+          themeStyles.card,
           pulseColor && { borderColor: pulseColor, borderWidth: 2 },
-          isBulkSelecting && isSelected && { backgroundColor: '#eff6ff', borderColor: '#2563eb', borderWidth: 2 }
+          isBulkSelecting && isSelected && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#2563eb', borderWidth: 2 }
         ]}
       >
         {/* CHECKBOX PARA SELEÇÃO EM MASSA */}
         {isBulkSelecting && (
           <TouchableOpacity 
-            style={styles.checkboxContainer} 
+            style={[styles.checkboxContainer, themeStyles.checkboxContainer]} 
             onPress={() => onToggleSelect && onToggleSelect(client.id)}
           >
-            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+            <View style={[styles.checkbox, themeStyles.checkbox, isSelected && styles.checkboxSelected]}>
               {isSelected && <Text style={styles.checkmark}>✓</Text>}
             </View>
-            <Text style={styles.checkboxLabel}>Selecionar para transferência</Text>
+            <Text style={[styles.checkboxLabel, themeStyles.checkboxLabel]}>Selecionar para transferência</Text>
           </TouchableOpacity>
         )}
 
@@ -388,67 +390,67 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
                 </Animated.View>
               )}
 
-              <Text style={styles.name} numberOfLines={1}>{client.name}</Text>
+              <Text style={[styles.name, themeStyles.name]} numberOfLines={1}>{client.name}</Text>
               
               {commentsCount > 0 && (
-                <View style={styles.commentBadge}>
-                  <Text style={styles.commentBadgeText}>{commentsCount} {commentsCount === 1 ? 'comentário' : 'comentários'}</Text>
+                <View style={[styles.commentBadge, themeStyles.commentBadge]}>
+                  <Text style={[styles.commentBadgeText, themeStyles.commentBadgeText]}>{commentsCount} {commentsCount === 1 ? 'comentário' : 'comentários'}</Text>
                 </View>
               )}
 
               {completedApptsCount > 0 && (
-                <View style={styles.apptBadge}>
-                  <Text style={styles.apptBadgeText}>{completedApptsCount}A</Text>
+                <View style={[styles.apptBadge, themeStyles.apptBadge]}>
+                  <Text style={[styles.apptBadgeText, themeStyles.apptBadgeText]}>{completedApptsCount}A</Text>
                 </View>
               )}
 
               {daysInactive() >= 7 && (
-                <View style={styles.inactiveBadge}>
-                  <Text style={styles.inactiveText}>{daysInactive()}d</Text>
+                <View style={[styles.inactiveBadge, themeStyles.inactiveBadge]}>
+                  <Text style={[styles.inactiveText, themeStyles.inactiveText]}>{daysInactive()}d</Text>
                 </View>
               )}
             </View>
 
             {client.createdAt && (
-              <Text style={styles.dateText}>{formatDateTime(client.createdAt)}</Text>
+              <Text style={[styles.dateText, themeStyles.dateText]}>{formatDateTime(client.createdAt)}</Text>
             )}
           </View>
           <TouchableOpacity style={styles.deleteButton} onPress={openDeleteModal}>
-            <Text style={styles.deleteIcon}>✕</Text>
+            <Text style={[styles.deleteIcon, themeStyles.deleteIcon]}>✕</Text>
           </TouchableOpacity>
         </View>
         
         <Pressable style={styles.clickableArea} onPress={() => { if (!isBulkSelecting && Platform.OS !== 'web' && onOpen) onOpen(client, phaseId); }}>
           
           <View style={styles.phoneRow}>
-            <Text style={styles.phoneText}>{client.phone || 'Sem telefone'}</Text>
+            <Text style={[styles.phoneText, themeStyles.phoneText]}>{client.phone || 'Sem telefone'}</Text>
             {client.phone && (
               <View style={styles.actionButtonsContainer}>
                 <TouchableOpacity 
                   style={[
                     styles.btnActionWA, 
-                    client.whatsappError ? { backgroundColor: '#fee2e2' } : { backgroundColor: '#dcfce7' }
+                    client.whatsappError ? (isDarkMode ? { backgroundColor: '#7f1d1d' } : { backgroundColor: '#fee2e2' }) : (isDarkMode ? { backgroundColor: '#064e3b' } : { backgroundColor: '#dcfce7' })
                   ]} 
                   onPress={handleWhatsAppClick}
                 >
                   <Text 
                     style={[
                       styles.btnActionTextWA, 
-                      client.whatsappError ? { color: '#dc2626' } : { color: '#16a34a' }
+                      client.whatsappError ? (isDarkMode ? { color: '#fca5a5' } : { color: '#dc2626' }) : (isDarkMode ? { color: '#86efac' } : { color: '#16a34a' })
                     ]}
                   >
                     WA
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.btnActionCall} onPress={handlePhoneCall}>
-                  <Text style={styles.btnActionTextCall}>Ligar</Text>
+                <TouchableOpacity style={[styles.btnActionCall, themeStyles.btnActionCall]} onPress={handlePhoneCall}>
+                  <Text style={[styles.btnActionTextCall, themeStyles.btnActionTextCall]}>Ligar</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
 
-          <Text style={styles.info} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
+          <Text style={[styles.info, themeStyles.info]} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
           
           <View style={styles.tagsContainer}>
             {tagsToRender.map(tag => (
@@ -462,14 +464,14 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
       {isDeleting && (
         <Modal transparent={true} visible={isDeleting} onRequestClose={() => closeDeleteModal()}>
           <View style={styles.modalOverlay}>
-            <Animated.View style={[styles.alertBox, { opacity: deleteOpacity, transform: [{ scale: deleteScale }] }]}>
+            <Animated.View style={[styles.alertBox, themeStyles.alertBox, { opacity: deleteOpacity, transform: [{ scale: deleteScale }] }]}>
               <Text style={styles.alertIcon}>⚠️</Text>
-              <Text style={styles.alertTitle}>Excluir Card?</Text>
-              <Text style={styles.alertMessage}>Tem certeza que deseja enviar "{client.name}" para a lixeira? Você poderá restaurá-lo depois se precisar.</Text>
+              <Text style={[styles.alertTitle, themeStyles.alertTitle]}>Excluir Card?</Text>
+              <Text style={[styles.alertMessage, themeStyles.alertMessage]}>Tem certeza que deseja enviar "{client.name}" para a lixeira? Você poderá restaurá-lo depois se precisar.</Text>
               
               <View style={styles.alertButtonRow}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => closeDeleteModal()}>
-                  <Text style={styles.cancelBtnText}>Cancelar</Text>
+                <TouchableOpacity style={[styles.cancelBtn, themeStyles.cancelBtn]} onPress={() => closeDeleteModal()}>
+                  <Text style={[styles.cancelBtnText, themeStyles.cancelBtnText]}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.confirmBtn} onPress={() => closeDeleteModal(() => onDelete(client.id, phaseId))}>
                   <Text style={styles.confirmBtnText}>Sim, excluir</Text>
@@ -485,22 +487,11 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
 
 const styles = StyleSheet.create({
   card: { 
-    backgroundColor: '#FFFFFF', 
     padding: 10, 
     borderRadius: 8, 
     marginBottom: 8, 
     borderLeftWidth: 4, 
     borderLeftColor: '#3b82f6', 
-    ...Platform.select({ 
-      web: { 
-        boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', 
-        cursor: 'grab', 
-        userSelect: 'none', 
-        WebkitUserSelect: 'none', 
-        WebkitTouchCallout: 'none' 
-      }, 
-      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } 
-    }) 
   },
   checkboxContainer: {
     flexDirection: 'row',
@@ -508,7 +499,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingBottom: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
     gap: 8,
   },
   checkbox: {
@@ -516,10 +506,8 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#cbd5e1',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
   },
   checkboxSelected: {
     backgroundColor: '#2563eb',
@@ -532,43 +520,118 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 11,
-    color: '#64748b',
     fontWeight: '600',
     fontFamily: MODERN_FONT,
   },
   headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   headerTextContainer: { flex: 1, marginRight: 8 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap' },
-  name: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', flexShrink: 1 },
+  name: { fontSize: 14, fontWeight: 'bold', flexShrink: 1 },
   pulsingClock: { fontSize: 12 },
-  commentBadge: { backgroundColor: '#e0e7ff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  commentBadgeText: { color: '#4f46e5', fontSize: 9, fontWeight: '700' },
-  apptBadge: { backgroundColor: '#fef3c7', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
-  apptBadgeText: { color: '#d97706', fontSize: 9, fontWeight: 'bold' },
-  inactiveBadge: { backgroundColor: '#fee2e2', paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
-  inactiveText: { color: '#dc2626', fontSize: 10, fontWeight: 'bold' },
-  dateText: { fontSize: 9, color: '#94a3b8', marginTop: 2 },
+  commentBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  commentBadgeText: { fontSize: 9, fontWeight: '700' },
+  apptBadge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  apptBadgeText: { fontSize: 9, fontWeight: 'bold' },
+  inactiveBadge: { paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
+  inactiveText: { fontSize: 10, fontWeight: 'bold' },
+  dateText: { fontSize: 9, marginTop: 2 },
   deleteButton: { paddingLeft: 8, paddingBottom: 4 },
-  deleteIcon: { fontSize: 12, color: '#94a3b8', fontWeight: 'bold' },
+  deleteIcon: { fontSize: 12, fontWeight: 'bold' },
   clickableArea: { paddingTop: 0, paddingBottom: 0 },
   phoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  phoneText: { fontSize: 13, color: '#475569', fontWeight: '500' },
+  phoneText: { fontSize: 13, fontWeight: '500' },
   actionButtonsContainer: { flexDirection: 'row', gap: 4 },
-  btnActionWA: { backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  btnActionTextWA: { color: '#16a34a', fontSize: 10, fontWeight: 'bold' },
-  btnActionCall: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  btnActionTextCall: { color: '#475569', fontSize: 10, fontWeight: 'bold' },
-  info: { fontSize: 12, color: '#475569', marginBottom: 6, lineHeight: 16 },
+  btnActionWA: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  btnActionTextWA: { fontSize: 10, fontWeight: 'bold' },
+  btnActionCall: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  btnActionTextCall: { fontSize: 10, fontWeight: 'bold' },
+  info: { fontSize: 12, marginBottom: 6, lineHeight: 16 },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, 
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
-  alertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  alertBox: { padding: 24, borderRadius: 16, alignItems: 'center', width: 320 },
   alertIcon: { fontSize: 48, marginBottom: 12 },
-  alertTitle: { fontFamily: MODERN_FONT, fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
-  alertMessage: { fontFamily: MODERN_FONT, fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  alertTitle: { fontFamily: MODERN_FONT, fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  alertMessage: { fontFamily: MODERN_FONT, fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   alertButtonRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  cancelBtn: { flex: 1, backgroundColor: '#f1f5f9', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  cancelBtnText: { fontFamily: MODERN_FONT, color: '#475569', fontWeight: '700', fontSize: 14 },
+  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  cancelBtnText: { fontFamily: MODERN_FONT, fontWeight: '700', fontSize: 14 },
   confirmBtn: { flex: 1, backgroundColor: '#ef4444', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   confirmBtnText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 14 }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  card: { 
+    backgroundColor: '#FFFFFF', 
+    ...Platform.select({ 
+      web: { 
+        boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', 
+        cursor: 'grab', 
+        userSelect: 'none', 
+        WebkitUserSelect: 'none', 
+        WebkitTouchCallout: 'none' 
+      }, 
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 } 
+    }) 
+  },
+  checkboxContainer: { borderBottomColor: '#f1f5f9' },
+  checkbox: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  checkboxLabel: { color: '#64748b' },
+  name: { color: '#1e293b' },
+  commentBadge: { backgroundColor: '#e0e7ff' },
+  commentBadgeText: { color: '#4f46e5' },
+  apptBadge: { backgroundColor: '#fef3c7' },
+  apptBadgeText: { color: '#d97706' },
+  inactiveBadge: { backgroundColor: '#fee2e2' },
+  inactiveText: { color: '#dc2626' },
+  dateText: { color: '#94a3b8' },
+  deleteIcon: { color: '#94a3b8' },
+  phoneText: { color: '#475569' },
+  btnActionCall: { backgroundColor: '#f1f5f9' },
+  btnActionTextCall: { color: '#475569' },
+  info: { color: '#475569' },
+  alertBox: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  alertTitle: { color: '#1e293b' },
+  alertMessage: { color: '#475569' },
+  cancelBtn: { backgroundColor: '#f1f5f9' },
+  cancelBtnText: { color: '#475569' }
+});
+
+/* Estilos de Tema Escuro (Cards com leve escurecimento mantendo a base clara/chumbo suave) */
+const darkStyles = StyleSheet.create({
+  card: { 
+    backgroundColor: '#1e293b', // Chumbo suave levemente escurecido mantendo tom claro corporativo
+    ...Platform.select({ 
+      web: { 
+        boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.3)', 
+        cursor: 'grab', 
+        userSelect: 'none', 
+        WebkitUserSelect: 'none', 
+        WebkitTouchCallout: 'none' 
+      }, 
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 2 } 
+    }) 
+  },
+  checkboxContainer: { borderBottomColor: '#334155' },
+  checkbox: { borderColor: '#475569', backgroundColor: '#0f172a' },
+  checkboxLabel: { color: '#94a3b8' },
+  name: { color: '#f8fafc' },
+  commentBadge: { backgroundColor: '#312e81' },
+  commentBadgeText: { color: '#818cf8' },
+  apptBadge: { backgroundColor: '#451a03' },
+  apptBadgeText: { color: '#fbbf24' },
+  inactiveBadge: { backgroundColor: '#450a0a' },
+  inactiveText: { color: '#f87171' },
+  dateText: { color: '#64748b' },
+  deleteIcon: { color: '#94a3b8' },
+  phoneText: { color: '#cbd5e1' },
+  btnActionCall: { backgroundColor: '#334155' },
+  btnActionTextCall: { color: '#cbd5e1' },
+  info: { color: '#94a3b8' },
+  alertBox: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
+  alertTitle: { color: '#f8fafc' },
+  alertMessage: { color: '#94a3b8' },
+  cancelBtn: { backgroundColor: '#334155' },
+  cancelBtnText: { color: '#cbd5e1' }
 });

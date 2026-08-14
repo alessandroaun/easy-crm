@@ -4,9 +4,9 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView, 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
 export default function NotificationModal({ 
-  visible, onClose, notifications, historyNotifications = [], onDismiss, onDismissSystem, 
+  visible, onClose, notifications = [], historyNotifications = [], onDismiss, onDismissSystem, 
   onApproveReset, onRejectReset, onApproveNameChange, onRejectNameChange,
-  onDismissNameChangeAlert, onClearHistory
+  onDismissNameChangeAlert, onClearHistory, isDarkMode 
 }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
@@ -34,29 +34,31 @@ export default function NotificationModal({
     }
   };
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <View style={[styles.overlay, isMobile ? styles.overlayMobile : styles.overlayDesktop]}>
-        <View style={[styles.modalContainer, isMobile ? styles.modalContainerMobile : styles.modalContainerDesktop]}>
+        <View style={[styles.modalContainer, isMobile ? styles.modalContainerMobile : styles.modalContainerDesktop, themeStyles.modalContainer]}>
           
-          <View style={styles.header}>
-            <Text style={styles.title}>Central de Notificações</Text>
+          <View style={[styles.header, themeStyles.header]}>
+            <Text style={[styles.title, themeStyles.title]}>Central de Notificações</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {historyNotifications.length > 0 && (
-                <TouchableOpacity onPress={onClearHistory} style={styles.clearHistoryButton}>
-                  <Text style={styles.clearHistoryButtonText}>Limpar Histórico</Text>
+                <TouchableOpacity onPress={onClearHistory} style={[styles.clearHistoryButton, themeStyles.clearHistoryButton]}>
+                  <Text style={[styles.clearHistoryButtonText, themeStyles.clearHistoryButtonText]}>Limpar Histórico</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Text style={styles.closeButtonText}>✕</Text>
+              <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}>
+                <Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <ScrollView style={styles.listArea} showsVerticalScrollIndicator={false}>
             {totalItems === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>Sem notificações ou histórico no momento.</Text>
+              <View style={[styles.emptyState, themeStyles.emptyState]}>
+                <Text style={[styles.emptyText, themeStyles.emptyText]}>Sem notificações ou histórico no momento.</Text>
               </View>
             ) : (
               <>
@@ -65,15 +67,15 @@ export default function NotificationModal({
                   
                   if (item.type === 'NameChangeRequest') {
                     return (
-                      <View key={item.id} style={[styles.notificationCard, { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }]}>
-                        <Text style={{ fontFamily: MODERN_FONT, fontWeight: '800', color: '#1e293b', marginBottom: 5 }}>Solicitação de Alteração de Nome</Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 13, color: '#475569', marginBottom: 3 }}>
+                      <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardRequest : { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }]}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#f8fafc' } : { color: '#1e293b' }]}>Solicitação de Alteração de Nome</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 3 }, isDarkMode ? { color: '#cbd5e1' } : { color: '#475569' }]}>
                           Usuário: <Text style={{fontWeight: 'bold'}}>{item.currentName || 'N/A'}</Text>
                         </Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 13, color: '#475569', marginBottom: 12 }}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 12 }, isDarkMode ? { color: '#cbd5e1' } : { color: '#475569' }]}>
                           E-mail: {item.userEmail}
                         </Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 11, color: '#64748b', marginBottom: 12 }}>O consultor solicitou permissão para editar o nome de exibição no CRM.</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 11, marginBottom: 12 }, isDarkMode ? { color: '#94a3b8' } : { color: '#64748b' }]}>O consultor solicitou permissão para editar o nome de exibição no CRM.</Text>
                         
                         <View style={{ flexDirection: 'row', gap: 8 }}>
                           <TouchableOpacity 
@@ -83,10 +85,10 @@ export default function NotificationModal({
                             <Text style={styles.dismissButtonText}>Autorizar Alteração</Text>
                           </TouchableOpacity>
                           <TouchableOpacity 
-                            style={[styles.dismissButton, { flex: 1, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1' }]} 
+                            style={[styles.dismissButton, { flex: 1 }, isDarkMode ? darkStyles.btnSecondaryDark : { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1' }]} 
                             onPress={() => onRejectNameChange(item.userId, item.id)}
                           >
-                            <Text style={[styles.dismissButtonText, { color: '#475569' }]}>Recusar</Text>
+                            <Text style={[styles.dismissButtonText, isDarkMode ? { color: '#cbd5e1' } : { color: '#475569' }]}>Recusar</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -95,12 +97,12 @@ export default function NotificationModal({
 
                   if (item.type === 'NameChangeAlert') {
                     return (
-                      <View key={item.id} style={[styles.notificationCard, { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}>
-                        <Text style={{ fontFamily: MODERN_FONT, fontWeight: '800', color: '#166534', marginBottom: 5 }}>Identidade Atualizada</Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 13, color: '#15803d', marginBottom: 8, lineHeight: 18 }}>
+                      <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardAlert : { borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }]}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#4ade80' } : { color: '#166534' }]}>Identidade Atualizada</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 8, lineHeight: 18 }, isDarkMode ? { color: '#bbf7d0' } : { color: '#15803d' }]}>
                           O usuário <Text style={{fontWeight: 'bold'}}>{item.userEmail}</Text> concluiu a alteração de identidade.{'\n'}
-                          De: <Text style={{fontWeight: 'bold', color: '#dc2626'}}>{item.oldName}</Text>{'\n'}
-                          Para: <Text style={{fontWeight: 'bold', color: '#16a34a'}}>{item.newName}</Text>
+                          De: <Text style={{fontWeight: 'bold', color: isDarkMode ? '#f87171' : '#dc2626'}}>{item.oldName}</Text>{'\n'}
+                          Para: <Text style={{fontWeight: 'bold', color: isDarkMode ? '#4ade80' : '#16a34a'}}>{item.newName}</Text>
                         </Text>
                         <TouchableOpacity 
                           style={[styles.dismissButton, { backgroundColor: '#16a34a' }]} 
@@ -120,12 +122,12 @@ export default function NotificationModal({
 
                   if (item.type === 'NameChangeApproved') {
                     return (
-                      <View key={item.id} style={[styles.notificationCard, { borderColor: '#86efac', backgroundColor: '#dcfce7' }]}>
-                        <Text style={{ fontFamily: MODERN_FONT, fontWeight: '800', color: '#166534', marginBottom: 5 }}>Alteração de Nome Autorizada!</Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 13, color: '#15803d', marginBottom: 12, lineHeight: 18 }}>
+                      <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardApproved : { borderColor: '#86efac', backgroundColor: '#dcfce7' }]}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#4ade80' } : { color: '#166534' }]}>Alteração de Nome Autorizada!</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 12, lineHeight: 18 }, isDarkMode ? { color: '#bbf7d0' } : { color: '#15803d' }]}>
                           O administrador concedeu permissão para você editar o seu nome de exibição.
                         </Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 11, color: '#166534', marginBottom: 12 }}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 11, marginBottom: 12 }, isDarkMode ? { color: '#86efac' } : { color: '#166534' }]}>
                           Acesse as Configurações do Sistema para atualizar seus dados.
                         </Text>
                         <TouchableOpacity style={[styles.dismissButton, { backgroundColor: '#16a34a' }]} onPress={() => onDismissSystem(item.id)}>
@@ -137,13 +139,13 @@ export default function NotificationModal({
 
                   if (item.type === 'ResetRequest') {
                     return (
-                      <View key={item.id} style={[styles.notificationCard, { borderColor: '#fca5a5', backgroundColor: '#fef2f2' }]}>
-                        <Text style={{ fontFamily: MODERN_FONT, fontWeight: '800', color: '#991b1b', marginBottom: 5 }}>Solicitação de Nova Senha</Text>
+                      <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardReset : { borderColor: '#fca5a5', backgroundColor: '#fef2f2' }]}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#f87171' } : { color: '#991b1b' }]}>Solicitação de Nova Senha</Text>
                         {item.name && (
-                          <Text style={{ fontFamily: MODERN_FONT, fontSize: 13, color: '#7f1d1d', marginBottom: 3 }}>Nome: <Text style={{fontWeight: 'bold'}}>{item.name}</Text></Text>
+                          <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 3 }, isDarkMode ? { color: '#fca5a5' } : { color: '#7f1d1d' }]}>Nome: <Text style={{fontWeight: 'bold'}}>{item.name}</Text></Text>
                         )}
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 13, color: '#7f1d1d', marginBottom: 5 }}>E-mail: <Text style={{fontWeight: 'bold'}}>{item.email}</Text></Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 11, color: '#b91c1c', marginBottom: 12 }}>Autorize o reset para a senha padrão (Senha123!).</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 5 }, isDarkMode ? { color: '#fca5a5' } : { color: '#7f1d1d' }]}>E-mail: <Text style={{fontWeight: 'bold'}}>{item.email}</Text></Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 11, marginBottom: 12 }, isDarkMode ? { color: '#fca5a5' } : { color: '#b91c1c' }]}>Autorize o reset para a senha padrão (Senha123!).</Text>
                         <View style={{ flexDirection: 'row', gap: 8 }}>
                           <TouchableOpacity style={[styles.dismissButton, { flex: 1, backgroundColor: '#ef4444' }]} onPress={() => onApproveReset(item.userId, item.email)}>
                             <Text style={styles.dismissButtonText}>Resetar (Senha123!)</Text>
@@ -158,9 +160,9 @@ export default function NotificationModal({
 
                   if (item.type === 'Sistema') {
                     return (
-                      <View key={item.id} style={[styles.notificationCard, { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}>
-                        <Text style={{ fontFamily: MODERN_FONT, fontWeight: '800', color: '#1e40af', marginBottom: 5 }}>{item.text}</Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 11, color: '#1d4ed8', marginBottom: 10 }}>{formatTime(item.date)}</Text>
+                      <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardSystem : { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }]}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#93c5fd' } : { color: '#1e40af' }]}>{item.text}</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 11, marginBottom: 10 }, isDarkMode ? { color: '#60a5fa' } : { color: '#1d4ed8' }]}>{formatTime(item.date)}</Text>
                         <TouchableOpacity style={[styles.dismissButton, { backgroundColor: '#2563eb' }]} onPress={() => onDismissSystem(item.id)}>
                           <Text style={styles.dismissButtonText}>Compreendido</Text>
                         </TouchableOpacity>
@@ -171,12 +173,12 @@ export default function NotificationModal({
                   if (item.appt) {
                     const { client, appt, phaseId } = item;
                     return (
-                      <View key={appt.id} style={styles.notificationCard}>
+                      <View key={appt.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardAppt : {}]}>
                         <View style={styles.notifHeader}>
-                          <Text style={styles.notifType}>Ação Requerida: {appt.type}</Text>
-                          <Text style={styles.notifTime}>{formatTime(appt.dateTime)}</Text>
+                          <Text style={[styles.notifType, isDarkMode ? { color: '#facc15' } : {}]}>Ação Requerida: {appt.type}</Text>
+                          <Text style={[styles.notifTime, isDarkMode ? { color: '#eab308' } : {}]}>{formatTime(appt.dateTime)}</Text>
                         </View>
-                        <Text style={styles.notifClient}>Cliente: <Text style={{fontWeight: '800'}}>{client.name}</Text></Text>
+                        <Text style={[styles.notifClient, isDarkMode ? { color: '#bef264' } : {}]}>Cliente: <Text style={{fontWeight: '800'}}>{client.name}</Text></Text>
                         <TouchableOpacity style={[styles.dismissButton, { backgroundColor: '#f59e0b' }]} onPress={() => onDismiss(client.id, phaseId, appt.id)}>
                           <Text style={styles.dismissButtonText}>Marcar como Concluído</Text>
                         </TouchableOpacity>
@@ -190,15 +192,15 @@ export default function NotificationModal({
                 {/* 2. HISTÓRICO DE NOTIFICAÇÕES ANTERIORES */}
                 {historyNotifications.length > 0 && (
                   <>
-                    <View style={styles.historyDivider}>
-                      <Text style={styles.historyDividerText}>Histórico Recente</Text>
+                    <View style={[styles.historyDivider, themeStyles.historyDivider]}>
+                      <Text style={[styles.historyDividerText, themeStyles.historyDividerText]}>Histórico Recente</Text>
                     </View>
                     {historyNotifications.map((hist) => (
-                      <View key={hist.id} style={[styles.notificationCard, { borderColor: '#e2e8f0', backgroundColor: '#f8fafc', opacity: 0.85 }]}>
-                        <Text style={{ fontFamily: MODERN_FONT, fontWeight: '700', color: '#334155', marginBottom: 4, fontSize: 12 }}>
+                      <View key={hist.id} style={[styles.notificationCard, themeStyles.historyCard]}>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '700', marginBottom: 4, fontSize: 12 }, themeStyles.historyText]}>
                           {getHistoryText(hist)}
                         </Text>
-                        <Text style={{ fontFamily: MODERN_FONT, fontSize: 10, color: '#64748b' }}>{formatTime(hist.date)}</Text>
+                        <Text style={[{ fontFamily: MODERN_FONT, fontSize: 10 }, themeStyles.historyDate]}>{formatTime(hist.date)}</Text>
                       </View>
                     ))}
                   </>
@@ -221,7 +223,6 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '100%', 
     maxWidth: 400, 
-    backgroundColor: '#ffffff', 
     borderRadius: 16, 
     padding: 24,
     maxHeight: '80%',
@@ -230,19 +231,19 @@ const styles = StyleSheet.create({
   modalContainerDesktop: { marginTop: 80, marginRight: 24 },
   modalContainerMobile: { marginTop: 0, marginRight: 0 },
 
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 12 },
-  title: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '800', color: '#0f172a' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottomWidth: 1, paddingBottom: 12 },
+  title: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '800' },
   
-  clearHistoryButton: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#cbd5e1' },
-  clearHistoryButtonText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', color: '#475569' },
+  clearHistoryButton: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  clearHistoryButtonText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700' },
 
-  closeButton: { padding: 4, backgroundColor: '#f8fafc', borderRadius: 6, borderWidth: 1, borderColor: '#e2e8f0', width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  closeButtonText: { fontSize: 13, color: '#64748b', fontWeight: 'bold' },
+  closeButton: { padding: 4, borderRadius: 6, borderWidth: 1, width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  closeButtonText: { fontSize: 13, fontWeight: 'bold' },
   listArea: { flex: 1 },
-  emptyState: { padding: 20, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
-  emptyText: { fontFamily: MODERN_FONT, color: '#64748b', textAlign: 'center', fontSize: 13, fontWeight: '600' },
+  emptyState: { padding: 20, alignItems: 'center', borderRadius: 8, borderWidth: 1 },
+  emptyText: { fontFamily: MODERN_FONT, textAlign: 'center', fontSize: 13, fontWeight: '600' },
   
-  notificationCard: { backgroundColor: '#fefce8', borderWidth: 1, borderColor: '#fef08a', borderRadius: 10, padding: 16, marginBottom: 12 },
+  notificationCard: { borderWidth: 1, borderRadius: 10, padding: 16, marginBottom: 12 },
   notifHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   notifType: { fontFamily: MODERN_FONT, fontWeight: '800', color: '#ca8a04', fontSize: 13 },
   notifTime: { fontFamily: MODERN_FONT, color: '#a16207', fontSize: 11, fontWeight: '600' },
@@ -250,6 +251,49 @@ const styles = StyleSheet.create({
   dismissButton: { paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
   dismissButtonText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 12 },
 
-  historyDivider: { marginVertical: 8, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 4 },
-  historyDividerText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase' }
+  historyDivider: { marginVertical: 8, borderBottomWidth: 1, paddingBottom: 4 },
+  historyDividerText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#ffffff' },
+  header: { borderBottomColor: '#f1f5f9' },
+  title: { color: '#0f172a' },
+  clearHistoryButton: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  clearHistoryButtonText: { color: '#475569' },
+  closeButton: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  closeButtonText: { color: '#64748b' },
+  emptyState: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  emptyText: { color: '#64748b' },
+  historyDivider: { borderBottomColor: '#e2e8f0' },
+  historyDividerText: { color: '#94a3b8' },
+  historyCard: { borderColor: '#e2e8f0', backgroundColor: '#f8fafc', opacity: 0.85 },
+  historyText: { color: '#334155' },
+  historyDate: { color: '#64748b' }
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  header: { borderBottomColor: '#334155' },
+  title: { color: '#f8fafc' },
+  clearHistoryButton: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  clearHistoryButtonText: { color: '#cbd5e1' },
+  closeButton: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  closeButtonText: { color: '#94a3b8' },
+  emptyState: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  emptyText: { color: '#94a3b8' },
+  historyDivider: { borderBottomColor: '#334155' },
+  historyDividerText: { color: '#64748b' },
+  historyCard: { borderColor: '#334155', backgroundColor: '#0f172a', opacity: 0.9 },
+  historyText: { color: '#cbd5e1' },
+  historyDate: { color: '#94a3b8' },
+  cardRequest: { borderColor: '#334155', backgroundColor: '#0f172a' },
+  cardAlert: { borderColor: '#14532d', backgroundColor: '#052e16' },
+  cardApproved: { borderColor: '#14532d', backgroundColor: '#052e16' },
+  cardReset: { borderColor: '#7f1d1d', backgroundColor: '#450a0a' },
+  cardSystem: { borderColor: '#1e3a8a', backgroundColor: '#172554' },
+  cardAppt: { borderColor: '#713f12', backgroundColor: '#422006' },
+  btnSecondaryDark: { backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155' }
 });

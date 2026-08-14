@@ -6,7 +6,7 @@ import { setLeadUpdateCallback } from './WhatsAppBulkModal';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../services/supabaseClient';
 
-export default function ClientDetailsModal({ visible, onClose, clientData, onSave, isAdmin, usersList, currentUserId, onTransferLead }) {
+export default function ClientDetailsModal({ visible, onClose, clientData, onSave, isAdmin, usersList, currentUserId, onTransferLead, isDarkMode }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
 
@@ -242,23 +242,27 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
   if (!clientData) return null;
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   const TabButton = ({ id, label }) => {
     const isActive = activeTab === id;
     return (
       <TouchableOpacity 
         style={[
           styles.tabButton, 
+          themeStyles.tabButton,
           isMobile && styles.tabButtonMobile, 
-          isActive && styles.tabButtonActive, 
-          isMobile && isActive && styles.tabButtonMobileActive
+          isActive && themeStyles.tabButtonActive, 
+          isMobile && isActive && themeStyles.tabButtonMobileActive
         ]} 
         onPress={() => setActiveTab(id)}
       >
         <Text style={[
           styles.tabText, 
+          themeStyles.tabText,
           isMobile && styles.tabTextMobile, 
-          isActive && styles.tabTextActive,
-          isMobile && isActive && styles.tabTextMobileActive
+          isActive && themeStyles.tabTextActive,
+          isMobile && isActive && themeStyles.tabTextMobileActive
         ]}>
           {label}
         </Text>
@@ -268,21 +272,28 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
   const CommentsSection = () => (
     <View style={[styles.commentsContainer, isMobile && styles.commentsContainerMobile]}>
-      <Text style={styles.commentsTitle}>Atividades e Comentários</Text>
-      <View style={styles.commentInputContainer}>
-        <TextInput style={styles.commentInput} placeholder="Registre uma ação..." multiline={true} value={newCommentText} onChangeText={setNewCommentText} />
+      <Text style={[styles.commentsTitle, themeStyles.commentsTitle]}>Atividades e Comentários</Text>
+      <View style={[styles.commentInputContainer, themeStyles.commentInputContainer]}>
+        <TextInput 
+          style={[styles.commentInput, themeStyles.commentInput]} 
+          placeholder="Registre uma ação..." 
+          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+          multiline={true} 
+          value={newCommentText} 
+          onChangeText={setNewCommentText} 
+        />
         <TouchableOpacity style={styles.addCommentBtn} onPress={handleAddComment}><Text style={styles.addCommentBtnText}>Salvar</Text></TouchableOpacity>
       </View>
       <ScrollView style={styles.commentsList} showsVerticalScrollIndicator={false}>
         {(!formData.comments || formData.comments.length === 0) ? (
-          <Text style={styles.noCommentsText}>Nenhuma interação registrada.</Text>
+          <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Nenhuma interação registrada.</Text>
         ) : (
           formData.comments.map(comment => {
             const isSystem = comment.text.includes('Sistema:');
             return (
-              <View key={comment.id} style={[styles.commentCard, isSystem ? styles.commentCardAuto : styles.commentCardManual]}>
-                <Text style={styles.commentDate}>{new Date(comment.date).toLocaleDateString('pt-BR')} às {new Date(comment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>
-                <Text style={[styles.commentText, isSystem ? styles.commentTextAuto : styles.commentTextManual]}>{comment.text}</Text>
+              <View key={comment.id} style={[styles.commentCard, isSystem ? themeStyles.commentCardAuto : themeStyles.commentCardManual]}>
+                <Text style={[styles.commentDate, themeStyles.commentDate]}>{new Date(comment.date).toLocaleDateString('pt-BR')} às {new Date(comment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>
+                <Text style={[styles.commentText, isSystem ? themeStyles.commentTextAuto : themeStyles.commentTextManual]}>{comment.text}</Text>
               </View>
             );
           })
@@ -297,10 +308,10 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
         
         {alertConfig.visible && (
           <View style={styles.successAlertOverlay}>
-            <Animated.View style={[styles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
+            <Animated.View style={[styles.successAlertBox, themeStyles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
               <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
-              <Text style={styles.successAlertTitle}>{alertConfig.title}</Text>
-              <Text style={styles.successAlertMessage}>{alertConfig.message}</Text>
+              <Text style={[styles.successAlertTitle, themeStyles.successAlertTitle]}>{alertConfig.title}</Text>
+              <Text style={[styles.successAlertMessage, themeStyles.successAlertMessage]}>{alertConfig.message}</Text>
               <TouchableOpacity 
                 style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
                 onPress={closeCustomAlert}
@@ -311,20 +322,20 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
           </View>
         )}
 
-        <View style={[styles.modalWrapper, isMobile && styles.modalWrapperMobile]}>
+        <View style={[styles.modalWrapper, themeStyles.modalWrapper, isMobile && styles.modalWrapperMobile]}>
           
-          <View style={[styles.header, isMobile && styles.headerMobile]}>
+          <View style={[styles.header, themeStyles.header, isMobile && styles.headerMobile]}>
             <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={[styles.title, isMobile && styles.titleMobile]} numberOfLines={1}>{formData.name || 'Detalhes do Lead'}</Text>
-              {formData.createdAt && <Text style={styles.subtitle}>Cadastrado em: {new Date(formData.createdAt).toLocaleDateString('pt-BR')} às {new Date(formData.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>}
+              <Text style={[styles.title, themeStyles.title, isMobile && styles.titleMobile]} numberOfLines={1}>{formData.name || 'Detalhes do Lead'}</Text>
+              {formData.createdAt && <Text style={[styles.subtitle, themeStyles.subtitle]}>Cadastrado em: {new Date(formData.createdAt).toLocaleDateString('pt-BR')} às {new Date(formData.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>}
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}><Text style={styles.closeButtonText}>✕</Text></TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}><Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text></TouchableOpacity>
           </View>
 
-          <View style={[styles.body, isMobile && styles.bodyMobile]}>
+          <View style={[styles.body, themeStyles.body, isMobile && styles.bodyMobile]}>
             
             {isMobile ? (
-              <View style={styles.sidebarMobileContainer}>
+              <View style={[styles.sidebarMobileContainer, themeStyles.sidebarMobileContainer]}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sidebarMobile} contentContainerStyle={{ paddingRight: 20 }}>
                   <TabButton id="informacoes" label="Informações" />
                   <TabButton id="dados" label="Dados Pessoais" />
@@ -338,7 +349,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 </ScrollView>
               </View>
             ) : (
-              <View style={styles.sidebar}>
+              <View style={[styles.sidebar, themeStyles.sidebar]}>
                 <TabButton id="informacoes" label="Informações Principais" />
                 <TabButton id="dados" label="Dados Pessoais" />
                 <TabButton id="consorcio" label="Interesse" />
@@ -350,18 +361,24 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               </View>
             )}
 
-            <ScrollView style={[styles.contentArea, isMobile && styles.contentAreaMobile]} showsVerticalScrollIndicator={false}>
+            <ScrollView style={[styles.contentArea, themeStyles.contentArea, isMobile && styles.contentAreaMobile]} showsVerticalScrollIndicator={false}>
               
               {activeTab === 'informacoes' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Informações Principais</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Informações Principais</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Valor Desejado (Crédito)</Text><TextInput style={styles.input} value={formData.desiredCredit || ''} onChangeText={t => handleChange('desiredCredit', t)} /></View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Parcela Ideal / Possível</Text><TextInput style={styles.input} value={formData.idealInstallment || ''} onChangeText={t => handleChange('idealInstallment', t)} /></View>
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.label, themeStyles.label]}>Valor Desejado (Crédito)</Text>
+                      <TextInput style={[styles.input, themeStyles.input]} value={formData.desiredCredit || ''} onChangeText={t => handleChange('desiredCredit', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                    </View>
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.label, themeStyles.label]}>Parcela Ideal / Possível</Text>
+                      <TextInput style={[styles.input, themeStyles.input]} value={formData.idealInstallment || ''} onChangeText={t => handleChange('idealInstallment', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                    </View>
                   </View>
                   <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Informações (Lembretes, Observações e Histórico)</Text>
-                    <TextInput style={[styles.input, { height: 220, textAlignVertical: 'top' }]} multiline={true} value={formData.initialInfo || ''} onChangeText={t => handleChange('initialInfo', t)} />
+                    <Text style={[styles.label, themeStyles.label]}>Informações (Lembretes, Observações e Histórico)</Text>
+                    <TextInput style={[styles.input, themeStyles.input, { height: 220, textAlignVertical: 'top' }]} multiline={true} value={formData.initialInfo || ''} onChangeText={t => handleChange('initialInfo', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                   </View>
                 </View>
               )}
@@ -371,32 +388,32 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   
                   {/* Bloco da Esquerda: Criar Agendamento */}
                   <View style={[styles.splitLeft, isMobile && styles.splitLeftMobile]}>
-                    <Text style={styles.sectionTitle}>Criar Novo Agendamento</Text>
+                    <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Criar Novo Agendamento</Text>
                     
                     <View style={styles.apptTypeContainer}>
                       {['Ligar', 'Visitar', 'Mensagem', 'Simulação'].map(tipo => (
-                        <TouchableOpacity key={tipo} style={[styles.apptTypeBtn, apptType === tipo && styles.apptTypeBtnActive]} onPress={() => setApptType(tipo)}>
-                          <Text style={[styles.apptTypeText, apptType === tipo && styles.apptTypeTextActive]}>{tipo}</Text>
+                        <TouchableOpacity key={tipo} style={[styles.apptTypeBtn, themeStyles.apptTypeBtn, apptType === tipo && themeStyles.apptTypeBtnActive]} onPress={() => setApptType(tipo)}>
+                          <Text style={[styles.apptTypeText, themeStyles.apptTypeText, apptType === tipo && themeStyles.apptTypeTextActive]}>{tipo}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
 
                     <View style={[styles.row, isMobile && styles.rowMobile]}>
                       <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Data (DD/MM/AAAA)</Text>
-                        <TextInput style={styles.inputSmall} placeholder="Ex: 25/12/2026" value={apptDate} onChangeText={handleDateChange} keyboardType="numeric" maxLength={10} />
+                        <Text style={[styles.label, themeStyles.label]}>Data (DD/MM/AAAA)</Text>
+                        <TextInput style={[styles.inputSmall, themeStyles.inputSmall]} placeholder="Ex: 25/12/2026" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={apptDate} onChangeText={handleDateChange} keyboardType="numeric" maxLength={10} />
                       </View>
                       <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Horário (HH:MM)</Text>
-                        <TextInput style={styles.inputSmall} placeholder="Ex: 14:30" value={apptTime} onChangeText={handleTimeChange} keyboardType="numeric" maxLength={5} />
+                        <Text style={[styles.label, themeStyles.label]}>Horário (HH:MM)</Text>
+                        <TextInput style={[styles.inputSmall, themeStyles.inputSmall]} placeholder="Ex: 14:30" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={apptTime} onChangeText={handleTimeChange} keyboardType="numeric" maxLength={5} />
                       </View>
                     </View>
 
-                    <Text style={styles.label}>Lembrar-me com antecedência de:</Text>
+                    <Text style={[styles.label, themeStyles.label]}>Lembrar-me com antecedência de:</Text>
                     <View style={styles.apptTypeContainer}>
                       {[0, 15, 30, 60, 120].map(mins => (
-                        <TouchableOpacity key={mins} style={[styles.apptTypeBtn, apptReminder === mins && styles.apptTypeBtnActive]} onPress={() => setApptReminder(mins)}>
-                          <Text style={[styles.apptTypeText, apptReminder === mins && styles.apptTypeTextActive]}>
+                        <TouchableOpacity key={mins} style={[styles.apptTypeBtn, themeStyles.apptTypeBtn, apptReminder === mins && themeStyles.apptTypeBtnActive]} onPress={() => setApptReminder(mins)}>
+                          <Text style={[styles.apptTypeText, themeStyles.apptTypeText, apptReminder === mins && themeStyles.apptTypeTextActive]}>
                             {mins === 0 ? 'Na hora' : mins === 60 ? '1 hora' : mins === 120 ? '2 horas' : `${mins}m`}
                           </Text>
                         </TouchableOpacity>
@@ -409,29 +426,29 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   </View>
 
                   {/* Bloco da Direita: Agendamentos Ativos */}
-                  <View style={[styles.splitRight, isMobile && styles.splitRightMobile]}>
-                    <Text style={styles.sectionTitle}>Agendamentos Ativos</Text>
+                  <View style={[styles.splitRight, themeStyles.splitRight, isMobile && styles.splitRightMobile]}>
+                    <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Agendamentos Ativos</Text>
                     
                     <View style={{ width: '100%' }}>
                       {(!formData.appointments || formData.appointments.length === 0) ? (
-                        <Text style={styles.noCommentsText}>Nenhum agendamento futuro.</Text>
+                        <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Nenhum agendamento futuro.</Text>
                       ) : (
                         formData.appointments.map(appt => (
-                          <View key={appt.id} style={[styles.scheduledCard, appt.notified && styles.scheduledCardDone]}>
+                          <View key={appt.id} style={[styles.scheduledCard, themeStyles.scheduledCard, appt.notified && themeStyles.scheduledCardDone]}>
                             <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
-                              <Text style={styles.scheduledCardTitle}>{appt.type}</Text>
+                              <Text style={[styles.scheduledCardTitle, themeStyles.scheduledCardTitle]}>{appt.type}</Text>
                               
                               <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                                <Text style={styles.scheduledCardReminder}>{appt.reminderMinutes === 0 ? 'Na hora' : `${appt.reminderMinutes}m antes`}</Text>
+                                <Text style={[styles.scheduledCardReminder, themeStyles.scheduledCardReminder]}>{appt.reminderMinutes === 0 ? 'Na hora' : `${appt.reminderMinutes}m antes`}</Text>
                                 {!appt.notified && (
-                                  <TouchableOpacity onPress={() => handleDeleteAppointment(appt.id)} style={styles.deleteApptBtn}>
+                                  <TouchableOpacity onPress={() => handleDeleteAppointment(appt.id)} style={[styles.deleteApptBtn, themeStyles.deleteApptBtn]}>
                                     <Text style={{fontSize: 14, color: '#ef4444'}}>🗑️</Text>
                                   </TouchableOpacity>
                                 )}
                               </View>
                             </View>
                             
-                            <Text style={styles.scheduledCardDate}>
+                            <Text style={[styles.scheduledCardDate, themeStyles.scheduledCardDate]}>
                               📅 {new Date(appt.dateTime).toLocaleDateString('pt-BR')} às {new Date(appt.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                             </Text>
                             
@@ -447,75 +464,75 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
               {activeTab === 'dados' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Dados Pessoais e Contato</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Dados Pessoais e Contato</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Nome Completo</Text><TextInput style={styles.input} value={formData.name || ''} onChangeText={t => handleChange('name', t)} /></View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>CPF</Text><TextInput style={styles.input} value={formData.cpf || ''} onChangeText={t => handleChange('cpf', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Nome Completo</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.name || ''} onChangeText={t => handleChange('name', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>CPF</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.cpf || ''} onChangeText={t => handleChange('cpf', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
                     <View style={styles.inputGroup}>
-                      <Text style={styles.label}>Telefone / WhatsApp</Text>
-                      <TextInput style={styles.input} value={formData.phone || ''} onChangeText={t => handleChange('phone', t)} maxLength={19} keyboardType="phone-pad" />
+                      <Text style={[styles.label, themeStyles.label]}>Telefone / WhatsApp</Text>
+                      <TextInput style={[styles.input, themeStyles.input]} value={formData.phone || ''} onChangeText={t => handleChange('phone', t)} maxLength={19} keyboardType="phone-pad" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                     </View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>E-mail</Text><TextInput style={styles.input} value={formData.email || ''} onChangeText={t => handleChange('email', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>E-mail</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.email || ''} onChangeText={t => handleChange('email', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Profissão</Text><TextInput style={styles.input} value={formData.profession || ''} onChangeText={t => handleChange('profession', t)} /></View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Renda Mensal</Text><TextInput style={styles.input} value={formData.monthlyIncome || ''} onChangeText={t => handleChange('monthlyIncome', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Profissão</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.profession || ''} onChangeText={t => handleChange('profession', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Renda Mensal</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.monthlyIncome || ''} onChangeText={t => handleChange('monthlyIncome', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                 </View>
               )}
 
               {activeTab === 'consorcio' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Detalhes do Interesse</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Detalhes do Interesse</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Categoria (Auto, Imóvel)</Text><TextInput style={styles.input} value={formData.category || ''} onChangeText={t => handleChange('category', t)} /></View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Urgência</Text><TextInput style={styles.input} value={formData.urgency || ''} onChangeText={t => handleChange('urgency', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Categoria (Auto, Imóvel)</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.category || ''} onChangeText={t => handleChange('category', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Urgência</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.urgency || ''} onChangeText={t => handleChange('urgency', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Origem / Plataforma (Ex: Facebook)</Text><TextInput style={styles.input} value={formData.platform || formData.origin || ''} onChangeText={t => handleChange('platform', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Origem / Plataforma (Ex: Facebook)</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.platform || formData.origin || ''} onChangeText={t => handleChange('platform', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                 </View>
               )}
 
               {activeTab === 'financeiro' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Perfil Financeiro e Lances</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Perfil Financeiro e Lances</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Valor Disponível p/ Lance</Text><TextInput style={styles.input} value={formData.bidAmount || ''} onChangeText={t => handleChange('bidAmount', t)} /></View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Tipo de Lance Preferido</Text><TextInput style={styles.input} placeholder="Livre, Embutido, FGTS..." value={formData.bidType || ''} onChangeText={t => handleChange('bidType', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor Disponível p/ Lance</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.bidAmount || ''} onChangeText={t => handleChange('bidAmount', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Tipo de Lance Preferido</Text><TextInput style={[styles.input, themeStyles.input]} placeholder="Livre, Embutido, FGTS..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={formData.bidType || ''} onChangeText={t => handleChange('bidType', t)} /></View>
                   </View>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Possui Financiamento Ativo?</Text><TextInput style={styles.input} value={formData.hasFinancing || ''} onChangeText={t => handleChange('hasFinancing', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Possui Financiamento Ativo?</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.hasFinancing || ''} onChangeText={t => handleChange('hasFinancing', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                 </View>
               )}
 
               {activeTab === 'docs' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Documentos Anexos</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Documentos Anexos</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
                     <View style={styles.inputGroup}>
-                      <Text style={styles.label}>Documento Pessoal (RG/CNH)</Text>
+                      <Text style={[styles.label, themeStyles.label]}>Documento Pessoal (RG/CNH)</Text>
                       {formData.docPessoalUrl && (
-                        <TouchableOpacity style={styles.viewDocButton} onPress={() => Linking.openURL(formData.docPessoalUrl)}>
-                          <Text style={styles.viewDocText}>Visualizar Documento</Text>
+                        <TouchableOpacity style={[styles.viewDocButton, themeStyles.viewDocButton]} onPress={() => Linking.openURL(formData.docPessoalUrl)}>
+                          <Text style={[styles.viewDocText, themeStyles.viewDocText]}>Visualizar Documento</Text>
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity style={styles.uploadButton} onPress={() => handleUpload('docPessoalUrl')} disabled={uploadingDoc}>
-                        {uploadingDoc ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={styles.uploadButtonText}>{formData.docPessoalUrl ? 'Substituir' : 'Fazer Upload'}</Text>}
+                      <TouchableOpacity style={[styles.uploadButton, themeStyles.uploadButton]} onPress={() => handleUpload('docPessoalUrl')} disabled={uploadingDoc}>
+                        {uploadingDoc ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={[styles.uploadButtonText, themeStyles.uploadButtonText]}>{formData.docPessoalUrl ? 'Substituir' : 'Fazer Upload'}</Text>}
                       </TouchableOpacity>
                     </View>
                     <View style={styles.inputGroup}>
-                      <Text style={styles.label}>Comprovante de Residência</Text>
+                      <Text style={[styles.label, themeStyles.label]}>Comprovante de Residência</Text>
                       {formData.docResidenciaUrl && (
-                        <TouchableOpacity style={styles.viewDocButton} onPress={() => Linking.openURL(formData.docResidenciaUrl)}>
-                          <Text style={styles.viewDocText}>Visualizar Comprovante</Text>
+                        <TouchableOpacity style={[styles.viewDocButton, themeStyles.viewDocButton]} onPress={() => Linking.openURL(formData.docResidenciaUrl)}>
+                          <Text style={[styles.viewDocText, themeStyles.viewDocText]}>Visualizar Comprovante</Text>
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity style={styles.uploadButton} onPress={() => handleUpload('docResidenciaUrl')} disabled={uploadingDoc}>
-                        {uploadingDoc ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={styles.uploadButtonText}>{formData.docResidenciaUrl ? 'Substituir' : 'Fazer Upload'}</Text>}
+                      <TouchableOpacity style={[styles.uploadButton, themeStyles.uploadButton]} onPress={() => handleUpload('docResidenciaUrl')} disabled={uploadingDoc}>
+                        {uploadingDoc ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={[styles.uploadButtonText, themeStyles.uploadButtonText]}>{formData.docResidenciaUrl ? 'Substituir' : 'Fazer Upload'}</Text>}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -524,27 +541,27 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
               {activeTab === 'kpis' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Campos Inteligentes</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Campos Inteligentes</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Temperatura do Lead</Text><TextInput style={styles.input} placeholder="Frio, Morno, Quente" value={formData.leadTemp || ''} onChangeText={t => handleChange('leadTemp', t)} /></View>
-                    <View style={styles.inputGroup}><Text style={styles.label}>Probabilidade de Fechamento (%)</Text><TextInput style={styles.input} value={formData.winProbability || ''} onChangeText={t => handleChange('winProbability', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Temperatura do Lead</Text><TextInput style={[styles.input, themeStyles.input]} placeholder="Frio, Morno, Quente" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={formData.leadTemp || ''} onChangeText={t => handleChange('leadTemp', t)} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Probabilidade de Fechamento (%)</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.winProbability || ''} onChangeText={t => handleChange('winProbability', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                 </View>
               )}
 
               {isAdmin && activeTab === 'transferir' && (
                 <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Transferência de Lead</Text>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Transferência de Lead</Text>
                   
-                  <Text style={styles.label}>Selecione o Vendedor Destino:</Text>
-                  <ScrollView nestedScrollEnabled={true} style={styles.userListContainer}>
+                  <Text style={[styles.label, themeStyles.label]}>Selecione o Vendedor Destino:</Text>
+                  <ScrollView nestedScrollEnabled={true} style={[styles.userListContainer, themeStyles.userListContainer]}>
                     {usersList?.filter(u => u.id !== currentUserId).map(u => (
                       <TouchableOpacity 
                         key={u.id} 
-                        style={[styles.userOption, selectedTransferUserId === u.id && styles.userOptionSelected]} 
+                        style={[styles.userOption, themeStyles.userOption, selectedTransferUserId === u.id && themeStyles.userOptionSelected]} 
                         onPress={() => setSelectedTransferUserId(u.id)}
                       >
-                        <Text style={[styles.userOptionText, selectedTransferUserId === u.id && styles.userOptionTextSelected]}>
+                        <Text style={[styles.userOptionText, themeStyles.userOptionText, selectedTransferUserId === u.id && themeStyles.userOptionTextSelected]}>
                           {u.name || u.email}
                         </Text>
                       </TouchableOpacity>
@@ -555,10 +572,10 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   </ScrollView>
 
                   <TouchableOpacity style={styles.checkboxContainer} onPress={() => setTransferWithoutComment(!transferWithoutComment)}>
-                    <View style={[styles.checkbox, transferWithoutComment && styles.checkboxChecked]}>
+                    <View style={[styles.checkbox, themeStyles.checkbox, transferWithoutComment && styles.checkboxChecked]}>
                       {transferWithoutComment && <Text style={styles.checkmark}>✓</Text>}
                     </View>
-                    <Text style={styles.checkboxLabel}>Transferir sem registrar comentário automático no card</Text>
+                    <Text style={[styles.checkboxLabel, themeStyles.checkboxLabel]}>Transferir sem registrar comentário automático no card</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -567,16 +584,16 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
             </ScrollView>
 
             {!isMobile && (
-              <View style={styles.commentsSidebarDesktop}>
+              <View style={[styles.commentsSidebarDesktop, themeStyles.commentsSidebarDesktop]}>
                 <CommentsSection />
               </View>
             )}
 
           </View>
 
-          <View style={[styles.footer, isMobile && styles.footerMobile]}>
-            <TouchableOpacity style={[styles.cancelButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
+          <View style={[styles.footer, themeStyles.footer, isMobile && styles.footerMobile]}>
+            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={onClose}>
+              <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.saveButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={handleSave}>
               <Text style={styles.saveButtonText}>{activeTab === 'transferir' ? 'Confirmar Transferência' : 'Salvar Alterações'}</Text>
@@ -591,109 +608,223 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalWrapper: { width: '100%', maxWidth: 1150, height: '90%', backgroundColor: '#ffffff', borderRadius: 16, overflow: 'hidden', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
+  modalWrapper: { width: '100%', maxWidth: 1150, height: '90%', borderRadius: 16, overflow: 'hidden', ...Platform.select({ web: { outlineStyle: 'none' } }) },
   modalWrapperMobile: { height: '100%', borderRadius: 0 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: 24, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: 24, borderBottomWidth: 1 },
   headerMobile: { padding: 16 },
-  title: { fontSize: 24, fontWeight: '800', color: '#0f172a' },
+  title: { fontSize: 24, fontWeight: '800' },
   titleMobile: { fontSize: 18 },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 4 },
-  closeButton: { padding: 8, backgroundColor: '#f8fafc', borderRadius: 8 },
-  closeButtonText: { fontSize: 16, color: '#64748b', fontWeight: 'bold' },
+  subtitle: { fontSize: 13, marginTop: 4 },
+  closeButton: { padding: 8, borderRadius: 8 },
+  closeButtonText: { fontSize: 16, fontWeight: 'bold' },
   body: { flex: 1, flexDirection: 'row' },
   bodyMobile: { flexDirection: 'column' }, 
-  sidebar: { width: 220, backgroundColor: '#f8fafc', padding: 16, borderRightWidth: 1, borderRightColor: '#f1f5f9' },
+  sidebar: { width: 220, padding: 16, borderRightWidth: 1 },
   tabButton: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8, marginBottom: 4 },
-  tabButtonActive: { backgroundColor: '#eff6ff' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
-  tabTextActive: { color: '#2563eb' },
-  sidebarMobileContainer: { borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: '#f8fafc' },
+  tabText: { fontSize: 14, fontWeight: '600' },
+  sidebarMobileContainer: { borderBottomWidth: 1 },
   sidebarMobile: { paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row' },
-  tabButtonMobile: { marginRight: 8, marginBottom: 0, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#e2e8f0', borderRadius: 20 },
-  tabButtonMobileActive: { backgroundColor: '#2563eb' },
-  tabTextMobile: { fontSize: 13, color: '#475569' },
-  tabTextMobileActive: { color: '#ffffff', fontWeight: '700' },
-  contentArea: { flex: 1, padding: 24, backgroundColor: '#ffffff' },
+  tabButtonMobile: { marginRight: 8, marginBottom: 0, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  tabTextMobile: { fontSize: 13 },
+  contentArea: { flex: 1, padding: 24 },
   contentAreaMobile: { padding: 16 },
   formSection: { paddingBottom: 40 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20 },
   row: { flexDirection: 'row', gap: 16, marginBottom: 16 },
   rowMobile: { flexDirection: 'column', gap: 0, marginBottom: 0 }, 
   inputGroup: { flex: 1, marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6 },
-  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 14, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
-  inputSmall: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 10, fontSize: 13, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  label: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
+  input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 14, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  inputSmall: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, ...Platform.select({ web: { outlineStyle: 'none' } }) },
 
   splitContainer: { flexDirection: 'row', width: '100%', gap: 24 },
   splitContainerMobile: { flexDirection: 'column', width: '100%' },
   splitLeft: { flex: 1.6 },
   splitLeftMobile: { width: '100%', marginBottom: 28 }, 
-  splitRight: { flex: 1, borderLeftWidth: 1, borderColor: '#e2e8f0', paddingLeft: 24 },
-  splitRightMobile: { width: '100%', borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 20, marginTop: 35 },
+  splitRight: { flex: 1, borderLeftWidth: 1, paddingLeft: 24 },
+  splitRightMobile: { width: '100%', borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, paddingTop: 20, marginTop: 35 },
   
   apptTypeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  apptTypeBtn: { backgroundColor: '#f1f5f9', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  apptTypeBtnActive: { backgroundColor: '#e0e7ff', borderColor: '#4f46e5' },
-  apptTypeText: { color: '#64748b', fontWeight: '600', fontSize: 12 },
-  apptTypeTextActive: { color: '#4f46e5' },
+  apptTypeBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1 },
+  apptTypeText: { fontWeight: '600', fontSize: 12 },
   saveApptBtn: { backgroundColor: '#f59e0b', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 12, marginBottom: 8 },
   saveApptBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
-  deleteApptBtn: { padding: 4, backgroundColor: '#fee2e2', borderRadius: 6 },
+  deleteApptBtn: { padding: 4, borderRadius: 6 },
 
-  scheduledSection: { marginTop: 35, borderTopWidth: 1, borderColor: '#e2e8f0', paddingTop: 24 },
-  scheduledCard: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0', borderLeftWidth: 4, borderLeftColor: '#f59e0b', borderRadius: 8, padding: 12, marginBottom: 10, ...Platform.select({ web: { boxShadow: '0px 2px 4px rgba(0,0,0,0.03)' } }) },
-  scheduledCardDone: { opacity: 0.5, borderLeftColor: '#cbd5e1', backgroundColor: '#f8fafc' },
-  scheduledCardTitle: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
-  scheduledCardReminder: { fontSize: 10, fontWeight: '700', color: '#f59e0b', backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  scheduledCardDate: { fontSize: 12, color: '#475569', marginTop: 4, fontWeight: '500' },
+  scheduledCard: { borderWidth: 1, borderLeftWidth: 4, borderLeftColor: '#f59e0b', borderRadius: 8, padding: 12, marginBottom: 10, ...Platform.select({ web: { boxShadow: '0px 2px 4px rgba(0,0,0,0.03)' } }) },
+  scheduledCardDone: { opacity: 0.5, borderLeftColor: '#cbd5e1' },
+  scheduledCardTitle: { fontSize: 14, fontWeight: 'bold' },
+  scheduledCardReminder: { fontSize: 10, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  scheduledCardDate: { fontSize: 12, marginTop: 4, fontWeight: '500' },
   scheduledCardStatus: { fontSize: 10, color: '#10b981', marginTop: 8, fontWeight: 'bold' },
 
-  uploadButton: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderStyle: 'dashed', borderRadius: 8, padding: 16, alignItems: 'center' },
-  uploadButtonText: { color: '#475569', fontWeight: '600', fontSize: 14 },
-  viewDocButton: { backgroundColor: '#eff6ff', padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#bfdbfe' },
-  viewDocText: { color: '#2563eb', fontWeight: '600', fontSize: 13, textAlign: 'center' },
+  uploadButton: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 8, padding: 16, alignItems: 'center' },
+  uploadButtonText: { fontWeight: '600', fontSize: 14 },
+  viewDocButton: { padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1 },
+  viewDocText: { fontWeight: '600', fontSize: 13, textAlign: 'center' },
   
-  commentsSidebarDesktop: { width: 340, backgroundColor: '#f8fafc', borderLeftWidth: 1, borderLeftColor: '#e2e8f0', padding: 16, paddingBottom: 0 },
+  commentsSidebarDesktop: { width: 340, borderLeftWidth: 1, padding: 16, paddingBottom: 0 },
   commentsContainer: { flex: 1 },
   commentsContainerMobile: { paddingBottom: 20 },
-  commentsTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 16 },
-  commentInputContainer: { backgroundColor: '#ffffff', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 16 },
-  commentInput: { height: 60, textAlignVertical: 'top', fontSize: 13, color: '#0f172a', marginBottom: 12, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  commentsTitle: { fontSize: 16, fontWeight: '700', marginBottom: 16 },
+  commentInputContainer: { padding: 12, borderRadius: 8, borderWidth: 1, marginBottom: 16 },
+  commentInput: { height: 60, textAlignVertical: 'top', fontSize: 13, marginBottom: 12, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   addCommentBtn: { alignSelf: 'flex-end', backgroundColor: '#10b981', paddingVertical: 6, paddingHorizontal: 16, borderRadius: 6 },
   addCommentBtnText: { color: '#ffffff', fontWeight: '600', fontSize: 12 },
   commentsList: { flex: 1 },
-  noCommentsText: { color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginTop: 20, fontSize: 13 },
+  noCommentsText: { fontStyle: 'italic', textAlign: 'center', marginTop: 20, fontSize: 13 },
   commentCard: { padding: 12, borderRadius: 8, borderWidth: 1, marginBottom: 12 },
-  commentDate: { fontSize: 10, color: '#64748b', marginBottom: 6, fontWeight: '600' },
-  commentCardManual: { backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderLeftWidth: 4, borderLeftColor: '#3b82f6' },
-  commentTextManual: { fontSize: 13, color: '#1e293b', lineHeight: 18, fontWeight: '500' },
-  commentCardAuto: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
-  commentTextAuto: { fontSize: 13, color: '#64748b', lineHeight: 18, fontStyle: 'italic' },
+  commentDate: { fontSize: 10, marginBottom: 6, fontWeight: '600' },
+  commentTextManual: { fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  commentTextAuto: { fontSize: 13, lineHeight: 18, fontStyle: 'italic' },
 
-  footer: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#ffffff', gap: 12 },
+  footer: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, borderTopWidth: 1, gap: 12 },
   footerMobile: { padding: 16 },
-  cancelButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, backgroundColor: '#f1f5f9' },
-  cancelButtonText: { color: '#475569', fontWeight: '600', fontSize: 14 },
+  cancelButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8 },
+  cancelButtonText: { fontWeight: '600', fontSize: 14 },
   saveButton: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, backgroundColor: '#2563eb' },
   saveButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
 
   successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
-  successAlertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  successAlertBox: { padding: 24, borderRadius: 16, alignItems: 'center', width: 320 },
   successAlertIcon: { fontSize: 48, marginBottom: 12 },
-  successAlertTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
-  successAlertMessage: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  successAlertTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  successAlertMessage: { fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
   successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
 
-  // NOVOS ESTILOS PARA TRANSFERÊNCIA DE LEAD
-  userListContainer: { maxHeight: 180, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc', marginBottom: 20 },
-  userOption: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  userOptionSelected: { backgroundColor: '#e0e7ff' },
-  userOptionText: { fontSize: 13, color: '#475569', fontWeight: '600' },
-  userOptionTextSelected: { color: '#4f46e5', fontWeight: 'bold' },
+  userListContainer: { maxHeight: 180, borderWidth: 1, borderRadius: 8, marginBottom: 20 },
+  userOption: { padding: 14, borderBottomWidth: 1 },
+  userOptionText: { fontSize: 13, fontWeight: '600' },
   checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  checkbox: { width: 22, height: 22, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, marginRight: 10, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  checkbox: { width: 22, height: 22, borderWidth: 1, borderRadius: 6, marginRight: 10, justifyContent: 'center', alignItems: 'center' },
   checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   checkmark: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
-  checkboxLabel: { fontSize: 13, color: '#475569', flex: 1, flexWrap: 'wrap' }
+  checkboxLabel: { fontSize: 13, flex: 1, flexWrap: 'wrap' }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  modalWrapper: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
+  header: { borderBottomColor: '#f1f5f9' },
+  title: { color: '#0f172a' },
+  subtitle: { color: '#64748b' },
+  closeButton: { backgroundColor: '#f8fafc' },
+  closeButtonText: { color: '#64748b' },
+  body: { backgroundColor: '#ffffff' },
+  sidebar: { backgroundColor: '#f8fafc', borderRightColor: '#f1f5f9' },
+  tabButtonActive: { backgroundColor: '#eff6ff' },
+  tabText: { color: '#64748b' },
+  tabTextActive: { color: '#2563eb' },
+  sidebarMobileContainer: { borderBottomColor: '#e2e8f0', backgroundColor: '#f8fafc' },
+  tabButtonMobile: { backgroundColor: '#e2e8f0' },
+  tabButtonMobileActive: { backgroundColor: '#2563eb' },
+  tabTextMobile: { color: '#475569' },
+  tabTextMobileActive: { color: '#ffffff' },
+  contentArea: { backgroundColor: '#ffffff' },
+  sectionTitle: { color: '#1e293b' },
+  label: { color: '#475569' },
+  input: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#0f172a' },
+  inputSmall: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#0f172a' },
+  splitRight: { borderColor: '#e2e8f0' },
+  apptTypeBtn: { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' },
+  apptTypeBtnActive: { backgroundColor: '#e0e7ff', borderColor: '#4f46e5' },
+  apptTypeText: { color: '#64748b' },
+  apptTypeTextActive: { color: '#4f46e5' },
+  deleteApptBtn: { backgroundColor: '#fee2e2' },
+  scheduledCard: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  scheduledCardDone: { backgroundColor: '#f8fafc' },
+  scheduledCardTitle: { color: '#1e293b' },
+  scheduledCardReminder: { color: '#f59e0b', backgroundColor: '#fef3c7' },
+  scheduledCardDate: { color: '#475569' },
+  uploadButton: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  uploadButtonText: { color: '#475569' },
+  viewDocButton: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
+  viewDocText: { color: '#2563eb' },
+  commentsSidebarDesktop: { backgroundColor: '#f8fafc', borderLeftColor: '#e2e8f0' },
+  commentsTitle: { color: '#1e293b' },
+  commentInputContainer: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  commentInput: { color: '#0f172a' },
+  noCommentsText: { color: '#94a3b8' },
+  commentDate: { color: '#64748b' },
+  commentCardManual: { backgroundColor: '#ffffff', borderColor: '#bfdbfe', borderLeftColor: '#3b82f6', borderLeftWidth: 4 },
+  commentTextManual: { color: '#1e293b' },
+  commentCardAuto: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderLeftColor: '#cbd5e1', borderLeftWidth: 4 },
+  commentTextAuto: { color: '#64748b' },
+  footer: { borderTopColor: '#f1f5f9', backgroundColor: '#ffffff' },
+  cancelButton: { backgroundColor: '#f1f5f9' },
+  cancelButtonText: { color: '#475569' },
+  successAlertBox: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  successAlertTitle: { color: '#1e293b' },
+  successAlertMessage: { color: '#475569' },
+  userListContainer: { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' },
+  userOption: { borderBottomColor: '#f1f5f9' },
+  userOptionSelected: { backgroundColor: '#e0e7ff' },
+  userOptionText: { color: '#475569' },
+  userOptionTextSelected: { color: '#4f46e5' },
+  checkbox: { borderColor: '#cbd5e1', backgroundColor: '#fff' },
+  checkboxLabel: { color: '#475569' }
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  modalWrapper: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
+  header: { borderBottomColor: '#334155' },
+  title: { color: '#f8fafc' },
+  subtitle: { color: '#94a3b8' },
+  closeButton: { backgroundColor: '#334155' },
+  closeButtonText: { color: '#f8fafc' },
+  body: { backgroundColor: '#0f172a' },
+  sidebar: { backgroundColor: '#1e293b', borderRightColor: '#334155' },
+  tabButtonActive: { backgroundColor: '#334155' },
+  tabText: { color: '#94a3b8' },
+  tabTextActive: { color: '#60a5fa' },
+  sidebarMobileContainer: { borderBottomColor: '#334155', backgroundColor: '#1e293b' },
+  tabButtonMobile: { backgroundColor: '#334155' },
+  tabButtonMobileActive: { backgroundColor: '#2563eb' },
+  tabTextMobile: { color: '#cbd5e1' },
+  tabTextMobileActive: { color: '#ffffff' },
+  contentArea: { backgroundColor: '#0f172a' },
+  sectionTitle: { color: '#f8fafc' },
+  label: { color: '#cbd5e1' },
+  input: { backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' },
+  inputSmall: { backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' },
+  splitRight: { borderColor: '#334155' },
+  apptTypeBtn: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  apptTypeBtnActive: { backgroundColor: '#1e3a8a', borderColor: '#3b82f6' },
+  apptTypeText: { color: '#94a3b8' },
+  apptTypeTextActive: { color: '#93c5fd' },
+  deleteApptBtn: { backgroundColor: '#450a0a' },
+  scheduledCard: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  scheduledCardDone: { backgroundColor: '#0f172a' },
+  scheduledCardTitle: { color: '#f8fafc' },
+  scheduledCardReminder: { color: '#fbbf24', backgroundColor: '#451a03' },
+  scheduledCardDate: { color: '#94a3b8' },
+  uploadButton: { backgroundColor: '#1e293b', borderColor: '#475569' },
+  uploadButtonText: { color: '#cbd5e1' },
+  viewDocButton: { backgroundColor: '#1e3a8a', borderColor: '#1d4ed8' },
+  viewDocText: { color: '#93c5fd' },
+  commentsSidebarDesktop: { backgroundColor: '#1e293b', borderLeftColor: '#334155' },
+  commentsTitle: { color: '#f8fafc' },
+  commentInputContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  commentInput: { color: '#f8fafc' },
+  noCommentsText: { color: '#64748b' },
+  commentDate: { color: '#94a3b8' },
+  commentCardManual: { backgroundColor: '#1e293b', borderColor: '#1e3a8a', borderLeftColor: '#3b82f6', borderLeftWidth: 4 },
+  commentTextManual: { color: '#f8fafc' },
+  commentCardAuto: { backgroundColor: '#0f172a', borderColor: '#334155', borderLeftColor: '#475569', borderLeftWidth: 4 },
+  commentTextAuto: { color: '#94a3b8' },
+  footer: { borderTopColor: '#334155', backgroundColor: '#1e293b' },
+  cancelButton: { backgroundColor: '#334155' },
+  cancelButtonText: { color: '#cbd5e1' },
+  successAlertBox: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
+  successAlertTitle: { color: '#f8fafc' },
+  successAlertMessage: { color: '#94a3b8' },
+  userListContainer: { borderColor: '#334155', backgroundColor: '#1e293b' },
+  userOption: { borderBottomColor: '#334155' },
+  userOptionSelected: { backgroundColor: '#1e3a8a' },
+  userOptionText: { color: '#cbd5e1' },
+  userOptionTextSelected: { color: '#93c5fd' },
+  checkbox: { borderColor: '#475569', backgroundColor: '#0f172a' },
+  checkboxLabel: { color: '#cbd5e1' }
 });

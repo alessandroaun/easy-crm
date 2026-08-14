@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, KeyboardAvoidingView, ScrollView, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, KeyboardAvoidingView, ScrollView, Modal, Image } from 'react-native';
 import { supabase } from '../services/supabaseClient';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
@@ -9,7 +9,7 @@ const validatePassword = (pwd) => {
   return regex.test(pwd);
 };
 
-export default function ForceChangePasswordScreen({ onPasswordChanged }) {
+export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMode, toggleDarkMode }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,14 +56,30 @@ export default function ForceChangePasswordScreen({ onPasswordChanged }) {
     }
   };
 
+  const currentTheme = isDarkMode ? darkStyles : lightStyles;
+
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={[styles.container, currentTheme.container]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
+        <View style={[styles.card, currentTheme.card]}>
+          
+          {/* Botão de Alternância do Modo Escuro / Claro */}
+          <TouchableOpacity 
+            style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
+            onPress={() => toggleDarkMode(!isDarkMode)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
+          </TouchableOpacity>
+
           <View style={styles.headerContainer}>
-            <Text style={styles.logoText3D}>ALÊ CRM</Text>
-            <Text style={styles.title}>Atualização de Segurança</Text>
-            <Text style={styles.subtitle}>
+            <Image 
+                source={require('../../assets/logo_A11_sem_fundo.png')} 
+                style={styles.logoImage} 
+                resizeMode="contain" 
+            />
+            <Text style={[styles.title, currentTheme.title]}>Atualização de Segurança</Text>
+            <Text style={[styles.subtitle, currentTheme.subtitle]}>
               Sua conta está utilizando uma senha temporária. Por segurança, crie uma nova senha forte que contenha letras maiúsculas, minúsculas, números e caracteres especiais.
             </Text>
           </View>
@@ -75,11 +91,11 @@ export default function ForceChangePasswordScreen({ onPasswordChanged }) {
           ) : null}
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Nova Senha</Text>
+            <Text style={[styles.label, currentTheme.label]}>Nova Senha</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, currentTheme.input]}
               placeholder="Ex: Senha@123"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               secureTextEntry
               value={newPassword}
               onChangeText={setNewPassword}
@@ -87,18 +103,18 @@ export default function ForceChangePasswordScreen({ onPasswordChanged }) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirmar Nova Senha</Text>
+            <Text style={[styles.label, currentTheme.label]}>Confirmar Nova Senha</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, currentTheme.input]}
               placeholder="Confirme a nova senha"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               secureTextEntry
               value={confirmPassword}
               onChangeText={setConfirmPassword}
             />
           </View>
 
-          <TouchableOpacity style={[styles.primaryButton, loading && styles.primaryButtonDisabled]} onPress={handleSubmit} disabled={loading}>
+          <TouchableOpacity style={[styles.primaryButton, currentTheme.primaryButton, loading && styles.primaryButtonDisabled]} onPress={handleSubmit} disabled={loading}>
             {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Salvar e Acessar CRM</Text>}
           </TouchableOpacity>
         </View>
@@ -107,10 +123,10 @@ export default function ForceChangePasswordScreen({ onPasswordChanged }) {
       {/* MODAL DE ALERTA CUSTOMIZADO COM FADE */}
       <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{alertTitle}</Text>
-            <Text style={styles.modalSubtitle}>{alertMessage}</Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={handleAlertConfirm}>
+          <View style={[styles.modalContent, currentTheme.modalContent]}>
+            <Text style={[styles.modalTitle, currentTheme.modalTitle]}>{alertTitle}</Text>
+            <Text style={[styles.modalSubtitle, currentTheme.modalSubtitle]}>{alertMessage}</Text>
+            <TouchableOpacity style={[styles.modalBtn, currentTheme.modalBtn]} onPress={handleAlertConfirm}>
               <Text style={styles.modalBtnText}>OK</Text>
             </TouchableOpacity>
           </View>
@@ -121,27 +137,86 @@ export default function ForceChangePasswordScreen({ onPasswordChanged }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
+  container: { flex: 1 },
   scrollContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  card: { width: '100%', maxWidth: 440, backgroundColor: '#ffffff', borderRadius: 24, padding: 32, ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.08)' }, default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } }) },
+  card: { width: '100%', maxWidth: 440, borderRadius: 24, padding: 32, position: 'relative' },
   headerContainer: { alignItems: 'center', marginBottom: 24 },
-  logoText3D: { fontFamily: MODERN_FONT, fontSize: 28, fontWeight: '900', color: '#1e3a8a', fontStyle: 'italic', letterSpacing: -1, marginBottom: 8, ...Platform.select({ web: { textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb' } }) },
-  title: { fontFamily: MODERN_FONT, fontSize: 18, fontWeight: 'bold', color: '#0f172a', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontFamily: MODERN_FONT, fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 18 },
+  logoImage: { width: 130, height: 130, marginBottom: 8 },
+  title: { fontFamily: MODERN_FONT, fontSize: 18, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontFamily: MODERN_FONT, fontSize: 13, textAlign: 'center', lineHeight: 18 },
   errorBox: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca', padding: 12, borderRadius: 8, marginBottom: 20 },
   errorText: { color: '#ef4444', fontSize: 13, textAlign: 'center', fontWeight: '500' },
   inputGroup: { marginBottom: 20 },
-  label: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 8 },
-  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 15, color: '#0f172a', fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
-  primaryButton: { backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8, ...Platform.select({ web: { transition: 'background-color 0.2s ease' } }) },
+  label: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  input: { borderRadius: 12, padding: 14, fontSize: 15, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  primaryButton: { borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8, ...Platform.select({ web: { transition: 'background-color 0.2s ease' } }) },
   primaryButtonDisabled: { backgroundColor: '#93c5fd' },
   primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700', fontFamily: MODERN_FONT },
 
   // Estilos do Modal de Alerta
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  modalContent: { backgroundColor: '#ffffff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 20px rgba(0,0,0,0.15)' } }) },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8, textAlign: 'center' },
-  modalSubtitle: { fontSize: 13, color: '#64748b', marginBottom: 20, textAlign: 'center', lineHeight: 18 },
-  modalBtn: { width: '100%', backgroundColor: '#2563eb', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  modalBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 }
+  modalContent: { borderRadius: 16, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
+  modalSubtitle: { fontSize: 13, marginBottom: 20, textAlign: 'center', lineHeight: 18 },
+  modalBtn: { width: '100%', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  modalBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
+
+  themeToggleButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  themeToggleIcon: {
+    fontSize: 16,
+  }
+});
+
+/* Estilos de Cores para o Modo Claro */
+const lightStyles = StyleSheet.create({
+  container: { backgroundColor: '#f1f5f9' },
+  card: { 
+    backgroundColor: '#ffffff', 
+    ...Platform.select({ 
+      web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.08)' }, 
+      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } 
+    }) 
+  },
+  themeToggleButton: { backgroundColor: '#f1f5f9' },
+  title: { color: '#0f172a' },
+  subtitle: { color: '#64748b' },
+  label: { color: '#475569' },
+  input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', color: '#0f172a' },
+  primaryButton: { backgroundColor: '#2563eb' },
+  modalContent: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 20px rgba(0,0,0,0.15)' } }) },
+  modalTitle: { color: '#1e293b' },
+  modalSubtitle: { color: '#64748b' },
+  modalBtn: { backgroundColor: '#2563eb' }
+});
+
+/* Estilos de Cores para o Modo Escuro */
+const darkStyles = StyleSheet.create({
+  container: { backgroundColor: '#0f172a' },
+  card: { 
+    backgroundColor: '#1e293b', 
+    ...Platform.select({ 
+      web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.4)' }, 
+      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12 } 
+    }) 
+  },
+  themeToggleButton: { backgroundColor: '#334155' },
+  title: { color: '#f8fafc' },
+  subtitle: { color: '#94a3b8' },
+  label: { color: '#cbd5e1' },
+  input: { backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155', color: '#f8fafc' },
+  primaryButton: { backgroundColor: '#3b82f6' },
+  modalContent: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 20px rgba(0,0,0,0.4)' } }) },
+  modalTitle: { color: '#f8fafc' },
+  modalSubtitle: { color: '#94a3b8' },
+  modalBtn: { backgroundColor: '#3b82f6' }
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Modal, 
   View, 
@@ -8,109 +8,384 @@ import {
   StyleSheet, 
   Platform, 
   KeyboardAvoidingView, 
-  ScrollView 
+  ScrollView,
+  ActivityIndicator,
+  Animated
 } from 'react-native';
 
-// Função auxiliar para padronizar o telefone
+const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
+
+// ============================================================================
+// DICIONÁRIO MASSIVO DE SINÔNIMOS E PERGUNTAS DE FORMULÁRIOS
+// ============================================================================
+const DICTIONARY = {
+  name: [
+    'nome', 'cliente', 'lead', 'full name', 'nome completo', 'razao social', 
+    'primeiro nome', 'sobrenome', 'nome do contato', 'como se chama', 'qual o seu nome'
+  ],
+  phone: [
+    'telefone', 'whatsapp', 'celular', 'whats', 'wpp', 'zap', 'fone', 'contato', 
+    'numero', 'mobile', 'phone', 'ligar', 'telefone para contato', 'qual o seu telefone', 
+    'qual o seu whatsapp', 'numero de whatsapp'
+  ],
+  email: [
+    'email', 'e-mail', 'correio eletronico', 'mail', 'endereço de email', 'gmail', 
+    'qual o seu email', 'qual o seu e-mail'
+  ],
+  cpf: [
+    'cpf', 'cnpj', 'documento', 'identidade', 'rg', 'doc'
+  ],
+  profession: [
+    'profissao', 'profissão', 'trabalho', 'cargo', 'ocupacao', 'ocupação', 'o que faz', 
+    'onde trabalha', 'ramo de atuaçao', 'area de atuacao', 'trabalha com o que', 'emprego', 
+    'qual a sua profissao', 'qual a sua profissão', 'sua profissão', 'sua profissao', 
+    'qual a sua profissão?'
+  ],
+  monthlyIncome: [
+    'renda', 'salario', 'salário', 'faturamento', 'ganho', 'receita', 'ganhos', 
+    'quanto ganha', 'rendimento', 'renda mensal', 'renda familiar', 'rendimento mensal', 
+    'faturamento mensal', 'qual a sua renda', 'sua renda', 'renda aproximada'
+  ],
+  category: [
+    'categoria', 'qual bem', 'tipo de bem', 'o que deseja', 'interesse', 'tipo de consorcio', 
+    'tipo de consórcio', 'o que busca', 'automovel', 'automóvel', 'imovel', 'imóvel', 
+    'veiculo', 'veículo', 'serviço', 'servico', 'produto', 'qual o seu objetivo', 
+    'qual bem deseja', 'qual tipo de consorcio', 'qual tipo de consórcio', 
+    'procura fazer um consorcio para qual bem', 'procura fazer um consórcio para qual bem', 
+    'qual o bem', 'você procura fazer um consórcio para qual bem', 'voce procura fazer um consorcio para qual bem',
+    'consórcio para qual bem', 'consorcio para qual bem', 'para qual bem', 'qual bem esta em busca'
+  ],
+  desiredCredit: [
+    'valor do bem', 'credito', 'crédito', 'carta', 'meta', 'qual valor', 'de quanto precisa', 
+    'capital', 'valor da carta', 'valor desejado', 'valor do credito', 'valor do crédito', 
+    'valor do imovel', 'valor do veiculo', 'montante', 'valor que esta em busca', 
+    'valor que está em busca', 'qual valor do bem', 'qual valor do bem que esta em busca', 
+    'qual valor do bem que está em busca', 'qual o valor pretendido', 'valor pretendido', 
+    'de quanto é a carta', 'de quanto e a carta', 'qual o valor', 'valor do automovel'
+  ],
+  idealInstallment: [
+    'parcela', 'mensalidade', 'media de parcela', 'média de parcela', 'pagamento', 
+    'quanto pode pagar', 'parcela ideal', 'disponibilidade mensal', 'valor da parcela', 
+    'parcela maxima', 'parcela máxima', 'capadidade de pagamento', 'qual a parcela', 
+    'qual valor de parcela', 'qual o valor da parcela', 'media de parcela ideal', 
+    'média de parcela ideal', 'parcela que cabe no bolso', 'quanto pretende pagar', 
+    'quanto pretende pagar por mes'
+  ],
+  urgency: [
+    'urgencia', 'urgência', 'prazo', 'quando', 'em qual momento', 'tempo', 'para quando', 
+    'expectativa', 'quando pretende', 'imediatismo', 'momento de compra', 
+    'em qual momento voce esta', 'em qual momento você está', 
+    'em qual momento você está em relação ao consórcio', 'qual o seu prazo', 
+    'em quanto tempo', 'momento esta em relacao ao consorcio'
+  ],
+  bidAmount: [
+    'lance', 'valor para lance', 'ofertar lance', 'entrada', 'valor disponivel', 
+    'valor disponível', 'reserva financeira', 'tem valor para lance', 'valor de entrada', 
+    'montante para lance', 'possui valor para lance', 'possui lance', 'tem lance', 
+    'qual o valor do lance', 'quanto tem de lance', 'valor guardado', 'dinheiro guardado'
+  ],
+  bidType: [
+    'tipo de lance', 'recurso', 'fgts', 'embutido', 'livre', 'lance fixo', 'lance livre', 
+    'recurso proprio', 'como pretende ofertar o lance', 'qual tipo de lance', 'vai usar fgts'
+  ],
+  hasFinancing: [
+    'financiamento', 'financiado', 'possui financiamento', 'paga juros', 'tem financiamento', 
+    'ja tem proposta', 'já tem proposta', 'ja fez consorcio', 'já fez consórcio', 
+    'ja tem consorcio', 'já tem consorcio', 'tem proposta de consorcio ou financiamento', 
+    'ja tem proposta de consorcio ou financiamento', 'já tem proposta de consórcio ou financiamento'
+  ],
+  platform: [
+    'plataforma', 'origem', 'fonte', 'campanha', 'anuncio', 'anúncio', 'source', 'adset', 
+    'utm_source', 'veio de onde', 'form', 'formulario', 'formulário', 'publico', 'público', 'criativo'
+  ]
+};
+
+// Preparação prévia do dicionário para otimização (Ordena do maior para o menor para evitar conflitos)
+const sortedDictionaryEntries = Object.entries(DICTIONARY).map(([field, synonyms]) => {
+  return [field, [...synonyms].sort((a, b) => b.length - a.length)];
+});
+
+// ============================================================================
+// FUNÇÕES UTILITÁRIAS E TRATAMENTO
+// ============================================================================
+const normalizeString = (str) => {
+  if (!str) return '';
+  return String(str)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_]/g, " ") 
+    .replace(/[^a-z0-9 ]/g, "")
+    .trim();
+};
+
+const identifyField = (line) => {
+  if (!line) return null;
+  const normLine = normalizeString(line);
+  if (normLine.length < 2) return null;
+
+  for (const [field, synonyms] of sortedDictionaryEntries) {
+    for (const synonym of synonyms) {
+      const normSynonym = normalizeString(synonym);
+      if (normLine === normSynonym || normLine.startsWith(normSynonym)) {
+        return field;
+      }
+    }
+  }
+  
+  for (const [field, synonyms] of sortedDictionaryEntries) {
+    for (const synonym of synonyms) {
+      const normSynonym = normalizeString(synonym);
+      if (normSynonym.length > 3 && normLine.includes(normSynonym)) {
+        return field;
+      }
+    }
+  }
+  return null;
+};
+
+// Normalizador avançado e inteligente para Categoria (Auto, Imóvel, etc.)
+const parseCategoryValue = (rawValue, fullBlockText = '') => {
+  const combinedText = normalizeString(`${rawValue || ''} ${fullBlockText}`);
+
+  if (combinedText.includes('auto') || combinedText.includes('carro') || combinedText.includes('veiculo') || combinedText.includes('automovel') || combinedText.includes('picape') || combinedText.includes('motocicleta') || combinedText.includes('moto')) {
+    return 'Auto';
+  }
+  if (combinedText.includes('imovel') || combinedText.includes('casa') || combinedText.includes('fazenda') || combinedText.includes('sitio') || combinedText.includes('apartamento') || combinedText.includes('terreno')) {
+    return 'Imóvel';
+  }
+  if (combinedText.includes('pesado') || combinedText.includes('caminhao') || combinedText.includes('maquina') || combinedText.includes('carreta') || combinedText.includes('trator')) {
+    return 'Pesados';
+  }
+  if (combinedText.includes('servico')) {
+    return 'Serviços';
+  }
+  if (combinedText.includes('invest') || combinedText.includes('investimento') || combinedText.includes('investir') || combinedText.includes('extruturado') || combinedText.includes('estruturado') || combinedText.includes('poupanca')) {
+    return 'Investimento';
+  }
+  
+  return rawValue ? String(rawValue).trim() : '';
+};
+
 const formatPhoneNumber = (phone) => {
   if (!phone) return '';
-  let cleaned = phone.replace(/\D/g, '');
-  if (!cleaned.startsWith('55') && cleaned.length <= 11) {
+  let cleaned = String(phone).replace(/\D/g, '');
+  if (!cleaned.startsWith('55') && cleaned.length >= 10 && cleaned.length <= 11) {
     cleaned = '55' + cleaned;
   }
   const match = cleaned.match(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/);
   if (match) {
     return `+${match[1]} (${match[2]}) ${match[3]}-${match[4]}`;
   }
-  return phone;
+  return String(phone);
 };
 
-export default function ImportLeadsModal({ visible, onClose, onImport }) {
+const normalizePlatform = (rawPlatform) => {
+  if (!rawPlatform) return 'Desconhecida';
+  const platform = String(rawPlatform).toLowerCase();
+  if (platform.includes('ig') || platform.includes('insta')) return 'Instagram';
+  if (platform.includes('fb') || platform.includes('face')) return 'Facebook';
+  if (platform.includes('goo') || platform.includes('ads')) return 'Google';
+  if (platform.includes('tik') || platform.includes('tok')) return 'TikTok';
+  return String(rawPlatform).trim();
+};
+
+export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMode }) {
   const [rawText, setRawText] = useState('');
   const [processing, setProcessing] = useState(false);
-  // Novo estado para o Checkbox
   const [removeFormatting, setRemoveFormatting] = useState(true);
+
+  // Estados do Modal de Alerta Customizado (Padrão CRM)
+  const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
+  const alertScale = useRef(new Animated.Value(0.8)).current;
+  const alertOpacity = useRef(new Animated.Value(0)).current;
+
+  const showCustomAlert = (type, title, message) => {
+    setAlertConfig({ visible: true, type, title, message });
+    alertScale.setValue(0.8);
+    alertOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(alertScale, { toValue: 1, friction: 6, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(alertOpacity, { toValue: 1, duration: 250, useNativeDriver: Platform.OS !== 'web' })
+    ]).start();
+  };
+
+  const closeCustomAlert = (callback) => {
+    Animated.parallel([
+      Animated.timing(alertScale, { toValue: 0.8, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(alertOpacity, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      setAlertConfig({ visible: false, type: 'success', title: '', message: '' });
+      if (typeof callback === 'function') callback();
+    });
+  };
+
+  // ============================================================================
+  // MOTOR DE LEITURA (MÁQUINA DE ESTADOS)
+  // ============================================================================
+  const processLeadsIntelligence = (text) => {
+    let textToProcess = String(text);
+    
+    if (removeFormatting) {
+      textToProcess = textToProcess.replace(/[*~`]/g, '');
+      textToProcess = textToProcess.replace(/_/g, ' ');
+    }
+
+    let blocks = [];
+    const leadSeparatorRegex = /(?=✅?\s*\*?NOVO LEAD|={3,}|-{3,})/gi;
+    
+    if (leadSeparatorRegex.test(textToProcess)) {
+      blocks = textToProcess.split(leadSeparatorRegex);
+    } else {
+      blocks = [textToProcess];
+    }
+
+    const extractedClients = [];
+
+    blocks.forEach(block => {
+      const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length < 2) return;
+
+      const leadData = {};
+      const unmappedData = [];
+      let expectingValueFor = null;
+
+      lines.forEach(line => {
+        if (/(respostas do lead|clique no número|clique no numero)/i.test(line)) return;
+        if (/(novo lead gerado|novo lead)/i.test(line) && !line.includes(':')) return;
+
+        if (expectingValueFor) {
+          const isAnotherKey = identifyField(line);
+          if (!isAnotherKey) {
+            leadData[expectingValueFor] = leadData[expectingValueFor] 
+              ? `${leadData[expectingValueFor]} ${line}` 
+              : line;
+            expectingValueFor = null;
+            return;
+          } else {
+            expectingValueFor = null;
+          }
+        }
+
+        const kvMatch = line.match(/^([^:-]+)[:\-](.*)$/);
+        if (kvMatch) {
+          const keyPart = kvMatch[1].trim();
+          const valPart = kvMatch[2].trim();
+          const field = identifyField(keyPart);
+
+          if (field) {
+            if (valPart.length > 0) {
+              if (leadData[field] && field === 'platform') {
+                leadData[field] += ` | ${valPart}`;
+              } else {
+                leadData[field] = valPart;
+              }
+            } else {
+              expectingValueFor = field;
+            }
+          } else {
+            unmappedData.push(line);
+          }
+          return;
+        }
+
+        const field = identifyField(line);
+        if (field) {
+          expectingValueFor = field;
+          return;
+        }
+
+        unmappedData.push(line);
+      });
+
+      // ========================================================================
+      // TRAVA DE VALIDAÇÃO OBRIGATÓRIA: NENHUM LEAD SEM TELEFONE É IMPORTADO
+      // ========================================================================
+      const rawPhoneDigits = String(leadData.phone || '').replace(/\D/g, '');
+      const hasValidPhone = rawPhoneDigits.length >= 8; // Garante que tem ao menos dígitos suficientes para um telefone
+
+      if ((leadData.name || leadData.phone) && hasValidPhone) {
+        const initialInfoLines = [];
+        
+        const resolvedCategory = parseCategoryValue(leadData.category, block);
+
+        if (leadData.category) initialInfoLines.push(`Categoria/Bem: ${leadData.category}`);
+        if (leadData.desiredCredit) initialInfoLines.push(`Meta/Crédito: ${leadData.desiredCredit}`);
+        if (leadData.idealInstallment) initialInfoLines.push(`Parcela Ideal: ${leadData.idealInstallment}`);
+        if (leadData.urgency) initialInfoLines.push(`Urgência: ${leadData.urgency}`);
+        if (leadData.bidAmount) initialInfoLines.push(`Lance: ${leadData.bidAmount}`);
+        if (leadData.bidType) initialInfoLines.push(`Tipo de Lance: ${leadData.bidType}`);
+        if (leadData.hasFinancing) initialInfoLines.push(`Financiamento Ativo: ${leadData.hasFinancing}`);
+
+        if (unmappedData.length > 0) {
+          const cleanedUnmapped = unmappedData.filter(u => u.length > 2).join('\n');
+          if (cleanedUnmapped.trim()) {
+            initialInfoLines.push(`\nInformações:\n${cleanedUnmapped}`);
+          }
+        }
+
+        extractedClients.push({
+          id: `client_imp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          createdAt: new Date().toISOString(),
+          name: String(leadData.name || 'Lead Não Identificado').trim(),
+          phone: formatPhoneNumber(String(leadData.phone || '')),
+          email: String(leadData.email || '').trim(),
+          cpf: String(leadData.cpf || '').trim(),
+          profession: String(leadData.profession || '').trim(),
+          monthlyIncome: String(leadData.monthlyIncome || '').trim(),
+          category: String(resolvedCategory || '').trim(),
+          desiredCredit: String(leadData.desiredCredit || '').trim(),
+          idealInstallment: String(leadData.idealInstallment || '').trim(),
+          urgency: String(leadData.urgency || '').trim(),
+          bidAmount: String(leadData.bidAmount || '').trim(),
+          bidType: String(leadData.bidType || '').trim(),
+          hasFinancing: String(leadData.hasFinancing || '').trim(),
+          platform: normalizePlatform(String(leadData.platform || '')),
+          leadTemp: 'Morno',
+          winProbability: '',
+          initialInfo: String(initialInfoLines.join('\n')).trim(),
+          history: `DADOS BRUTOS ORIGINAIS:\n${block}`
+        });
+      }
+    });
+
+    return extractedClients;
+  };
 
   const handleProcessText = () => {
     if (!rawText.trim()) {
-      alert("Cole o texto dos leads antes de processar.");
+      showCustomAlert('error', 'Atenção', 'Por favor, cole os dados dos leads na área de texto antes de prosseguir.');
       return;
     }
+    
     setProcessing(true);
 
-    try {
-      // Limpeza de caracteres especiais caso o checkbox esteja marcado
-      let textToProcess = rawText;
-      if (removeFormatting) {
-        textToProcess = textToProcess.replace(/[*_]/g, '');
-      }
+    setTimeout(() => {
+      try {
+        const newClients = processLeadsIntelligence(rawText);
 
-      const leadChunks = textToProcess.split(/(?=NOVO LEAD GERADO)/i).filter(chunk => chunk.trim().length > 10);
-      const newClients = [];
-
-      const extract = (text, regex) => {
-        const match = text.match(regex);
-        return match ? match[1].trim() : '';
-      };
-
-      leadChunks.forEach(chunk => {
-        const name = extract(chunk, /NOME:\s*([^\n]+)/i);
-        const rawPhone = extract(chunk, /TELEFONE:\s*([^\n]+)/i);
-        const email = extract(chunk, /EMAIL:\s*([^\n]+)/i);
-        
-        const rawPlatform = extract(chunk, /PLATAFORMA:\s*([^\n]+)/i).toLowerCase();
-        let platform = rawPlatform;
-        if (rawPlatform.includes('ig') || rawPlatform.includes('instagram')) platform = 'Instagram';
-        else if (rawPlatform.includes('fb') || rawPlatform.includes('facebook')) platform = 'Facebook';
-
-        const category = extract(chunk, /QUAL BEM\?\s*([^\n]+)/i);
-        const desiredCredit = extract(chunk, /QUAL VALOR DO BEM.*?\?\s*([^\n]+)/i);
-        const idealInstallment = extract(chunk, /MÉDIA DE PARCELA.*?\?\s*([^\n]+)/i);
-        const urgency = extract(chunk, /EM QUAL MOMENTO.*?\?\s*([^\n]+)/i);
-        const bidAmount = extract(chunk, /(?:POSSUI VALOR PARA LANCE|OFERTAR LANCE)\?\s*([^\n]+)/i);
-
-        if (name || rawPhone) {
-          const initialInfo = `🎯 Meta: ${desiredCredit || 'N/A'}\n💰 Parcela: ${idealInstallment || 'N/A'}`;
-          const historyRaw = `DADOS BRUTOS:\n${chunk.trim()}`;
-          const formattedPhone = formatPhoneNumber(rawPhone);
-
-          newClients.push({
-            id: `client_imp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-            createdAt: new Date().toISOString(),
-            name: name || 'Lead Sem Nome',
-            phone: formattedPhone,
-            email: email || '',
-            platform: platform,
-            category: category,
-            desiredCredit: desiredCredit,
-            idealInstallment: idealInstallment,
-            urgency: urgency,
-            bidAmount: bidAmount,
-            leadTemp: 'Morno',
-            initialInfo: initialInfo,
-            history: historyRaw
-          });
+        if (newClients.length === 0) {
+          showCustomAlert('error', 'Falha na Análise', 'Nenhum lead válido foi encontrado. Lembre-se de que todos os leads precisam obrigatoriamente possuir um número de telefone.');
+          setProcessing(false);
+          return;
         }
-      });
 
-      if (newClients.length === 0) {
-        alert("Não foi possível identificar nenhum lead no formato esperado.");
+        onImport(newClients);
+        showCustomAlert('success', 'Importação Concluída', `${newClients.length} Lead(s) importado(s) e estruturado(s) com sucesso.`, () => {
+          setRawText('');
+          onClose();
+        });
+
+      } catch (error) {
+        console.error("Erro Crítico no Motor de Importação:", error);
+        showCustomAlert('error', 'Erro Interno', 'Ocorreu um erro ao processar a estrutura do texto.');
+      } finally {
         setProcessing(false);
-        return;
       }
-
-      onImport(newClients);
-      alert(`${newClients.length} Lead(s) importado(s) com sucesso!`);
-      setRawText('');
-      onClose();
-
-    } catch (error) {
-      console.error("Erro ao importar:", error);
-      alert("Ocorreu um erro ao processar o texto.");
-    } finally {
-      setProcessing(false);
-    }
+    }, 300);
   };
+
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
 
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
@@ -118,51 +393,76 @@ export default function ImportLeadsModal({ visible, onClose, onImport }) {
         style={styles.overlay} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.modalContainer}>
+        {/* MODAL DE ALERTA ESTILIZADO (PADRÃO CRM) */}
+        {alertConfig.visible && (
+          <View style={styles.successAlertOverlay}>
+            <Animated.View style={[styles.successAlertBox, themeStyles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
+              <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
+              <Text style={[styles.successAlertTitle, themeStyles.successAlertTitle]}>{alertConfig.title}</Text>
+              <Text style={[styles.successAlertMessage, themeStyles.successAlertMessage]}>{alertConfig.message}</Text>
+              <TouchableOpacity 
+                style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
+                onPress={() => closeCustomAlert(alertConfig.type === 'success' ? alertConfig.onPress : null)}
+              >
+                <Text style={styles.successAlertBtnText}>{alertConfig.type === 'success' ? 'Continuar' : 'Entendi'}</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        )}
+
+        <View style={[styles.modalContainer, themeStyles.modalContainer]}>
           
-          <View style={styles.header}>
+          <View style={[styles.header, themeStyles.header]}>
             <View>
-              <Text style={styles.title}>📥 Importação de Leads</Text>
-              <Text style={styles.subtitle}>Cole os dados gerados pelas campanhas de tráfego</Text>
+              <Text style={[styles.title, themeStyles.title]}>Importação de Leads em Massa</Text>
+              <Text style={[styles.subtitle, themeStyles.subtitle]}>O motor lerá perguntas e respostas ou formatos estruturados automaticamente.</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
+            <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}>
+              <Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             
-            {/* Checkbox de Limpeza */}
-            <TouchableOpacity 
-              style={styles.checkboxContainer} 
-              activeOpacity={0.7}
-              onPress={() => setRemoveFormatting(!removeFormatting)}
-            >
-              <View style={[styles.checkbox, removeFormatting && styles.checkboxChecked]}>
-                {removeFormatting && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.checkboxLabel}>
-                Limpar formatação do WhatsApp <Text style={{ color: '#94a3b8' }}>(remover * e _)</Text>
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.toolsRow}>
+              <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Dados Brutos da Campanha</Text>
+              
+              <TouchableOpacity 
+                style={[styles.compactToggle, themeStyles.compactToggle]} 
+                activeOpacity={0.7}
+                onPress={() => setRemoveFormatting(!removeFormatting)}
+              >
+                <View style={[styles.compactCheckbox, themeStyles.compactCheckbox, removeFormatting && styles.compactCheckboxChecked]}>
+                  {removeFormatting && <Text style={styles.compactCheckmark}>✓</Text>}
+                </View>
+                <Text style={[styles.compactToggleText, themeStyles.compactToggleText]}>Limpar formatação (* e _)</Text>
+              </TouchableOpacity>
+            </View>
 
             <TextInput
-              style={styles.textArea}
+              style={[styles.textArea, themeStyles.textArea]}
               multiline={true}
-              placeholder="Cole os dados aqui...&#10;&#10;Ex:&#10;NOVO LEAD GERADO GT CONSÓRCIO&#10;NOME: João Silva&#10;TELEFONE: 85999999999"
-              placeholderTextColor="#94a3b8"
+              placeholder="Cole os dados aqui...&#10;&#10;O sistema identifica formatos em linha:&#10;Nome: João Silva&#10;Telefone: 85999999999&#10;&#10;E também formatos de formulários (Pular linha):&#10;Qual o valor do bem desejado?&#10;R$ 150.000,00"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               value={rawText}
               onChangeText={setRawText}
             />
 
           </ScrollView>
 
-          <View style={styles.footer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={processing}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
+          <View style={[styles.footer, themeStyles.footer]}>
+            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton]} onPress={onClose} disabled={processing}>
+              <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.saveButton} onPress={handleProcessText} disabled={processing}>
-              <Text style={styles.saveButtonText}>{processing ? 'Processando...' : 'Processar e Importar'}</Text>
+              {processing ? (
+                <View style={styles.processingBtnRow}>
+                  <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
+                  <Text style={styles.saveButtonText}>Processando Dados...</Text>
+                </View>
+              ) : (
+                <Text style={styles.saveButtonText}>Processar e Importar</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -182,9 +482,8 @@ const styles = StyleSheet.create({
   },
   modalContainer: { 
     width: '100%', 
-    maxWidth: 600, 
-    backgroundColor: '#ffffff', 
-    borderRadius: 20, 
+    maxWidth: 750, 
+    borderRadius: 16, 
     maxHeight: '90%',
     overflow: 'hidden',
     ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 20px 40px rgba(0,0,0,0.15)' } }) 
@@ -195,83 +494,83 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    backgroundColor: '#ffffff'
   },
   title: { 
+    fontFamily: MODERN_FONT,
     fontSize: 20, 
     fontWeight: '800', 
-    color: '#0f172a' 
+    letterSpacing: -0.5
   },
   subtitle: { 
+    fontFamily: MODERN_FONT,
     fontSize: 13, 
-    color: '#64748b', 
     marginTop: 4 
   },
   closeButton: { 
     width: 32, 
     height: 32, 
-    borderRadius: 16, 
-    backgroundColor: '#f1f5f9', 
+    borderRadius: 8, 
     justifyContent: 'center', 
-    alignItems: 'center' 
+    alignItems: 'center',
+    borderWidth: 1
   },
   closeButtonText: { 
-    fontSize: 16, 
-    color: '#475569', 
+    fontFamily: MODERN_FONT,
+    fontSize: 14, 
     fontWeight: 'bold' 
   },
   scrollContent: {
     padding: 24,
   },
-  
-  // Estilos do Checkbox Customizado
-  checkboxContainer: {
+  toolsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 10
+  },
+  inputLabel: {
+    fontFamily: MODERN_FONT,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  compactToggle: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0'
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#cbd5e1',
+    borderWidth: 1
+  },
+  compactCheckbox: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-    backgroundColor: '#ffffff'
+    marginRight: 8
   },
-  checkboxChecked: {
+  compactCheckboxChecked: {
     backgroundColor: '#2563eb',
     borderColor: '#2563eb',
   },
-  checkmark: {
+  compactCheckmark: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 10,
     fontWeight: '900',
   },
-  checkboxLabel: {
-    fontSize: 14,
-    color: '#334155',
-    fontWeight: '500',
-    flex: 1
+  compactToggleText: {
+    fontFamily: MODERN_FONT,
+    fontSize: 12,
+    fontWeight: '600'
   },
-
   textArea: { 
-    height: 320, 
-    backgroundColor: '#f8fafc', 
+    height: 380, 
     borderWidth: 1, 
-    borderColor: '#e2e8f0', 
     borderRadius: 12, 
     padding: 16, 
-    fontSize: 14, 
-    color: '#0f172a', 
+    fontSize: 13, 
+    fontFamily: MODERN_FONT,
     textAlignVertical: 'top',
     lineHeight: 22,
     ...Platform.select({ web: { outlineStyle: 'none' } }) 
@@ -279,35 +578,130 @@ const styles = StyleSheet.create({
   footer: { 
     flexDirection: 'row', 
     padding: 20,
-    backgroundColor: '#f8fafc',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     gap: 12
   },
   cancelButton: { 
-    flex: 1,
-    paddingVertical: 14, 
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    borderRadius: 10, 
-    backgroundColor: '#e2e8f0' 
+    borderRadius: 8
   },
   cancelButtonText: { 
-    color: '#475569', 
+    fontFamily: MODERN_FONT,
     fontWeight: '700', 
-    fontSize: 15 
+    fontSize: 14 
   },
   saveButton: { 
-    flex: 1,
-    paddingVertical: 14, 
+    paddingVertical: 12, 
+    paddingHorizontal: 28,
     alignItems: 'center',
-    borderRadius: 10, 
+    borderRadius: 8, 
     backgroundColor: '#2563eb',
-    ...Platform.select({ web: { boxShadow: '0px 4px 6px rgba(37, 99, 235, 0.2)' } })
+    ...Platform.select({ web: { boxShadow: '0px 4px 10px rgba(37, 99, 235, 0.2)' } })
+  },
+  processingBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
   },
   saveButtonText: { 
+    fontFamily: MODERN_FONT,
     color: '#ffffff', 
     fontWeight: '700', 
-    fontSize: 15 
+    fontSize: 14 
   },
+
+  // Estilos do Modal de Alerta Customizado (Padrão CRM)
+  successAlertOverlay: { 
+    position: 'absolute', 
+    top: 0, 
+    bottom: 0, 
+    left: 0, 
+    right: 0, 
+    backgroundColor: 'rgba(15, 23, 42, 0.4)', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    zIndex: 9999 
+  },
+  successAlertBox: { 
+    padding: 24, 
+    borderRadius: 16, 
+    alignItems: 'center', 
+    width: 320, 
+    ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) 
+  },
+  successAlertIcon: { 
+    fontSize: 48, 
+    marginBottom: 12 
+  },
+  successAlertTitle: { 
+    fontFamily: MODERN_FONT,
+    fontSize: 20, 
+    fontWeight: '800', 
+    marginBottom: 8,
+    textAlign: 'center'
+  },
+  successAlertMessage: { 
+    fontFamily: MODERN_FONT,
+    fontSize: 14, 
+    textAlign: 'center', 
+    marginBottom: 24, 
+    lineHeight: 20 
+  },
+  successAlertBtn: { 
+    backgroundColor: '#10b981', 
+    paddingVertical: 12, 
+    borderRadius: 8, 
+    width: '100%', 
+    alignItems: 'center' 
+  },
+  successAlertBtnText: { 
+    fontFamily: MODERN_FONT,
+    color: '#ffffff', 
+    fontWeight: '700', 
+    fontSize: 14 
+  }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#ffffff' },
+  header: { borderBottomColor: '#f1f5f9', backgroundColor: '#ffffff' },
+  title: { color: '#0f172a' },
+  subtitle: { color: '#64748b' },
+  closeButton: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  closeButtonText: { color: '#475569' },
+  inputLabel: { color: '#1e293b' },
+  compactToggle: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  compactCheckbox: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  compactToggleText: { color: '#475569' },
+  textArea: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#0f172a' },
+  footer: { backgroundColor: '#ffffff', borderTopColor: '#f1f5f9' },
+  cancelButton: { backgroundColor: '#f1f5f9' },
+  cancelButtonText: { color: '#475569' },
+  successAlertBox: { backgroundColor: '#ffffff' },
+  successAlertTitle: { color: '#1e293b' },
+  successAlertMessage: { color: '#475569' }
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  header: { borderBottomColor: '#334155', backgroundColor: '#1e293b' },
+  title: { color: '#f8fafc' },
+  subtitle: { color: '#94a3b8' },
+  closeButton: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  closeButtonText: { color: '#94a3b8' },
+  inputLabel: { color: '#f8fafc' },
+  compactToggle: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  compactCheckbox: { borderColor: '#334155', backgroundColor: '#0f172a' },
+  compactToggleText: { color: '#94a3b8' },
+  textArea: { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' },
+  footer: { backgroundColor: '#1e293b', borderTopColor: '#334155' },
+  cancelButton: { backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1 },
+  cancelButtonText: { color: '#cbd5e1' },
+  successAlertBox: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  successAlertTitle: { color: '#f8fafc' },
+  successAlertMessage: { color: '#94a3b8' }
 });

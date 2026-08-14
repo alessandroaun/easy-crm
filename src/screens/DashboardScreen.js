@@ -18,7 +18,7 @@ import AdminPanel from '../components/AdminPanel';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-export default function DashboardScreen() {
+export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [activeView, setActiveView] = useState('kanban'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSellersDropdownOpen, setIsSellersDropdownOpen] = useState(false);
@@ -52,6 +52,46 @@ export default function DashboardScreen() {
   const [newPass, setNewPass] = useState('');
   const [newPassConfirm, setNewPassConfirm] = useState('');
   const [isChangingPass, setIsChangingPass] = useState(false);
+
+  // Adicione este estado e referência de animação para o menu lateral
+  const slideAnim = useRef(new Animated.Value(-280)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const [isMenuRendered, setIsMenuRendered] = useState(false);
+
+  const openSidebar = () => {
+    setIsMenuRendered(true);
+    setIsMenuOpen(true);
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    ]).start();
+  };
+
+  const closeSidebar = () => {
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: -280,
+        duration: 250,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    ]).start(() => {
+      setIsMenuRendered(false);
+      setIsMenuOpen(false);
+    });
+  };
 
   // Motor Dinâmico de Alertas (Sucesso / Erro)
   const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
@@ -104,7 +144,7 @@ export default function DashboardScreen() {
       filter: `id=eq.${loggedUserId}` 
     }, (payload) => {
       console.log("[DEBUG] Perfil alterado, recarregando dados...");
-      fetchInitialData(); // Recarrega o perfil e o quadro
+      fetchInitialData(); 
     })
     .subscribe();
 
@@ -396,7 +436,7 @@ if (userProfile && userProfile.role === 'admin') {
     fetchAndSubscribeBoard();
 
     // CORREÇÃO CRUCIAL: O Realtime agora escuta apenas alterações cuja ID comece com 'board_' 
-    // Isso evita que salvar as configurações ('config_...') limpe os cards do Kanban.
+    // Isso evita que salvar das configurações ('config_...') limpe os cards do Kanban.
     const boardSubscription = supabase
       .channel(`realtime-board-${currentUserId}`)
       .on(
@@ -894,9 +934,11 @@ if (userProfile && userProfile.role === 'admin') {
   // Substitua a linha atual por esta:
 const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
+  const currentTheme = isDarkMode ? darkStyles : lightStyles;
+
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, currentTheme.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#2563eb" />
       </View>
     );
@@ -905,21 +947,21 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
   // TELA DE BLOQUEIO (Conta Pendente ou Inativa)
   if (!userProfile || userProfile.status !== 'ativo') {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc', padding: 24 }}>
+      <View style={[styles.container, currentTheme.container, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
         <Text style={{ fontSize: 48, marginBottom: 16 }}>⏳</Text>
-        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1e293b', marginBottom: 8, textAlign: 'center' }}>
+        <Text style={[styles.blockTitle, currentTheme.blockTitle]}>
           {userProfile?.status === 'inativo' ? 'Conta Desativada' : 'Aguardando Liberação'}
         </Text>
-        <Text style={{ fontSize: 16, color: '#64748b', textAlign: 'center', maxWidth: 400 }}>
+        <Text style={[styles.blockText, currentTheme.blockText]}>
           {userProfile?.status === 'inativo' 
             ? 'Sua conta foi suspensa pelo administrador.' 
             : 'Seu cadastro foi recebido! Aguarde o administrador aprovar o seu acesso ao CRM.'}
         </Text>
         <TouchableOpacity 
-          style={{ marginTop: 24, padding: 12, backgroundColor: '#e2e8f0', borderRadius: 8 }}
+          style={{ marginTop: 24, padding: 12, backgroundColor: isDarkMode ? '#334155' : '#e2e8f0', borderRadius: 8 }}
           onPress={() => supabase.auth.signOut()}
         >
-          <Text style={{ color: '#475569', fontWeight: 'bold' }}>Sair / Voltar ao Login</Text>
+          <Text style={{ color: isDarkMode ? '#f8fafc' : '#475569', fontWeight: 'bold' }}>Sair / Voltar ao Login</Text>
         </TouchableOpacity>
       </View>
     );
@@ -1108,50 +1150,60 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
     : 'Transferir Leads';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, currentTheme.container]}>
       
       {/* ===== INÍCIO DO CABEÇALHO CONDICIONAL ===== */}
       {isMobile ? (
         // LAYOUT EXCLUSIVO PARA CELULAR (Organizado em 3 linhas compactas)
-        <View style={styles.topHeaderMobileContainer}>
+        <View style={[styles.topHeaderMobileContainer, currentTheme.topHeader]}>
           
-          {/* 1ª Linha: Menu + Logo + Notificações */}
+          {/* 1ª Linha: Menu + Logo + Notificações + DarkMode Toggle */}
           <View style={styles.mobileRowTop}>
             <View style={styles.headerLeftGroup}>
-              <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
-                <Text style={styles.menuIcon}>☰</Text>
+              <TouchableOpacity style={styles.menuButton} onPress={openSidebar}>
+                <Text style={[styles.menuIcon, currentTheme.menuIcon]}>☰</Text>
               </TouchableOpacity>
               <Text style={styles.logoText3D}>ALÊ CRM</Text>
             </View>
             
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
-              <Text style={styles.iconBtnText}>🔔</Text>
-              {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>
-                    {activeNotifications.length + systemNotifications.length + adminNotifications.length}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <TouchableOpacity 
+                style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
+                onPress={() => toggleDarkMode(!isDarkMode)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
+                <Text style={styles.iconBtnText}>🔔</Text>
+                {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {activeNotifications.length + systemNotifications.length + adminNotifications.length}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* 2ª Linha: Busca + Filtro (100% da largura) */}
           <View style={styles.mobileRowMiddle}>
-            <View style={styles.searchContainer}>
+            <View style={[styles.searchContainer, currentTheme.searchContainer]}>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, currentTheme.searchInput]}
                 placeholder="Buscar Lead..."
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
               />
             </View>
             <TouchableOpacity 
-              style={[styles.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
+              style={[styles.filterBtn, currentTheme.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
               onPress={() => setIsFilterModalVisible(true)}
             >
-              <Text style={[styles.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
+              <Text style={[styles.filterBtnText, currentTheme.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
                 Filtro
               </Text>
             </TouchableOpacity>
@@ -1162,7 +1214,7 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
             {userProfile?.role === 'admin' && (
               <View style={{ position: 'relative', flex: 1 }}>
                 <TouchableOpacity 
-                  style={[styles.actionBtnSecondary, styles.mobileActionBtn, isBulkTransferActive && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]} 
+                  style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary, styles.mobileActionBtn, isBulkTransferActive && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#3b82f6' }]} 
                   onPress={() => {
                     if (!isBulkTransferActive) {
                       setIsBulkTransferActive(true);
@@ -1175,35 +1227,35 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
                     }
                   }}
                 >
-                  <Text style={[styles.actionBtnSecondaryText, isBulkTransferActive && { color: '#2563eb' }]} numberOfLines={1}>
+                  <Text style={[styles.actionBtnSecondaryText, currentTheme.actionBtnSecondaryText, isBulkTransferActive && { color: '#2563eb' }]} numberOfLines={1}>
                     {bulkButtonLabel}
                   </Text>
                 </TouchableOpacity>
 
                 {isBulkTransferActive && isBulkDropdownOpen && (
-                  <View style={styles.bulkDropdownMenu}>
-                    <Text style={styles.bulkDropdownTitle}>Selecione o Vendedor:</Text>
+                  <View style={[styles.bulkDropdownMenu, currentTheme.bulkDropdownMenu]}>
+                    <Text style={[styles.bulkDropdownTitle, currentTheme.bulkDropdownTitle]}>Selecione o Vendedor:</Text>
                     {usersList.map(u => (
                       <TouchableOpacity 
                         key={u.id} 
-                        style={styles.bulkDropdownItem}
+                        style={[styles.bulkDropdownItem, currentTheme.bulkDropdownItem]}
                         onPress={() => {
                           setBulkTargetUserId(u.id);
                           setIsBulkDropdownOpen(false);
                         }}
                       >
-                        <Text style={styles.bulkDropdownItemText} numberOfLines={1}>{u.name || u.email}</Text>
+                        <Text style={[styles.bulkDropdownItemText, currentTheme.bulkDropdownItemText]} numberOfLines={1}>{u.name || u.email}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
                 )}
               </View>
             )}
-            <TouchableOpacity style={[styles.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsTrashModalVisible(true)}>
-              <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
+            <TouchableOpacity style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsTrashModalVisible(true)}>
+              <Text style={[styles.actionBtnSecondaryText, currentTheme.actionBtnSecondaryText]}>Lixeira</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsImportModalVisible(true)}>
-              <Text style={styles.actionBtnSecondaryText}>Importar</Text>
+            <TouchableOpacity style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary, styles.mobileActionBtn]} onPress={() => setIsImportModalVisible(true)}>
+              <Text style={[styles.actionBtnSecondaryText, currentTheme.actionBtnSecondaryText]}>Importar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.actionBtnPrimary, styles.mobileActionBtn, { flex: 1.2 }]} onPress={() => setIsClientModalVisible(true)}>
               <Text style={styles.actionBtnPrimaryText}>+ Novo</Text>
@@ -1213,28 +1265,28 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         </View>
       ) : (
         // LAYOUT EXCLUSIVO PARA COMPUTADOR
-        <View style={styles.topHeader}>
+        <View style={[styles.topHeader, currentTheme.topHeader]}>
           <View style={styles.headerLeftGroup}>
-            <TouchableOpacity style={styles.menuButton} onPress={() => setIsMenuOpen(true)}>
-              <Text style={styles.menuIcon}>☰</Text>
+            <TouchableOpacity style={styles.menuButton} onPress={openSidebar}>
+              <Text style={[styles.menuIcon, currentTheme.menuIcon]}>☰</Text>
             </TouchableOpacity>
             <Text style={styles.logoText3D}>ALÊ CRM</Text>
 
             <View style={styles.headerCenter}>
-              <View style={styles.searchContainer}>
+              <View style={[styles.searchContainer, currentTheme.searchContainer]}>
                 <TextInput
-                  style={styles.searchInput}
+                  style={[styles.searchInput, currentTheme.searchInput]}
                   placeholder="Buscar Lead..."
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
               </View>
               <TouchableOpacity 
-                style={[styles.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
+                style={[styles.filterBtn, currentTheme.filterBtn, activeFilter !== 'TODOS' && styles.filterBtnActive]} 
                 onPress={() => setIsFilterModalVisible(true)}
               >
-                <Text style={[styles.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
+                <Text style={[styles.filterBtnText, currentTheme.filterBtnText, activeFilter !== 'TODOS' && styles.filterBtnTextActive]}>
                   Filtro
                 </Text>
               </TouchableOpacity>
@@ -1242,6 +1294,14 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
           </View>
 
           <View style={styles.headerRight}>
+            <TouchableOpacity 
+              style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
+              onPress={() => toggleDarkMode(!isDarkMode)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
               <Text style={styles.iconBtnText}>🔔</Text>
               {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
@@ -1266,7 +1326,7 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
             {userProfile?.role === 'admin' && (
               <View style={{ position: 'relative' }}>
                 <TouchableOpacity 
-                  style={[styles.actionBtnSecondary, isBulkTransferActive && { backgroundColor: '#eff6ff', borderColor: '#3b82f6' }]} 
+                  style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary, isBulkTransferActive && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#3b82f6' }]} 
                   onPress={() => {
                     if (!isBulkTransferActive) {
                       setIsBulkTransferActive(true);
@@ -1279,24 +1339,24 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
                     }
                   }}
                 >
-                  <Text style={[styles.actionBtnSecondaryText, isBulkTransferActive && { color: '#2563eb' }]}>
+                  <Text style={[styles.actionBtnSecondaryText, currentTheme.actionBtnSecondaryText, isBulkTransferActive && { color: '#2563eb' }]}>
                     {bulkButtonLabel}
                   </Text>
                 </TouchableOpacity>
 
                 {isBulkTransferActive && isBulkDropdownOpen && (
-                  <View style={styles.bulkDropdownMenu}>
-                    <Text style={styles.bulkDropdownTitle}>Selecione o Vendedor:</Text>
+                  <View style={[styles.bulkDropdownMenu, currentTheme.bulkDropdownMenu]}>
+                    <Text style={[styles.bulkDropdownTitle, currentTheme.bulkDropdownTitle]}>Selecione o Vendedor:</Text>
                     {usersList.map(u => (
                       <TouchableOpacity 
                         key={u.id} 
-                        style={styles.bulkDropdownItem}
+                        style={[styles.bulkDropdownItem, currentTheme.bulkDropdownItem]}
                         onPress={() => {
                           setBulkTargetUserId(u.id);
                           setIsBulkDropdownOpen(false);
                         }}
                       >
-                        <Text style={styles.bulkDropdownItemText}>{u.name || u.email}</Text>
+                        <Text style={[styles.bulkDropdownItemText, currentTheme.bulkDropdownItemText]}>{u.name || u.email}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1304,11 +1364,11 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
               </View>
             )}
 
-            <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsTrashModalVisible(true)}>
-              <Text style={styles.actionBtnSecondaryText}>Lixeira</Text>
+            <TouchableOpacity style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary]} onPress={() => setIsTrashModalVisible(true)}>
+              <Text style={[styles.actionBtnSecondaryText, currentTheme.actionBtnSecondaryText]}>Lixeira</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => setIsImportModalVisible(true)}>
-              <Text style={styles.actionBtnSecondaryText}>Importar</Text>
+            <TouchableOpacity style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary]} onPress={() => setIsImportModalVisible(true)}>
+              <Text style={[styles.actionBtnSecondaryText, currentTheme.actionBtnSecondaryText]}>Importar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => setIsClientModalVisible(true)}>
               <Text style={styles.actionBtnPrimaryText}>Novo</Text>
@@ -1346,30 +1406,31 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
               onDeselectAllInPhase={(phaseClientIds) => {
                 setSelectedLeadIds(prev => prev.filter(id => !phaseClientIds.includes(id)));
               }}
+              isDarkMode={isDarkMode}
             />
           ))}
-          <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
-            <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
+          <TouchableOpacity style={[styles.addPhaseButton, currentTheme.addPhaseButton]} onPress={() => setIsPhaseModalVisible(true)}>
+            <Text style={[styles.addPhaseText, currentTheme.addPhaseText]}>+ Adicionar Fase</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
 
       {activeView === 'minha_central' && (
-        <MinhaCentral boardData={boardData} onOpenClient={handleOpenClientDetails} />
+        <MinhaCentral boardData={boardData} onOpenClient={handleOpenClientDetails} isDarkMode={isDarkMode} />
       )}
 
       {activeView === 'info_gerais' && (
-        <InformacoesGerais />
+        <InformacoesGerais isDarkMode={isDarkMode} />
       )}
 
       {activeView === 'configuracao' && (
-  <Configuracao onConfigSaved={() => {
+  <Configuracao isDarkMode={isDarkMode} onConfigSaved={() => {
     // Atualiza os dados do perfil sem quebrar o kanban
     fetchInitialData();
   }} />
 )}
 
-      {activeView === 'admin_panel' && (<AdminPanel />)}
+      {activeView === 'admin_panel' && (<AdminPanel isDarkMode={isDarkMode} />)}
 
       {/* BOTÃO FLUTUANTE DE TRANSFERÊNCIA EM MASSA */}
       {isBulkTransferActive && selectedLeadIds.length > 0 && bulkTargetUserId && (
@@ -1381,70 +1442,82 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         </TouchableOpacity>
       )}
 
-      {/* ===== MODAL DO MENU LATERAL REFINADO (LARGURA REDUZIDA, CLEAN) ===== */}
-      {isMenuOpen && (
+      {/* ===== MODAL DO MENU LATERAL ANIMADO E RESPONSIVO ===== */}
+      {isMenuRendered && (
         <View style={styles.sidebarOverlay}>
-          <TouchableOpacity style={styles.sidebarBackdrop} onPress={() => setIsMenuOpen(false)} />
-          <View style={[styles.sidebarContent, isMobile && { width: '70%' }]}>
-            <View style={styles.sidebarHeaderContainer}>
-              <Text style={styles.sidebarTitle}>Navegação</Text>
-              <TouchableOpacity style={styles.sidebarCloseBtn} onPress={() => setIsMenuOpen(false)}>
-                <Text style={styles.sidebarCloseText}>✕</Text>
-              </TouchableOpacity>
+          <Animated.View style={[styles.sidebarBackdrop, { opacity: backdropOpacity }]}>
+            <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeSidebar} />
+          </Animated.View>
+          
+          <Animated.View style={[
+            styles.sidebarContent, 
+            currentTheme.sidebarContent,
+            isMobile && styles.sidebarContentMobile,
+            { transform: [{ translateX: slideAnim }] }
+          ]}>
+            
+            {/* TOPO DO MENU: NOME E E-MAIL DO USUÁRIO */}
+            <View style={[styles.sidebarHeaderContainer, currentTheme.sidebarHeaderContainer]}>
+              <Text style={[styles.sidebarUserName, currentTheme.sidebarUserName, isMobile && styles.sidebarUserNameMobile]} numberOfLines={1}>
+                Olá, {userProfile?.name ? userProfile.name.trim().split(' ')[0] : (userProfile?.email ? userProfile.email.split('@')[0] : 'Usuário')}
+              </Text>
+              <Text style={[styles.sidebarUserEmail, currentTheme.sidebarUserEmail, isMobile && styles.sidebarUserEmailMobile]} numberOfLines={1}>
+                {userProfile?.email || ''}
+              </Text>
             </View>
             
             <View style={styles.sidebarMenuContainer}>
               <TouchableOpacity 
-                style={[styles.menuItem, activeView === 'kanban' && styles.menuItemActive]} 
-                onPress={() => { setActiveView('kanban'); setIsMenuOpen(false); }}
+                style={[styles.menuItem, currentTheme.menuItem, isMobile && styles.menuItemMobile, activeView === 'kanban' && (isDarkMode ? styles.menuItemActiveDark : styles.menuItemActive)]} 
+                onPress={() => { setActiveView('kanban'); closeSidebar(); }}
               >
-                <Text style={[styles.menuItemText, activeView === 'kanban' && styles.menuItemTextActive]}>Painel Kanban</Text>
+                <Text style={[styles.menuItemText, currentTheme.menuItemText, isMobile && styles.menuItemTextMobile, activeView === 'kanban' && styles.menuItemTextActive]}>Painel dos Leads</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.menuItem, activeView === 'minha_central' && styles.menuItemActive]} 
-                onPress={() => { setActiveView('minha_central'); setIsMenuOpen(false); }}
+                style={[styles.menuItem, currentTheme.menuItem, isMobile && styles.menuItemMobile, activeView === 'minha_central' && (isDarkMode ? styles.menuItemActiveDark : styles.menuItemActive)]} 
+                onPress={() => { setActiveView('minha_central'); closeSidebar(); }}
               >
-                <Text style={[styles.menuItemText, activeView === 'minha_central' && styles.menuItemTextActive]}>Minha Central</Text>
+                <Text style={[styles.menuItemText, currentTheme.menuItemText, isMobile && styles.menuItemTextMobile, activeView === 'minha_central' && styles.menuItemTextActive]}>Minha Central</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.menuItem, activeView === 'info_gerais' && styles.menuItemActive]} 
-                onPress={() => { setActiveView('info_gerais'); setIsMenuOpen(false); }}
+                style={[styles.menuItem, currentTheme.menuItem, isMobile && styles.menuItemMobile, activeView === 'info_gerais' && (isDarkMode ? styles.menuItemActiveDark : styles.menuItemActive)]} 
+                onPress={() => { setActiveView('info_gerais'); closeSidebar(); }}
               >
-                <Text style={[styles.menuItemText, activeView === 'info_gerais' && styles.menuItemTextActive]}>Informações Gerais</Text>
+                <Text style={[styles.menuItemText, currentTheme.menuItemText, isMobile && styles.menuItemTextMobile, activeView === 'info_gerais' && styles.menuItemTextActive]}>Visão Geral</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.menuItem, activeView === 'configuracao' && styles.menuItemActive]} 
-                onPress={() => { setActiveView('configuracao'); setIsMenuOpen(false); }}
+                style={[styles.menuItem, currentTheme.menuItem, isMobile && styles.menuItemMobile, activeView === 'configuracao' && (isDarkMode ? styles.menuItemActiveDark : styles.menuItemActive)]} 
+                onPress={() => { setActiveView('configuracao'); closeSidebar(); }}
               >
-                <Text style={[styles.menuItemText, activeView === 'configuracao' && styles.menuItemTextActive]}>Configuração</Text>
+                <Text style={[styles.menuItemText, currentTheme.menuItemText, isMobile && styles.menuItemTextMobile, activeView === 'configuracao' && styles.menuItemTextActive]}>Configuração</Text>
               </TouchableOpacity>
 
               {userProfile?.role === 'admin' && (
-                <View style={styles.adminSectionContainer}>
+                <View style={[styles.adminSectionContainer, currentTheme.adminSectionContainer]}>
                   <TouchableOpacity 
-                    style={[styles.menuItem, styles.adminMenuItem, activeView === 'admin_panel' && styles.adminMenuItemActive]} 
-                    onPress={() => { setActiveView('admin_panel'); setIsMenuOpen(false); }}
+                    style={[styles.menuItem, currentTheme.adminMenuItem, isMobile && styles.menuItemMobile, activeView === 'admin_panel' && styles.adminMenuItemActive]} 
+                    onPress={() => { setActiveView('admin_panel'); closeSidebar(); }}
                   >
-                    <Text style={styles.adminMenuItemText}>Painel Administrativo</Text>
+                    <Text style={[styles.adminMenuItemText, currentTheme.adminMenuItemText, isMobile && styles.adminMenuItemTextMobile]}>Painel Administrativo</Text>
                   </TouchableOpacity>
 
                   {/* Seção Simples e Moderna de Vendedores */}
-                  <View style={styles.sellersBox}>
+                  <View style={[styles.sellersBox, currentTheme.sellersBox]}>
                     <TouchableOpacity 
-                      style={styles.sellersHeaderToggle}
+                      style={[styles.sellersHeaderToggle, isMobile && styles.sellersHeaderToggleMobile]}
                       onPress={() => setIsSellersDropdownOpen(!isSellersDropdownOpen)}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.sellersHeaderTitle}>CRM dos Vendedores</Text>
-                      <Text style={styles.sellersHeaderArrow}>{isSellersDropdownOpen ? '▴' : '▾'}</Text>
+                      <Text style={[styles.sellersHeaderTitle, currentTheme.sellersHeaderTitle, isMobile && styles.sellersHeaderTitleMobile]}>CRM dos Vendedores</Text>
+                      <Text style={[styles.sellersHeaderArrow, currentTheme.sellersHeaderArrow]}>{isSellersDropdownOpen ? '▴' : '▾'}</Text>
                     </TouchableOpacity>
                     
                     {isSellersDropdownOpen && (
                       <ScrollView 
-                        style={styles.sellersDropdownList} 
+                        style={[styles.sellersDropdownList, currentTheme.sellersDropdownList]} 
                         nestedScrollEnabled={true}
                         showsVerticalScrollIndicator={false}
                       >
@@ -1455,17 +1528,18 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
                               key={u.id}
                               style={[
                                 styles.sellerItemRow,
-                                isSelectedUser && styles.sellerItemRowActive
+                                isMobile && styles.sellerItemRowMobile,
+                                isSelectedUser && currentTheme.sellerItemRowActive
                               ]} 
                               onPress={() => { 
                                 setCurrentUserId(u.id); 
                                 setActiveView('kanban'); 
-                                setIsMenuOpen(false); 
+                                closeSidebar(); 
                               }}
                             >
                               <View style={[styles.sellerIndicatorDot, isSelectedUser && styles.sellerIndicatorDotActive]} />
                               <Text 
-                                style={[styles.sellerItemText, isSelectedUser && styles.sellerItemTextActive]} 
+                                style={[styles.sellerItemText, currentTheme.sellerItemText, isMobile && styles.sellerItemTextMobile, isSelectedUser && styles.sellerItemTextActive]} 
                                 numberOfLines={1}
                               >
                                 {u.id === loggedUserId ? 'Meu CRM (Próprio)' : (u.name || u.email)}
@@ -1480,36 +1554,36 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
               )}
             </View>
 
-            <View style={styles.sidebarFooterContainer}>
+            <View style={[styles.sidebarFooterContainer, currentTheme.sidebarFooterContainer]}>
               <TouchableOpacity 
-                style={styles.sidebarFooterButtonChangePass} 
-                onPress={() => { setIsChangePassModalVisible(true); setIsMenuOpen(false); }}
+                style={[styles.sidebarFooterButtonChangePass, currentTheme.sidebarFooterButtonChangePass, isMobile && styles.sidebarFooterButtonMobile]} 
+                onPress={() => { setIsChangePassModalVisible(true); closeSidebar(); }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.sidebarFooterButtonChangePassText}>Trocar Minha Senha</Text>
+                <Text style={[styles.sidebarFooterButtonChangePassText, currentTheme.sidebarFooterButtonChangePassText, isMobile && styles.sidebarFooterButtonTextMobile]}>Trocar Minha Senha</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={styles.sidebarFooterButtonLogout} 
-                onPress={() => { setIsLogoutModalVisible(true); setIsMenuOpen(false); }}
+                style={[styles.sidebarFooterButtonLogout, currentTheme.sidebarFooterButtonLogout, isMobile && styles.sidebarFooterButtonMobile]} 
+                onPress={() => { setIsLogoutModalVisible(true); closeSidebar(); }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.sidebarFooterButtonLogoutText}>Encerrar Sessão</Text>
+                <Text style={[styles.sidebarFooterButtonLogoutText, currentTheme.sidebarFooterButtonLogoutText, isMobile && styles.sidebarFooterButtonTextMobile]}>Encerrar Sessão</Text>
               </TouchableOpacity>
             </View>
 
-          </View>
+          </Animated.View>
         </View>
       )}
 
       {/* MODAIS */}
-      <AddClientModal visible={isClientModalVisible} onClose={() => setIsClientModalVisible(false)} onSave={handleSaveNewClient} />
-      <AddPhaseModal visible={isPhaseModalVisible} onClose={() => setIsPhaseModalVisible(false)} onSave={handleSaveNewPhase} />
-      <TrashModal visible={isTrashModalVisible} onClose={() => setIsTrashModalVisible(false)} trashClients={boardData?.trash || []} onPermanentDelete={handlePermanentDelete} onRestore={handleRestoreFromTrash} />
-      <FilterModal visible={isFilterModalVisible} onClose={() => setIsFilterModalVisible(false)} activeFilter={activeFilter} onSelectFilter={setActiveFilter} />
-      <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} />
-      <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
-      <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} isAdmin={userProfile?.role === 'admin'} usersList={usersList} currentUserId={currentUserId} onTransferLead={handleTransferLead} />
+      <AddClientModal visible={isClientModalVisible} onClose={() => setIsClientModalVisible(false)} onSave={handleSaveNewClient} isDarkMode={isDarkMode} />
+      <AddPhaseModal visible={isPhaseModalVisible} onClose={() => setIsPhaseModalVisible(false)} onSave={handleSaveNewPhase} isDarkMode={isDarkMode} />
+      <TrashModal visible={isTrashModalVisible} onClose={() => setIsTrashModalVisible(false)} trashClients={boardData?.trash || []} onPermanentDelete={handlePermanentDelete} onRestore={handleRestoreFromTrash} isDarkMode={isDarkMode} />
+      <FilterModal visible={isFilterModalVisible} onClose={() => setIsFilterModalVisible(false)} activeFilter={activeFilter} onSelectFilter={setActiveFilter} isDarkMode={isDarkMode} />
+      <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} isDarkMode={isDarkMode} />
+      <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} isDarkMode={isDarkMode} />
+      <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} isAdmin={userProfile?.role === 'admin'} usersList={usersList} currentUserId={currentUserId} onTransferLead={handleTransferLead} isDarkMode={isDarkMode} />
       <NotificationModal 
     visible={isNotifModalVisible} 
     onClose={() => setIsNotifModalVisible(false)} 
@@ -1523,6 +1597,7 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
     onRejectNameChange={handleRejectNameChange}
     onDismissNameChangeAlert={handleDismissNameChangeAlert}
     onClearHistory={handleClearNotificationHistory}
+    isDarkMode={isDarkMode}
   />
 
       <WhatsAppBulkModal 
@@ -1533,35 +1608,36 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
           addSystemNotification('Disparo Concluído', `Os disparos para ${stats.total} leads foram finalizados. Sucesso: ${stats.success}, Erros: ${stats.error}.`);
           setIsNotifModalVisible(true);
         }}
+        isDarkMode={isDarkMode}
       />
 
       {/* ===== MODAL DE TROCA DE SENHA ===== */}
       {isChangePassModalVisible && (
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Trocar Minha Senha</Text>
-            <Text style={styles.modalText}>Digite sua nova senha de acesso abaixo (mínimo de 6 caracteres, com maiúscula, minúscula, número e caractere especial).</Text>
+          <View style={[styles.modalContent, currentTheme.modalContent]}>
+            <Text style={[styles.modalTitle, currentTheme.modalTitle]}>Trocar Minha Senha</Text>
+            <Text style={[styles.modalText, currentTheme.modalText]}>Digite sua nova senha de acesso abaixo (mínimo de 6 caracteres, com maiúscula, minúscula, número e caractere especial).</Text>
             
             <TextInput
-              style={styles.passInput}
+              style={[styles.passInput, currentTheme.passInput]}
               placeholder="Nova senha (ex: Senha123!)"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               secureTextEntry
               value={newPass}
               onChangeText={setNewPass}
             />
             <TextInput
-              style={styles.passInput}
+              style={[styles.passInput, currentTheme.passInput]}
               placeholder="Confirme a nova senha"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               secureTextEntry
               value={newPassConfirm}
               onChangeText={setNewPassConfirm}
             />
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setIsChangePassModalVisible(false); setNewPass(''); setNewPassConfirm(''); }}>
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              <TouchableOpacity style={[styles.cancelBtn, currentTheme.cancelBtn]} onPress={() => { setIsChangePassModalVisible(false); setNewPass(''); setNewPassConfirm(''); }}>
+                <Text style={[styles.cancelBtnText, currentTheme.cancelBtnText]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#4f46e5' }]} onPress={handleUpdateOwnPassword} disabled={isChangingPass}>
                 <Text style={styles.confirmBtnText}>{isChangingPass ? 'Salvando...' : 'Salvar Senha'}</Text>
@@ -1574,12 +1650,12 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       {/* MODAL DE CONFIRMAÇÃO DE LOGOUT */}
       {isLogoutModalVisible && (
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirmar Saída</Text>
-            <Text style={styles.modalText}>Tem certeza que deseja sair? Certifique-se de que todas as alterações foram salvas.</Text>
+          <View style={[styles.modalContent, currentTheme.modalContent]}>
+            <Text style={[styles.modalTitle, currentTheme.modalTitle]}>Confirmar Saída</Text>
+            <Text style={[styles.modalText, currentTheme.modalText]}>Tem certeza que deseja sair? Certifique-se de que todas as alterações foram salvas.</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsLogoutModalVisible(false)}>
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              <TouchableOpacity style={[styles.cancelBtn, currentTheme.cancelBtn]} onPress={() => setIsLogoutModalVisible(false)}>
+                <Text style={[styles.cancelBtnText, currentTheme.cancelBtnText]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmBtn} onPress={async () => {
                 
@@ -1605,10 +1681,10 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       {/* MODAL DE ALERTA CUSTOMIZADO COM FADE */}
       {alertConfig.visible && (
         <View style={styles.successAlertOverlay}>
-          <Animated.View style={[styles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
+          <Animated.View style={[styles.successAlertBox, currentTheme.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
             <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
-            <Text style={styles.successAlertTitle}>{alertConfig.title}</Text>
-            <Text style={styles.successAlertMessage}>{alertConfig.message}</Text>
+            <Text style={[styles.successAlertTitle, currentTheme.successAlertTitle]}>{alertConfig.title}</Text>
+            <Text style={[styles.successAlertMessage, currentTheme.successAlertMessage]}>{alertConfig.message}</Text>
             <TouchableOpacity 
               style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
               onPress={closeCustomAlert}
@@ -1625,8 +1701,7 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB', 
+    flex: 1, 
   },
   
   /* --- ESTILOS DO CABEÇALHO DESKTOP (Preservados) --- */
@@ -1634,13 +1709,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
     zIndex: 50,
-    ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } })
   },
   headerLeftGroup: {
     flexDirection: 'row',
@@ -1653,7 +1725,6 @@ const styles = StyleSheet.create({
   },
   menuIcon: {
     fontSize: 20,
-    color: '#334155',
     fontWeight: 'bold',
   },
   logoText3D: {
@@ -1675,9 +1746,7 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
     borderRadius: 6,
     flex: 1,
     height: 32,
@@ -1687,13 +1756,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: MODERN_FONT,
     fontSize: 12,
-    color: '#0f172a',
     ...Platform.select({ web: { outlineStyle: 'none' } })
   },
   filterBtn: {
-    backgroundColor: '#f1f5f9',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     borderRadius: 6,
     height: 32,
     paddingHorizontal: 10,
@@ -1708,7 +1774,6 @@ const styles = StyleSheet.create({
     fontFamily: MODERN_FONT,
     fontSize: 12,
     fontWeight: '700',
-    color: '#475569',
   },
   filterBtnTextActive: {
     color: '#2563EB',
@@ -1746,9 +1811,7 @@ const styles = StyleSheet.create({
     fontFamily: MODERN_FONT
   },
   actionBtnSecondary: {
-    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: 6,
@@ -1757,7 +1820,6 @@ const styles = StyleSheet.create({
     fontFamily: MODERN_FONT,
     fontSize: 11,
     fontWeight: '700',
-    color: '#475569',
   },
   actionBtnPrimary: {
     backgroundColor: '#2563eb', 
@@ -1774,14 +1836,11 @@ const styles = StyleSheet.create({
 
   /* --- NOVOS ESTILOS EXCLUSIVOS DO CABEÇALHO MOBILE --- */
   topHeaderMobileContainer: {
-    backgroundColor: '#ffffff',
     paddingHorizontal: 10,
     paddingTop: 6,      
     paddingBottom: 8,   
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
     zIndex: 50,
-    ...Platform.select({ web: { boxShadow: '0px 1px 4px rgba(0,0,0,0.08)' } })
   },
   mobileRowTop: {
     flexDirection: 'row',
@@ -1816,25 +1875,22 @@ const styles = StyleSheet.create({
   },
   addPhaseButton: {
     width: 300,
-    backgroundColor: 'rgba(226, 232, 240, 0.5)',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderStyle: 'dashed',
     borderWidth: 2,
-    borderColor: '#CBD5E1',
     maxHeight: 52,
     marginRight: 24,
   },
   addPhaseText: {
     fontFamily: MODERN_FONT,
-    color: '#64748B',
     fontWeight: '700',
     fontSize: 14,
   },
 
-  /* --- ESTILOS DO MENU LATERAL (REFINADO, COMPACTO, CLEAN) --- */
+  /* --- ESTILOS DO MENU LATERAL (ANIMAÇÃO E RESPONSIVIDADE) --- */
   sidebarOverlay: { 
     position: 'absolute', 
     top: 0, 
@@ -1845,7 +1901,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row' 
   },
   sidebarBackdrop: { 
-    flex: 1, 
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(15, 23, 42, 0.45)' 
   },
   sidebarContent: { 
@@ -1853,56 +1913,58 @@ const styles = StyleSheet.create({
     top: 0, 
     left: 0, 
     bottom: 0, 
-    width: 220, // Largura compacta otimizada
-    backgroundColor: '#ffffff', 
+    width: 230, 
     paddingHorizontal: 14,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 20,
     justifyContent: 'space-between',
-    ...Platform.select({ web: { boxShadow: '6px 0px 25px rgba(0,0,0,0.08)' } }) 
+    zIndex: 10000,
+  },
+  sidebarContentMobile: {
+    width: '78%', // Largura ideal e confortável para toque em celulares
+    maxWidth: 300,
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    paddingBottom: 24,
   },
   sidebarHeaderContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 12,
+    marginBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
   },
-  sidebarTitle: { 
+  sidebarUserName: { 
     fontFamily: MODERN_FONT, 
-    fontSize: 16, 
+    fontSize: 18, 
     fontWeight: '800', 
-    color: '#0f172a',
     letterSpacing: -0.3,
   },
-  sidebarCloseBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: '#f8fafc',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+  sidebarUserNameMobile: {
+    fontSize: 16, // Ajuste proporcional para telas menores sem perder legibilidade
   },
-  sidebarCloseText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748b',
+  sidebarUserEmail: {
+    fontFamily: MODERN_FONT,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  sidebarUserEmailMobile: {
+    fontSize: 11,
   },
   sidebarMenuContainer: {
     flex: 1,
     gap: 6,
+    flexShrink: 1,
+    marginBottom: 8,
   },
   menuItem: { 
-    paddingVertical: 12, 
-    paddingHorizontal: 14, 
+    paddingVertical: 10, 
+    paddingHorizontal: 12, 
     borderRadius: 8, 
-    backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  menuItemMobile: {
+    paddingVertical: 13, // Área de toque maior e mais confortável no celular
+    paddingHorizontal: 14,
   },
   menuItemActive: { 
     backgroundColor: '#f8fafc', 
@@ -1910,87 +1972,94 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, 
     borderLeftColor: '#2563eb' 
   },
+  menuItemActiveDark: {
+    backgroundColor: '#334155',
+    borderColor: '#475569',
+    borderLeftWidth: 3,
+    borderLeftColor: '#3b82f6'
+  },
   menuItemText: { 
     fontFamily: MODERN_FONT, 
-    fontSize: 13, 
+    fontSize: 12, 
     fontWeight: '600', 
-    color: '#475569' 
+  },
+  menuItemTextMobile: {
+    fontSize: 14, // Fonte ampliada no mobile para melhor visualização
   },
   menuItemTextActive: { 
     color: '#2563eb',
     fontWeight: '700',
   },
   adminSectionContainer: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    gap: 8,
+    gap: 6,
+    flexShrink: 1,
   },
   adminMenuItem: {
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  adminMenuItemActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#dbeafe',
-    borderLeftWidth: 3,
-    borderLeftColor: '#3b82f6',
+    paddingVertical: 9,
   },
   adminMenuItemText: {
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#1e40af',
+  },
+  adminMenuItemTextMobile: {
+    fontSize: 14,
   },
   sellersBox: {
-    backgroundColor: '#f8fafc',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
     overflow: 'hidden',
+    flexShrink: 1,
   },
   sellersHeaderToggle: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 11,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  sellersHeaderToggleMobile: {
+    paddingVertical: 12,
     paddingHorizontal: 14,
   },
   sellersHeaderTitle: {
     fontFamily: MODERN_FONT,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#64748b',
     letterSpacing: 0.2,
   },
+  sellersHeaderTitleMobile: {
+    fontSize: 13,
+  },
   sellersHeaderArrow: {
-    fontSize: 12,
-    color: '#64748b',
+    fontSize: 11,
     fontWeight: 'bold',
   },
   sellersDropdownList: {
-    maxHeight: 160,
-    backgroundColor: '#ffffff',
+    maxHeight: 150,
+    minHeight: 40,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   sellerItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    gap: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    gap: 6,
   },
-  sellerItemRowActive: {
-    backgroundColor: '#f1f5f9',
+  sellerItemRowMobile: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   sellerIndicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: '#cbd5e1',
   },
   sellerIndicatorDotActive: {
@@ -1998,50 +2067,51 @@ const styles = StyleSheet.create({
   },
   sellerItemText: {
     fontFamily: MODERN_FONT,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
-    color: '#475569',
     flex: 1,
+  },
+  sellerItemTextMobile: {
+    fontSize: 13,
   },
   sellerItemTextActive: {
     fontWeight: '700',
-    color: '#1e293b',
   },
   sidebarFooterContainer: {
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    gap: 8,
+    gap: 6,
   },
   sidebarFooterButtonChangePass: {
-    paddingVertical: 11,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#f8fafc',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+  },
+  sidebarFooterButtonMobile: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   sidebarFooterButtonChangePassText: {
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#334155',
+  },
+  sidebarFooterButtonTextMobile: {
+    fontSize: 13,
   },
   sidebarFooterButtonLogout: {
-    paddingVertical: 11,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#fff1f2',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ffe4e6',
   },
   sidebarFooterButtonLogoutText: {
     fontFamily: MODERN_FONT,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#e11d48',
   },
 
   /* --- ESTILOS DOS MODAIS CUSTOMIZADOS --- */
@@ -2050,16 +2120,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 
   },
   modalContent: { 
-    backgroundColor: '#fff', padding: 24, borderRadius: 16, width: '90%', maxWidth: 320, 
+    padding: 24, borderRadius: 16, width: '90%', maxWidth: 320, 
     alignItems: 'center' 
   },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: '#1e293b' },
-  modalText: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 24 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  modalText: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
   passInput: {
     width: '100%',
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
@@ -2067,16 +2135,16 @@ const styles = StyleSheet.create({
     ...Platform.select({ web: { outlineStyle: 'none' } })
   },
   modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
-  cancelBtn: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#f1f5f9', alignItems: 'center' },
-  cancelBtnText: { fontWeight: 'bold', color: '#475569' },
+  cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center' },
+  cancelBtnText: { fontWeight: 'bold' },
   confirmBtn: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
   confirmBtnText: { fontWeight: 'bold', color: '#ffffff' },
 
   successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
-  successAlertBox: { backgroundColor: '#ffffff', padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  successAlertBox: { padding: 24, borderRadius: 16, alignItems: 'center', width: 320 },
   successAlertIcon: { fontSize: 48, marginBottom: 12 },
-  successAlertTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b', marginBottom: 8 },
-  successAlertMessage: { fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  successAlertTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  successAlertMessage: { fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
   successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
 
@@ -2085,18 +2153,14 @@ const styles = StyleSheet.create({
     top: 40,
     left: 0,
     right: 0,
-    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     borderRadius: 8,
     padding: 6,
     zIndex: 1000,
-    ...Platform.select({ web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.1)' } })
   },
   bulkDropdownTitle: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#64748b',
     marginBottom: 4,
     paddingHorizontal: 4,
   },
@@ -2107,7 +2171,6 @@ const styles = StyleSheet.create({
   },
   bulkDropdownItemText: {
     fontSize: 12,
-    color: '#334155',
     fontWeight: '600',
   },
   floatingBulkBtn: {
@@ -2126,5 +2189,128 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 14,
     fontFamily: MODERN_FONT,
+  },
+  themeToggleButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  themeToggleIcon: {
+    fontSize: 15,
+  },
+  blockTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center'
+  },
+  blockText: {
+    fontSize: 16,
+    textAlign: 'center',
+    maxWidth: 400
   }
+});
+
+/* Estilos para o Modo Claro */
+const lightStyles = StyleSheet.create({
+  container: { backgroundColor: '#F9FAFB' },
+  topHeader: { backgroundColor: '#ffffff', borderBottomColor: '#e2e8f0', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } }) },
+  menuIcon: { color: '#334155' },
+  themeToggleButton: { backgroundColor: '#f1f5f9' },
+  searchContainer: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  searchInput: { color: '#0f172a' },
+  filterBtn: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  filterBtnText: { color: '#475569' },
+  actionBtnSecondary: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  actionBtnSecondaryText: { color: '#475569' },
+  addPhaseButton: { backgroundColor: 'rgba(226, 232, 240, 0.5)', borderColor: '#CBD5E1' },
+  addPhaseText: { color: '#64748B' },
+  sidebarContent: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '6px 0px 25px rgba(0,0,0,0.08)' } }) },
+  sidebarHeaderContainer: { borderBottomColor: '#f1f5f9' },
+  sidebarUserName: { color: '#0f172a' },
+  sidebarUserEmail: { color: '#64748b' },
+  menuItem: { backgroundColor: '#ffffff' },
+  menuItemText: { color: '#475569' },
+  adminSectionContainer: { borderTopColor: '#f1f5f9' },
+  adminMenuItem: { backgroundColor: '#f8fafc', borderColor: '#f1f5f9' },
+  adminMenuItemText: { color: '#1e40af' },
+  sellersBox: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  sellersHeaderTitle: { color: '#64748b' },
+  sellersHeaderArrow: { color: '#64748b' },
+  sellersDropdownList: { backgroundColor: '#ffffff', borderTopColor: '#e2e8f0' },
+  sellerItemRowActive: { backgroundColor: '#f1f5f9' },
+  sellerItemText: { color: '#475569' },
+  sellerItemTextActive: { color: '#1e293b' },
+  sidebarFooterContainer: { borderTopColor: '#f1f5f9' },
+  sidebarFooterButtonChangePass: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  sidebarFooterButtonChangePassText: { color: '#334155' },
+  sidebarFooterButtonLogout: { backgroundColor: '#fff1f2', borderColor: '#ffe4e6' },
+  sidebarFooterButtonLogoutText: { color: '#e11d48' },
+  bulkDropdownMenu: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  bulkDropdownTitle: { color: '#64748b' },
+  bulkDropdownItemText: { color: '#334155' },
+  modalContent: { backgroundColor: '#fff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.1)' } }) },
+  modalTitle: { color: '#1e293b' },
+  modalText: { color: '#64748b' },
+  passInput: { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' },
+  cancelBtn: { backgroundColor: '#f1f5f9' },
+  cancelBtnText: { color: '#475569' },
+  successAlertBox: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
+  successAlertTitle: { color: '#1e293b' },
+  successAlertMessage: { color: '#475569' },
+  blockTitle: { color: '#1e293b' },
+  blockText: { color: '#64748b' }
+});
+
+/* Estilos para o Modo Escuro */
+const darkStyles = StyleSheet.create({
+  container: { backgroundColor: '#0f172a' },
+  topHeader: { backgroundColor: '#1e293b', borderBottomColor: '#334155', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.2)' } }) },
+  menuIcon: { color: '#f8fafc' },
+  themeToggleButton: { backgroundColor: '#334155' },
+  searchContainer: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  searchInput: { color: '#f8fafc' },
+  filterBtn: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  filterBtnText: { color: '#94a3b8' },
+  actionBtnSecondary: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  actionBtnSecondaryText: { color: '#cbd5e1' },
+  addPhaseButton: { backgroundColor: 'rgba(30, 41, 59, 0.5)', borderColor: '#334155' },
+  addPhaseText: { color: '#94a3b8' },
+  sidebarContent: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '6px 0px 25px rgba(0,0,0,0.4)' } }) },
+  sidebarHeaderContainer: { borderBottomColor: '#334155' },
+  sidebarUserName: { color: '#f8fafc' },
+  sidebarUserEmail: { color: '#94a3b8' },
+  menuItem: { backgroundColor: '#1e293b' },
+  menuItemText: { color: '#cbd5e1' },
+  adminSectionContainer: { borderTopColor: '#334155' },
+  adminMenuItem: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  adminMenuItemText: { color: '#60a5fa' },
+  sellersBox: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  sellersHeaderTitle: { color: '#94a3b8' },
+  sellersHeaderArrow: { color: '#94a3b8' },
+  sellersDropdownList: { backgroundColor: '#1e293b', borderTopColor: '#334155' },
+  sellerItemRowActive: { backgroundColor: '#334155' },
+  sellerItemText: { color: '#cbd5e1' },
+  sellerItemTextActive: { color: '#f8fafc' },
+  sidebarFooterContainer: { borderTopColor: '#334155' },
+  sidebarFooterButtonChangePass: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  sidebarFooterButtonChangePassText: { color: '#cbd5e1' },
+  sidebarFooterButtonLogout: { backgroundColor: '#451a03', borderColor: '#78350f' },
+  sidebarFooterButtonLogoutText: { color: '#f87171' },
+  bulkDropdownMenu: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  bulkDropdownTitle: { color: '#94a3b8' },
+  bulkDropdownItemText: { color: '#cbd5e1' },
+  modalContent: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
+  modalTitle: { color: '#f8fafc' },
+  modalText: { color: '#94a3b8' },
+  passInput: { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' },
+  cancelBtn: { backgroundColor: '#334155' },
+  cancelBtnText: { color: '#cbd5e1' },
+  successAlertBox: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
+  successAlertTitle: { color: '#f8fafc' },
+  successAlertMessage: { color: '#94a3b8' },
+  blockTitle: { color: '#f8fafc' },
+  blockText: { color: '#94a3b8' }
 });

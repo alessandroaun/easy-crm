@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform } from 'react-native';
 
-export default function ReportModal({ visible, onClose, report, boardData }) {
-  // Nota: Como removemos o botão, 'isPrinting' e 'handleExport' não são mais necessários
-  // mas deixaremos a estrutura limpa para o funcionamento do modal.
+const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
+export default function ReportModal({ visible, onClose, report, boardData, isDarkMode }) {
   if (!report) return null;
 
   let mensagemLimpa = report.mensagem || '';
@@ -39,90 +38,92 @@ export default function ReportModal({ visible, onClose, report, boardData }) {
     tagExibida = 'Todas as Tags / Origens';
   }
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   return (
     <Modal visible={visible} animationType="fade" transparent={true}>
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, themeStyles.modalContainer]}>
           
-          <View style={styles.header}>
+          <View style={[styles.header, themeStyles.header]}>
             <View>
-              <Text style={styles.title}>Relatório do Disparo</Text>
-              <Text style={styles.subtitle}>Detalhamento da campanha de disparo em massa</Text>
+              <Text style={[styles.title, themeStyles.title]}>Relatório do Disparo</Text>
+              <Text style={[styles.subtitle, themeStyles.subtitle]}>Detalhamento da campanha de disparo em massa</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
+            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, themeStyles.closeBtn]}>
+              <Text style={[styles.closeBtnText, themeStyles.closeBtnText]}>✕</Text>
             </TouchableOpacity>
           </View>
           
           <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={true}>
             
             <View style={styles.metricsGrid}>
-              <View style={[styles.metricCard, { borderLeftColor: '#2563eb' }]}>
-                <Text style={styles.metricLabel}>Total Alvos</Text>
-                <Text style={styles.metricValue}>{report.total_alvos || 0}</Text>
+              <View style={[styles.metricCard, themeStyles.metricCard, { borderLeftColor: '#2563eb' }]}>
+                <Text style={[styles.metricLabel, themeStyles.metricLabel]}>Total Alvos</Text>
+                <Text style={[styles.metricValue, themeStyles.metricValue]}>{report.total_alvos || 0}</Text>
               </View>
-              <View style={[styles.metricCard, { borderLeftColor: '#16a34a' }]}>
-                <Text style={styles.metricLabel}>Sucesso</Text>
-                <Text style={[styles.metricValue, { color: '#16a34a' }]}>{report.sucesso || 0}</Text>
+              <View style={[styles.metricCard, themeStyles.metricCard, { borderLeftColor: '#16a34a' }]}>
+                <Text style={[styles.metricLabel, themeStyles.metricLabel]}>Sucesso</Text>
+                <Text style={[styles.metricValue, themeStyles.metricValue, { color: '#16a34a' }]}>{report.sucesso || 0}</Text>
               </View>
-              <View style={[styles.metricCard, { borderLeftColor: '#dc2626' }]}>
-                <Text style={styles.metricLabel}>Falhas</Text>
-                <Text style={[styles.metricValue, { color: '#dc2626' }]}>{report.falha || 0}</Text>
+              <View style={[styles.metricCard, themeStyles.metricCard, { borderLeftColor: '#dc2626' }]}>
+                <Text style={[styles.metricLabel, themeStyles.metricLabel]}>Falhas</Text>
+                <Text style={[styles.metricValue, themeStyles.metricValue, { color: '#dc2626' }]}>{report.falha || 0}</Text>
               </View>
-              <View style={[styles.metricCard, { borderLeftColor: '#9333ea' }]}>
-                <Text style={styles.metricLabel}>Status</Text>
-                <Text style={[styles.metricValue, { fontSize: 13, color: '#9333ea' }]}>{report.status}</Text>
+              <View style={[styles.metricCard, themeStyles.metricCard, { borderLeftColor: '#9333ea' }]}>
+                <Text style={[styles.metricLabel, themeStyles.metricLabel]}>Status</Text>
+                <Text style={[styles.metricValue, themeStyles.metricValue, { fontSize: 13, color: '#9333ea' }]}>{report.status}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>Parâmetros Utilizados</Text>
+            <View style={[styles.sectionContainer, themeStyles.sectionContainer]}>
+              <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Parâmetros Utilizados</Text>
               <View style={styles.infoGrid}>
-                <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Fase:</Text>
-                  <Text style={styles.infoVal}>{faseExibida}</Text>
+                <View style={[styles.infoItem, themeStyles.infoItem]}>
+                  <Text style={[styles.infoLabel, themeStyles.infoLabel]}>Fase:</Text>
+                  <Text style={[styles.infoVal, themeStyles.infoVal]} numberOfLines={1}>{faseExibida}</Text>
                 </View>
-                <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Origem / Categoria:</Text>
-                  <Text style={styles.infoVal}>{tagExibida}</Text>
+                <View style={[styles.infoItem, themeStyles.infoItem]}>
+                  <Text style={[styles.infoLabel, themeStyles.infoLabel]}>Origem / Categoria:</Text>
+                  <Text style={[styles.infoVal, themeStyles.infoVal]} numberOfLines={1}>{tagExibida}</Text>
                 </View>
-                <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Conta WhatsApp:</Text>
-                  <Text style={styles.infoVal}>+{report.whatsapp_numero}</Text>
+                <View style={[styles.infoItem, themeStyles.infoItem]}>
+                  <Text style={[styles.infoLabel, themeStyles.infoLabel]}>Conta WhatsApp:</Text>
+                  <Text style={[styles.infoVal, themeStyles.infoVal]} numberOfLines={1}>+{report.whatsapp_numero}</Text>
                 </View>
-                <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Início / Término:</Text>
-                  <Text style={styles.infoVal}>{report.inicio} ➔ {report.fim}</Text>
+                <View style={[styles.infoItem, themeStyles.infoItem]}>
+                  <Text style={[styles.infoLabel, themeStyles.infoLabel]}>Início / Término:</Text>
+                  <Text style={[styles.infoVal, themeStyles.infoVal]} numberOfLines={1}>{report.inicio} ➔ {report.fim}</Text>
                 </View>
               </View>
             </View>
 
-            <View style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>💬 Conteúdo da Mensagem Disparada</Text>
-              <View style={styles.msgContainer}>
-                <Text style={styles.msgText}>{mensagemLimpa}</Text>
+            <View style={[styles.sectionContainer, themeStyles.sectionContainer]}>
+              <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>💬 Conteúdo da Mensagem Disparada</Text>
+              <View style={[styles.msgContainer, themeStyles.msgContainer]}>
+                <Text style={[styles.msgText, themeStyles.msgText]}>{mensagemLimpa}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionContainer}>
+            <View style={[styles.sectionContainer, themeStyles.sectionContainer]}>
               <View style={styles.leadsHeaderRow}>
-                <Text style={styles.sectionTitle}>Leads Alcançados na Campanha</Text>
+                <Text style={[styles.sectionTitle, themeStyles.sectionTitle, { marginBottom: 0 }]}>Leads Alcançados na Campanha</Text>
                 <Text style={styles.leadsCountBadge}>{dadosExtra.leads?.length || report.total_alvos} registros</Text>
               </View>
 
-              <View style={styles.tableHeader}>
-                <Text style={[styles.th, { flex: 2 }]}>Nome do Lead</Text>
-                <Text style={[styles.th, { flex: 1.5 }]}>Telefone / WhatsApp</Text>
-                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Status Envio</Text>
+              <View style={[styles.tableHeader, themeStyles.tableHeader]}>
+                <Text style={[styles.th, themeStyles.th, { flex: 2 }]}>Nome do Lead</Text>
+                <Text style={[styles.th, themeStyles.th, { flex: 1.5 }]}>Telefone / WhatsApp</Text>
+                <Text style={[styles.th, themeStyles.th, { flex: 1, textAlign: 'right' }]}>Status Envio</Text>
               </View>
 
               {dadosExtra.leads && dadosExtra.leads.length > 0 ? (
                 dadosExtra.leads.map((lead, i) => {
                   const isFalha = lead.status === 'Falha';
                   return (
-                    <View key={i} style={[styles.tableRow, i % 2 === 0 ? styles.rowEven : styles.rowOdd]}>
-                      <Text style={[styles.td, { flex: 2, fontWeight: '600' }]} numberOfLines={1}>{lead.name}</Text>
-                      <Text style={[styles.td, { flex: 1.5, color: '#475569' }]}>{lead.phone}</Text>
+                    <View key={i} style={[styles.tableRow, themeStyles.tableRow, i % 2 === 0 ? themeStyles.rowEven : themeStyles.rowOdd]}>
+                      <Text style={[styles.td, themeStyles.td, { flex: 2, fontWeight: '600' }]} numberOfLines={1}>{lead.name}</Text>
+                      <Text style={[styles.td, themeStyles.td, { flex: 1.5 }, isDarkMode ? { color: '#94a3b8' } : { color: '#475569' }]}>{lead.phone}</Text>
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
                         <View style={isFalha ? styles.statusPillError : styles.statusPillSuccess}>
                           <Text style={isFalha ? styles.statusPillTextError : styles.statusPillTextSuccess}>
@@ -134,8 +135,8 @@ export default function ReportModal({ visible, onClose, report, boardData }) {
                   );
                 })
               ) : (
-                <View style={styles.emptyLeadsBox}>
-                  <Text style={styles.emptyLeadsText}>Nenhum detalhe individual de lead registrado para este histórico.</Text>
+                <View style={[styles.emptyLeadsBox, themeStyles.emptyLeadsBox]}>
+                  <Text style={[styles.emptyLeadsText, themeStyles.emptyLeadsText]}>Nenhum detalhe individual de lead registrado para este histórico.</Text>
                 </View>
               )}
             </View>
@@ -150,49 +151,103 @@ export default function ReportModal({ visible, onClose, report, boardData }) {
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { width: '92%', maxWidth: 780, height: '90%', backgroundColor: '#ffffff', borderRadius: 20, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0px 20px 40px rgba(0,0,0,0.2)' } }) },
+  modalContainer: { width: '92%', maxWidth: 780, height: '90%', borderRadius: 20, overflow: 'hidden', ...Platform.select({ web: { boxShadow: '0px 20px 40px rgba(0,0,0,0.2)' } }) },
   
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  title: { fontSize: 20, fontWeight: '800', color: '#0f172a' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#e2e8f0', justifyContent: 'center', alignItems: 'center' },
-  closeBtnText: { fontSize: 16, color: '#334155', fontWeight: 'bold' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderBottomWidth: 1 },
+  title: { fontSize: 20, fontWeight: '800', fontFamily: MODERN_FONT },
+  subtitle: { fontSize: 13, marginTop: 2, fontFamily: MODERN_FONT },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  closeBtnText: { fontSize: 16, fontWeight: 'bold', fontFamily: MODERN_FONT },
 
   content: { flex: 1, padding: 24 },
 
-  metricsGrid: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  metricCard: { flex: 1, backgroundColor: '#f8fafc', padding: 14, borderRadius: 12, borderLeftWidth: 4, borderWidth: 1, borderColor: '#e2e8f0' },
-  metricLabel: { fontSize: 11, fontWeight: '600', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 },
-  metricValue: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+  metricsGrid: { flexDirection: 'row', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
+  metricCard: { flex: 1, minWidth: 140, padding: 14, borderRadius: 12, borderLeftWidth: 4, borderWidth: 1 },
+  metricLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 4, fontFamily: MODERN_FONT },
+  metricValue: { fontSize: 18, fontWeight: '800', fontFamily: MODERN_FONT },
 
-  sectionContainer: { marginBottom: 24, backgroundColor: '#f8fafc', padding: 16, borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0' },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b', marginBottom: 12 },
+  sectionContainer: { marginBottom: 24, padding: 16, borderRadius: 14, borderWidth: 1 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12, fontFamily: MODERN_FONT },
   
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  infoItem: { width: '48%', backgroundColor: '#ffffff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
-  infoLabel: { fontSize: 11, color: '#64748b', fontWeight: '600' },
-  infoVal: { fontSize: 13, color: '#0f172a', fontWeight: '700', marginTop: 2 },
+  infoItem: { width: '48%', padding: 10, borderRadius: 8, borderWidth: 1 },
+  infoLabel: { fontSize: 11, fontWeight: '600', fontFamily: MODERN_FONT },
+  infoVal: { fontSize: 13, fontWeight: '700', marginTop: 2, fontFamily: MODERN_FONT },
 
-  msgContainer: { backgroundColor: '#ffffff', padding: 14, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' },
-  msgText: { fontSize: 13, color: '#334155', fontStyle: 'italic', lineHeight: 18 },
+  msgContainer: { padding: 14, borderRadius: 8, borderWidth: 1 },
+  msgText: { fontSize: 13, fontStyle: 'italic', lineHeight: 18, fontFamily: MODERN_FONT },
 
   leadsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  leadsCountBadge: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  leadsCountBadge: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, fontFamily: MODERN_FONT },
   
-  tableHeader: { flexDirection: 'row', backgroundColor: '#e2e8f0', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginBottom: 4 },
-  th: { fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' },
+  tableHeader: { flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginBottom: 4 },
+  th: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', fontFamily: MODERN_FONT },
   
-  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  rowEven: { backgroundColor: '#ffffff' },
-  rowOdd: { backgroundColor: '#f8fafc' },
-  td: { fontSize: 13, color: '#1e293b' },
+  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1 },
+  td: { fontSize: 13, fontFamily: MODERN_FONT },
 
   statusPillSuccess: { backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  statusPillTextSuccess: { color: '#16a34a', fontSize: 11, fontWeight: '700' },
+  statusPillTextSuccess: { color: '#16a34a', fontSize: 11, fontWeight: '700', fontFamily: MODERN_FONT },
 
   statusPillError: { backgroundColor: '#fee2e2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
-  statusPillTextError: { color: '#dc2626', fontSize: 11, fontWeight: '700' },
+  statusPillTextError: { color: '#dc2626', fontSize: 11, fontWeight: '700', fontFamily: MODERN_FONT },
 
-  emptyLeadsBox: { padding: 20, alignItems: 'center', backgroundColor: '#ffffff', borderRadius: 8 },
-  emptyLeadsText: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center' }
+  emptyLeadsBox: { padding: 20, alignItems: 'center', borderRadius: 8, borderWidth: 1 },
+  emptyLeadsText: { fontSize: 12, fontStyle: 'italic', textAlign: 'center', fontFamily: MODERN_FONT }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#ffffff' },
+  header: { backgroundColor: '#f8fafc', borderBottomColor: '#e2e8f0' },
+  title: { color: '#0f172a' },
+  subtitle: { color: '#64748b' },
+  closeBtn: { backgroundColor: '#e2e8f0' },
+  closeBtnText: { color: '#334155' },
+  metricCard: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  metricLabel: { color: '#64748b' },
+  metricValue: { color: '#0f172a' },
+  sectionContainer: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  sectionTitle: { color: '#1e293b' },
+  infoItem: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  infoLabel: { color: '#64748b' },
+  infoVal: { color: '#0f172a' },
+  msgContainer: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  msgText: { color: '#334155' },
+  tableHeader: { backgroundColor: '#e2e8f0' },
+  th: { color: '#475569' },
+  tableRow: { borderBottomColor: '#e2e8f0' },
+  rowEven: { backgroundColor: '#ffffff' },
+  rowOdd: { backgroundColor: '#f8fafc' },
+  td: { color: '#1e293b' },
+  emptyLeadsBox: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  emptyLeadsText: { color: '#94a3b8' }
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  header: { backgroundColor: '#0f172a', borderBottomColor: '#334155' },
+  title: { color: '#f8fafc' },
+  subtitle: { color: '#94a3b8' },
+  closeBtn: { backgroundColor: '#334155' },
+  closeBtnText: { color: '#94a3b8' },
+  metricCard: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  metricLabel: { color: '#94a3b8' },
+  metricValue: { color: '#f8fafc' },
+  sectionContainer: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  sectionTitle: { color: '#f8fafc' },
+  infoItem: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  infoLabel: { color: '#94a3b8' },
+  infoVal: { color: '#f8fafc' },
+  msgContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  msgText: { color: '#cbd5e1' },
+  tableHeader: { backgroundColor: '#334155' },
+  th: { color: '#cbd5e1' },
+  tableRow: { borderBottomColor: '#334155' },
+  rowEven: { backgroundColor: '#1e293b' },
+  rowOdd: { backgroundColor: '#0f172a' },
+  td: { color: '#f8fafc' },
+  emptyLeadsBox: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  emptyLeadsText: { color: '#94a3b8' }
 });

@@ -9,7 +9,9 @@ import {
   Platform
 } from 'react-native';
 
-export default function AddClientModal({ visible, onClose, onSave }) {
+const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
+
+export default function AddClientModal({ visible, onClose, onSave, isDarkMode }) {
   // Estados para os campos do formulário
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -41,6 +43,8 @@ export default function AddClientModal({ visible, onClose, onSave }) {
     handleClose();
   };
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   return (
     <Modal
       animationType="fade"
@@ -52,40 +56,40 @@ export default function AddClientModal({ visible, onClose, onSave }) {
       <View style={styles.overlay}>
         
         {/* Container principal do Modal */}
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, themeStyles.modalContainer]}>
           
           <View style={styles.header}>
-            <Text style={styles.title}>Novo Cliente</Text>
+            <Text style={[styles.title, themeStyles.title]}>Novo Cliente</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.form}>
-            <Text style={styles.label}>Nome do Cliente *</Text>
+            <Text style={[styles.label, themeStyles.label]}>Nome do Cliente *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, themeStyles.input]}
               placeholder="Ex: João da Silva"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               value={name}
               onChangeText={setName}
             />
 
-            <Text style={styles.label}>Número de Telefone/WhatsApp</Text>
+            <Text style={[styles.label, themeStyles.label]}>Número de Telefone/WhatsApp</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, themeStyles.input]}
               placeholder="Ex: (11) 99999-9999"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               keyboardType="phone-pad"
               value={phone}
               onChangeText={setPhone}
             />
 
-            <Text style={styles.label}>Informações Iniciais</Text>
+            <Text style={[styles.label, themeStyles.label]}>Informações Iniciais</Text>
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[styles.input, themeStyles.input, styles.textArea]}
               placeholder="Como esse cliente chegou? Qual o interesse?"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               multiline={true}
               numberOfLines={4}
               value={initialInfo}
@@ -94,8 +98,8 @@ export default function AddClientModal({ visible, onClose, onSave }) {
           </View>
 
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton]} onPress={handleClose}>
+              <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
@@ -119,7 +123,6 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '100%',
     maxWidth: 500, // Limita o tamanho na web
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 24,
     shadowColor: '#000',
@@ -140,14 +143,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1e293b',
+    fontFamily: MODERN_FONT,
   },
   closeButton: {
     padding: 8,
   },
   closeButtonText: {
     fontSize: 20,
-    color: '#64748b',
     fontWeight: 'bold',
   },
   form: {
@@ -156,18 +158,16 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#475569',
     marginBottom: 8,
     marginTop: 16,
+    fontFamily: MODERN_FONT,
   },
   input: {
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
     borderRadius: 8,
     padding: 12,
     fontSize: 15,
-    color: '#0f172a',
+    fontFamily: MODERN_FONT,
     ...Platform.select({
       web: { outlineStyle: 'none', transition: 'border-color 0.2s' }
     })
@@ -185,12 +185,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
-    backgroundColor: '#f1f5f9',
   },
   cancelButtonText: {
-    color: '#475569',
     fontWeight: '600',
     fontSize: 15,
+    fontFamily: MODERN_FONT,
   },
   saveButton: {
     paddingVertical: 12,
@@ -202,5 +201,64 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 15,
+    fontFamily: MODERN_FONT,
+  },
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  modalContainer: {
+    backgroundColor: '#ffffff',
+  },
+  title: {
+    color: '#1e293b',
+  },
+  closeButtonText: {
+    color: '#64748b',
+  },
+  label: {
+    color: '#475569',
+  },
+  input: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    color: '#0f172a',
+  },
+  cancelButton: {
+    backgroundColor: '#f1f5f9',
+  },
+  cancelButtonText: {
+    color: '#475569',
+  },
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  modalContainer: {
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
+    borderWidth: 1,
+  },
+  title: {
+    color: '#f8fafc',
+  },
+  closeButtonText: {
+    color: '#94a3b8',
+  },
+  label: {
+    color: '#94a3b8',
+  },
+  input: {
+    backgroundColor: '#0f172a',
+    borderColor: '#334155',
+    color: '#f8fafc',
+  },
+  cancelButton: {
+    backgroundColor: '#0f172a',
+    borderColor: '#334155',
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    color: '#cbd5e1',
   },
 });

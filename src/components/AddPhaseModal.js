@@ -9,7 +9,9 @@ import {
   Platform
 } from 'react-native';
 
-export default function AddPhaseModal({ visible, onClose, onSave }) {
+const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
+
+export default function AddPhaseModal({ visible, onClose, onSave, isDarkMode }) {
   const [title, setTitle] = useState('');
 
   const handleClose = () => {
@@ -27,6 +29,8 @@ export default function AddPhaseModal({ visible, onClose, onSave }) {
     handleClose();
   };
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   return (
     <Modal
       animationType="fade"
@@ -35,21 +39,21 @@ export default function AddPhaseModal({ visible, onClose, onSave }) {
       onRequestClose={handleClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, themeStyles.modalContainer]}>
           
           <View style={styles.header}>
-            <Text style={styles.title}>Nova Fase do Funil</Text>
+            <Text style={[styles.title, themeStyles.title]}>Nova Fase do Funil</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.form}>
-            <Text style={styles.label}>Nome da Fase *</Text>
+            <Text style={[styles.label, themeStyles.label]}>Nome da Fase *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, themeStyles.input]}
               placeholder="Ex: Reunião Agendada, Contrato Assinado..."
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
               value={title}
               onChangeText={setTitle}
               autoFocus={true} // Já foca no input ao abrir o modal na web
@@ -57,8 +61,8 @@ export default function AddPhaseModal({ visible, onClose, onSave }) {
           </View>
 
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton]} onPress={handleClose}>
+              <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
@@ -82,7 +86,6 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '100%',
     maxWidth: 400, // Um pouco menor que o modal de cliente pois tem menos campos
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 24,
     shadowColor: '#000',
@@ -103,14 +106,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1e293b',
+    fontFamily: MODERN_FONT,
   },
   closeButton: {
     padding: 8,
   },
   closeButtonText: {
     fontSize: 18,
-    color: '#64748b',
     fontWeight: 'bold',
   },
   form: {
@@ -119,17 +121,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#475569',
     marginBottom: 8,
+    fontFamily: MODERN_FONT,
   },
   input: {
-    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
     borderRadius: 8,
     padding: 12,
     fontSize: 15,
-    color: '#0f172a',
+    fontFamily: MODERN_FONT,
     ...Platform.select({
       web: { outlineStyle: 'none', transition: 'border-color 0.2s' }
     })
@@ -143,12 +143,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: '#f1f5f9',
   },
   cancelButtonText: {
-    color: '#475569',
     fontWeight: '600',
     fontSize: 15,
+    fontFamily: MODERN_FONT,
   },
   saveButton: {
     paddingVertical: 10,
@@ -160,5 +159,64 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 15,
+    fontFamily: MODERN_FONT,
+  },
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  modalContainer: {
+    backgroundColor: '#ffffff',
+  },
+  title: {
+    color: '#1e293b',
+  },
+  closeButtonText: {
+    color: '#64748b',
+  },
+  label: {
+    color: '#475569',
+  },
+  input: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    color: '#0f172a',
+  },
+  cancelButton: {
+    backgroundColor: '#f1f5f9',
+  },
+  cancelButtonText: {
+    color: '#475569',
+  },
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  modalContainer: {
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
+    borderWidth: 1,
+  },
+  title: {
+    color: '#f8fafc',
+  },
+  closeButtonText: {
+    color: '#94a3b8',
+  },
+  label: {
+    color: '#94a3b8',
+  },
+  input: {
+    backgroundColor: '#0f172a',
+    borderColor: '#334155',
+    color: '#f8fafc',
+  },
+  cancelButton: {
+    backgroundColor: '#0f172a',
+    borderColor: '#334155',
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    color: '#cbd5e1',
   },
 });

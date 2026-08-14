@@ -4,7 +4,7 @@ import { supabase } from '../services/supabaseClient';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-export default function Configuracao({ onConfigSaved }) {
+export default function Configuracao({ onConfigSaved, isDarkMode }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
 
@@ -148,7 +148,6 @@ export default function Configuracao({ onConfigSaved }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Atualiza estritamente a tabela de configurações do usuário
       const updatedConfig = { monthlyGoal, dailyCalls, dailyNeg, dailySims, ticketMedio, conversionRateGoal, goalHistory };
       const { error: configError } = await supabase
         .from('crm_boards')
@@ -181,7 +180,6 @@ export default function Configuracao({ onConfigSaved }) {
         }
       }
       
-      // Notifica o componente pai apenas para atualizar perfis, sem mexer no payload do Kanban
       if (onConfigSaved) {
         onConfigSaved();
       }
@@ -234,46 +232,49 @@ export default function Configuracao({ onConfigSaved }) {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#2563eb" />
+      <View style={[styles.container, styles.centerAll, isDarkMode && darkStyles.container]}>
+        <ActivityIndicator size="large" color={isDarkMode ? '#38bdf8' : '#2563eb'} />
       </View>
     );
   }
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, themeStyles.container]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
         <View style={styles.header}>
-          <Text style={styles.pageTitle}>Configurações</Text>
-          <Text style={styles.pageSubtitle}>Ajuste suas metas e credenciais</Text>
+          <Text style={[styles.pageTitle, themeStyles.pageTitle]}>Configurações</Text>
+          <Text style={[styles.pageSubtitle, themeStyles.pageSubtitle]}>Ajuste suas metas e credenciais</Text>
         </View>
 
         <View style={[styles.grid, isMobile && styles.gridMobile]}>
           
           <View style={styles.column}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Identidade</Text>
+            <View style={[styles.card, themeStyles.card]}>
+              <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Identidade</Text>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>E-mail</Text>
-                <TextInput style={[styles.input, styles.inputDisabled]} value={userEmail} editable={false} />
+                <Text style={[styles.label, themeStyles.label]}>E-mail</Text>
+                <TextInput style={[styles.input, themeStyles.input, themeStyles.inputDisabled]} value={userEmail} editable={false} />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Nome de Exibição</Text>
+                <Text style={[styles.label, themeStyles.label]}>Nome de Exibição</Text>
                 <View style={styles.rowInline}>
                   <TextInput 
-                    style={[styles.input, { flex: 1 }, !canEditName && styles.inputDisabled]} 
+                    style={[styles.input, themeStyles.input, { flex: 1 }, !canEditName && themeStyles.inputDisabled]} 
                     value={displayName} 
                     onChangeText={setDisplayName} 
                     editable={canEditName} 
+                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
                   />
                   {userRole !== 'admin' && !canEditName && (
                     <TouchableOpacity 
-                      style={[styles.requestButton, nameChangeRequested && styles.requestButtonDisabled]} 
+                      style={[styles.requestButton, themeStyles.requestButton, nameChangeRequested && styles.requestButtonDisabled]} 
                       onPress={handleRequestNameChange} 
                       disabled={nameChangeRequested || requestingNameChange}
                     >
-                      <Text style={styles.requestButtonText}>
+                      <Text style={[styles.requestButtonText, themeStyles.requestButtonText]}>
                         {nameChangeRequested ? 'Pendente' : 'Alterar'}
                       </Text>
                     </TouchableOpacity>
@@ -282,80 +283,80 @@ export default function Configuracao({ onConfigSaved }) {
               </View>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Segurança</Text>
+            <View style={[styles.card, themeStyles.card]}>
+              <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Segurança</Text>
               <View style={styles.inputGroup}>
-                <TextInput style={styles.input} secureTextEntry value={newPass} onChangeText={setNewPass} placeholder="Nova Senha" />
+                <TextInput style={[styles.input, themeStyles.input]} secureTextEntry value={newPass} onChangeText={setNewPass} placeholder="Nova Senha" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
               </View>
               <View style={styles.inputGroup}>
-                <TextInput style={styles.input} secureTextEntry value={newPassConfirm} onChangeText={setNewPassConfirm} placeholder="Confirmar Senha" />
+                <TextInput style={[styles.input, themeStyles.input]} secureTextEntry value={newPassConfirm} onChangeText={setNewPassConfirm} placeholder="Confirmar Senha" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
               </View>
-              <TouchableOpacity style={[styles.secondaryButton, isChangingPass && { opacity: 0.7 }]} onPress={handleUpdatePassword} disabled={isChangingPass}>
-                <Text style={styles.secondaryButtonText}>{isChangingPass ? 'Atualizando...' : 'Atualizar Senha'}</Text>
+              <TouchableOpacity style={[styles.secondaryButton, themeStyles.secondaryButton, isChangingPass && { opacity: 0.7 }]} onPress={handleUpdatePassword} disabled={isChangingPass}>
+                <Text style={[styles.secondaryButtonText, themeStyles.secondaryButtonText]}>{isChangingPass ? 'Atualizando...' : 'Atualizar Senha'}</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.column}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Meta ({getCurrentMonthLabel()})</Text>
-              <View style={styles.currencyInputContainer}>
-                <Text style={styles.currencySymbol}>R$</Text>
-                <TextInput style={styles.currencyInput} value={monthlyGoal} onChangeText={handleCurrencyChange} keyboardType="numeric" placeholder="0" />
+            <View style={[styles.card, themeStyles.card]}>
+              <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Meta ({getCurrentMonthLabel()})</Text>
+              <View style={[styles.currencyInputContainer, themeStyles.currencyInputContainer]}>
+                <Text style={[styles.currencySymbol, themeStyles.currencySymbol]}>R$</Text>
+                <TextInput style={[styles.currencyInput, themeStyles.currencyInput]} value={monthlyGoal} onChangeText={handleCurrencyChange} keyboardType="numeric" placeholder="0" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
               </View>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Parâmetros (Diários)</Text>
+            <View style={[styles.card, themeStyles.card]}>
+              <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Parâmetros (Diários)</Text>
               <View style={[styles.row, isMobile && styles.rowMobile]}>
                 <View style={styles.inputGroupRow}>
-                  <Text style={styles.label}>Ligações</Text>
-                  <TextInput style={styles.inputSmall} value={dailyCalls} onChangeText={setDailyCalls} keyboardType="numeric" />
+                  <Text style={[styles.label, themeStyles.label]}>Ligações</Text>
+                  <TextInput style={[styles.inputSmall, themeStyles.input]} value={dailyCalls} onChangeText={setDailyCalls} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                 </View>
                 <View style={styles.inputGroupRow}>
-                  <Text style={styles.label}>Simulações</Text>
-                  <TextInput style={styles.inputSmall} value={dailySims} onChangeText={setDailySims} keyboardType="numeric" />
+                  <Text style={[styles.label, themeStyles.label]}>Simulações</Text>
+                  <TextInput style={[styles.inputSmall, themeStyles.input]} value={dailySims} onChangeText={setDailySims} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                 </View>
                 <View style={styles.inputGroupRow}>
-                  <Text style={styles.label}>Negociações</Text>
-                  <TextInput style={styles.inputSmall} value={dailyNeg} onChangeText={setDailyNeg} keyboardType="numeric" />
+                  <Text style={[styles.label, themeStyles.label]}>Negociações</Text>
+                  <TextInput style={[styles.inputSmall, themeStyles.input]} value={dailyNeg} onChangeText={setDailyNeg} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                 </View>
               </View>
               <View style={[styles.row, { marginTop: 12 }, isMobile && styles.rowMobile]}>
                 <View style={styles.inputGroupRow}>
-                  <Text style={styles.label}>Ticket Médio (R$)</Text>
-                  <TextInput style={styles.input} value={ticketMedio} onChangeText={handleTicketCurrencyChange} keyboardType="numeric" />
+                  <Text style={[styles.label, themeStyles.label]}>Ticket Médio (R$)</Text>
+                  <TextInput style={[styles.input, themeStyles.input]} value={ticketMedio} onChangeText={handleTicketCurrencyChange} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                 </View>
                 <View style={styles.inputGroupRow}>
-                  <Text style={styles.label}>Conversão (%)</Text>
-                  <TextInput style={styles.input} value={conversionRateGoal} onChangeText={setConversionRateGoal} keyboardType="numeric" />
+                  <Text style={[styles.label, themeStyles.label]}>Conversão (%)</Text>
+                  <TextInput style={[styles.input, themeStyles.input]} value={conversionRateGoal} onChangeText={setConversionRateGoal} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                 </View>
               </View>
             </View>
           </View>
 
           <View style={styles.column}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Histórico</Text>
+            <View style={[styles.card, themeStyles.card]}>
+              <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Histórico</Text>
               <View style={styles.historyList}>
                 {goalHistory.map((item) => (
-                  <View key={item.id} style={styles.historyItem}>
+                  <View key={item.id} style={[styles.historyItem, themeStyles.historyItem]}>
                     <View style={styles.historyHeader}>
-                      <Text style={styles.historyMonth}>{item.month}</Text>
-                      <View style={[styles.statusBadge, item.status === 'success' ? styles.badgeSuccess : styles.badgeWarning]}>
-                        <Text style={[styles.statusBadgeText, item.status === 'success' ? styles.badgeSuccessText : styles.badgeWarningText]}>
+                      <Text style={[styles.historyMonth, themeStyles.historyMonth]}>{item.month}</Text>
+                      <View style={[styles.statusBadge, item.status === 'success' ? themeStyles.badgeSuccess : themeStyles.badgeWarning]}>
+                        <Text style={[styles.statusBadgeText, item.status === 'success' ? themeStyles.badgeSuccessText : themeStyles.badgeWarningText]}>
                           {item.status === 'success' ? 'Meta Batida' : 'Abaixo da Meta'}
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.historyDataRow}>
+                    <View style={[styles.historyDataRow, themeStyles.historyDataRow]}>
                       <View>
-                        <Text style={styles.historyDataLabel}>Meta Fixada</Text>
-                        <Text style={styles.historyDataValue}>R$ {item.goal}</Text>
+                        <Text style={[styles.historyDataLabel, themeStyles.historyDataLabel]}>Meta Fixada</Text>
+                        <Text style={[styles.historyDataValue, themeStyles.historyDataValue]}>R$ {item.goal}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.historyDataLabel}>Alcançado</Text>
-                        <Text style={[styles.historyDataValue, { color: item.status === 'success' ? '#059669' : '#d97706' }]}>
+                        <Text style={[styles.historyDataLabel, themeStyles.historyDataLabel]}>Alcançado</Text>
+                        <Text style={[styles.historyDataValue, { color: item.status === 'success' ? (isDarkMode ? '#34d399' : '#059669') : (isDarkMode ? '#fbbf24' : '#d97706') }]}>
                           R$ {item.reached}
                         </Text>
                       </View>
@@ -376,11 +377,11 @@ export default function Configuracao({ onConfigSaved }) {
 
       <Modal visible={customModal.visible} transparent={true} animationType="fade" onRequestClose={closeAlertModal}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <View style={[styles.modalContainer, themeStyles.modalContainer]}>
             <View style={styles.modalHeaderBar}>
-              <Text style={styles.modalHeaderTitle}>{customModal.title}</Text>
+              <Text style={[styles.modalHeaderTitle, themeStyles.modalHeaderTitle]}>{customModal.title}</Text>
             </View>
-            <Text style={styles.modalMessageText}>{customModal.message}</Text>
+            <Text style={[styles.modalMessageText, themeStyles.modalMessageText]}>{customModal.message}</Text>
             <TouchableOpacity style={styles.modalButtonPrimary} onPress={closeAlertModal}>
               <Text style={styles.modalButtonPrimaryText}>Compreendido</Text>
             </TouchableOpacity>
@@ -392,53 +393,111 @@ export default function Configuracao({ onConfigSaved }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  container: { flex: 1 },
+  centerAll: { justifyContent: 'center', alignItems: 'center' },
   scrollContent: { padding: 16, maxWidth: 1100, marginHorizontal: 'auto', width: '100%', flexGrow: 1, paddingBottom: 24 },
   header: { marginBottom: 16, alignItems: 'center' },
-  pageTitle: { fontFamily: MODERN_FONT, fontSize: 24, fontWeight: '800', color: '#0f172a', letterSpacing: -0.5 },
-  pageSubtitle: { fontFamily: MODERN_FONT, fontSize: 13, color: '#64748b', marginTop: 4 },
+  pageTitle: { fontFamily: MODERN_FONT, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  pageSubtitle: { fontFamily: MODERN_FONT, fontSize: 13, marginTop: 4 },
   grid: { flexDirection: 'row', gap: 16, flex: 1 },
   gridMobile: { flexDirection: 'column' },
   column: { flex: 1 },
-  card: { backgroundColor: '#ffffff', borderRadius: 10, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0', ...Platform.select({ web: { boxShadow: '0px 1px 4px rgba(0,0,0,0.03)' } }) },
-  cardTitle: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: '700', color: '#1e293b', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 6 },
+  card: { borderRadius: 10, padding: 16, marginBottom: 16, borderWidth: 1, ...Platform.select({ web: { boxShadow: '0px 1px 4px rgba(0,0,0,0.03)' } }) },
+  cardTitle: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: '700', marginBottom: 12, borderBottomWidth: 1, paddingBottom: 6 },
   inputGroup: { marginBottom: 12 },
-  label: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 4 },
-  input: { fontFamily: MODERN_FONT, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 8, fontSize: 12, color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
-  inputDisabled: { backgroundColor: '#f1f5f9', color: '#94a3b8', borderColor: '#e2e8f0' },
+  label: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', marginBottom: 4 },
+  input: { fontFamily: MODERN_FONT, borderWidth: 1, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 8, fontSize: 12, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   rowInline: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  requestButton: { backgroundColor: '#0f172a', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, justifyContent: 'center' },
+  requestButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, justifyContent: 'center' },
   requestButtonDisabled: { backgroundColor: '#94a3b8' },
-  requestButtonText: { fontFamily: MODERN_FONT, color: '#ffffff', fontSize: 11, fontWeight: '700' },
-  currencyInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, overflow: 'hidden' },
-  currencySymbol: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700', color: '#64748b', paddingLeft: 12, paddingRight: 6 },
-  currencyInput: { flex: 1, fontFamily: MODERN_FONT, paddingVertical: 8, paddingRight: 12, fontSize: 13, fontWeight: '700', color: '#0f172a', ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  requestButtonText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700' },
+  currencyInputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 6, overflow: 'hidden' },
+  currencySymbol: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700', paddingLeft: 12, paddingRight: 6 },
+  currencyInput: { flex: 1, fontFamily: MODERN_FONT, paddingVertical: 8, paddingRight: 12, fontSize: 13, fontWeight: '700', ...Platform.select({ web: { outlineStyle: 'none' } }) },
   row: { flexDirection: 'row', gap: 12 },
   rowMobile: { flexDirection: 'column', gap: 10 },
   inputGroupRow: { flex: 1 },
-  inputSmall: { fontFamily: MODERN_FONT, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, color: '#0f172a', textAlign: 'center', ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  inputSmall: { fontFamily: MODERN_FONT, borderWidth: 1, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, textAlign: 'center', ...Platform.select({ web: { outlineStyle: 'none' } }) },
   saveButton: { backgroundColor: '#2563eb', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 40, alignItems: 'center', alignSelf: 'center', marginTop: 'auto', ...Platform.select({ web: { boxShadow: '0px 4px 12px rgba(37,99,235,0.3)' } }) },
   saveButtonText: { fontFamily: MODERN_FONT, color: '#ffffff', fontSize: 13, fontWeight: '700' },
-  secondaryButton: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, paddingVertical: 8, alignItems: 'center', marginTop: 4 },
-  secondaryButtonText: { fontFamily: MODERN_FONT, color: '#475569', fontSize: 12, fontWeight: '700' },
+  secondaryButton: { borderWidth: 1, borderRadius: 6, paddingVertical: 8, alignItems: 'center', marginTop: 4 },
+  secondaryButtonText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
   historyList: { marginTop: 4 },
-  historyItem: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, marginBottom: 10 },
+  historyItem: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 10 },
   historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  historyMonth: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700', color: '#334155' },
+  historyMonth: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  badgeSuccess: { backgroundColor: '#dcfce7' },
-  badgeWarning: { backgroundColor: '#fef3c7' },
   statusBadgeText: { fontFamily: MODERN_FONT, fontSize: 9, fontWeight: '700' },
-  badgeSuccessText: { color: '#16a34a' },
-  badgeWarningText: { color: '#d97706' },
-  historyDataRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8 },
-  historyDataLabel: { fontFamily: MODERN_FONT, fontSize: 10, color: '#64748b', fontWeight: '600', marginBottom: 2 },
-  historyDataValue: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '800', color: '#0f172a' },
+  historyDataRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
+  historyDataLabel: { fontFamily: MODERN_FONT, fontSize: 10, fontWeight: '600', marginBottom: 2 },
+  historyDataValue: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '800' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { backgroundColor: '#ffffff', borderRadius: 12, padding: 20, width: '90%', maxWidth: 320, ...Platform.select({ web: { boxShadow: '0px 10px 30px rgba(0,0,0,0.15)' } }) },
+  modalContainer: { borderRadius: 12, padding: 20, width: '90%', maxWidth: 320, ...Platform.select({ web: { boxShadow: '0px 10px 30px rgba(0,0,0,0.15)' } }) },
   modalHeaderBar: { marginBottom: 12 },
-  modalHeaderTitle: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '800', color: '#0f172a' },
-  modalMessageText: { fontFamily: MODERN_FONT, fontSize: 13, color: '#475569', lineHeight: 18, marginBottom: 20 },
+  modalHeaderTitle: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '800' },
+  modalMessageText: { fontFamily: MODERN_FONT, fontSize: 13, lineHeight: 18, marginBottom: 20 },
   modalButtonPrimary: { backgroundColor: '#2563eb', borderRadius: 6, paddingVertical: 10, alignItems: 'center' },
   modalButtonPrimaryText: { fontFamily: MODERN_FONT, color: '#ffffff', fontSize: 12, fontWeight: '700' }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  container: { backgroundColor: '#F9FAFB' },
+  pageTitle: { color: '#0f172a' },
+  pageSubtitle: { color: '#64748b' },
+  card: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  cardTitle: { color: '#1e293b', borderBottomColor: '#f1f5f9' },
+  label: { color: '#64748b' },
+  input: { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' },
+  inputDisabled: { backgroundColor: '#f1f5f9', color: '#94a3b8', borderColor: '#e2e8f0' },
+  requestButton: { backgroundColor: '#0f172a' },
+  requestButtonText: { color: '#ffffff' },
+  currencyInputContainer: { backgroundColor: '#f8fafc', borderColor: '#cbd5e1' },
+  currencySymbol: { color: '#64748b' },
+  currencyInput: { color: '#0f172a' },
+  secondaryButton: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  secondaryButtonText: { color: '#475569' },
+  historyItem: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  historyMonth: { color: '#334155' },
+  badgeSuccess: { backgroundColor: '#dcfce7' },
+  badgeWarning: { backgroundColor: '#fef3c7' },
+  badgeSuccessText: { color: '#16a34a' },
+  badgeWarningText: { color: '#d97706' },
+  historyDataRow: { borderTopColor: '#f1f5f9' },
+  historyDataLabel: { color: '#64748b' },
+  historyDataValue: { color: '#0f172a' },
+  modalContainer: { backgroundColor: '#ffffff' },
+  modalHeaderTitle: { color: '#0f172a' },
+  modalMessageText: { color: '#475569' }
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  container: { backgroundColor: '#0f172a' },
+  pageTitle: { color: '#f8fafc' },
+  pageSubtitle: { color: '#94a3b8' },
+  card: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  cardTitle: { color: '#f8fafc', borderBottomColor: '#334155' },
+  label: { color: '#94a3b8' },
+  input: { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' },
+  inputDisabled: { backgroundColor: '#0f172a', color: '#64748b', borderColor: '#334155' },
+  requestButton: { backgroundColor: '#334155' },
+  requestButtonText: { color: '#f8fafc' },
+  currencyInputContainer: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  currencySymbol: { color: '#94a3b8' },
+  currencyInput: { color: '#f8fafc' },
+  secondaryButton: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  secondaryButtonText: { color: '#cbd5e1' },
+  historyItem: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  historyMonth: { color: '#f8fafc' },
+  badgeSuccess: { backgroundColor: '#052e16' },
+  badgeWarning: { backgroundColor: '#431407' },
+  badgeSuccessText: { color: '#34d399' },
+  badgeWarningText: { color: '#fbbf24' },
+  historyDataRow: { borderTopColor: '#334155' },
+  historyDataLabel: { color: '#94a3b8' },
+  historyDataValue: { color: '#f8fafc' },
+  modalContainer: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  modalHeaderTitle: { color: '#f8fafc' },
+  modalMessageText: { color: '#94a3b8' }
 });

@@ -16,16 +16,16 @@ export const setLeadUpdateCallback = (callback) => {
   onLeadUpdateCallback = callback;
 };
 
-const CheckBox = ({ label, value, onValueChange }) => (
+const CheckBox = ({ label, value, onValueChange, isDarkMode }) => (
   <TouchableOpacity style={styles.checkboxContainer} onPress={() => onValueChange(!value)}>
-    <View style={[styles.checkbox, value && styles.checkboxChecked]}>
+    <View style={[styles.checkbox, isDarkMode ? darkStyles.checkbox : lightStyles.checkbox, value && styles.checkboxChecked]}>
       {value && <Text style={styles.checkmark}>✓</Text>}
     </View>
-    <Text style={styles.checkboxLabel}>{label}</Text>
+    <Text style={[styles.checkboxLabel, isDarkMode ? darkStyles.checkboxLabel : lightStyles.checkboxLabel]}>{label}</Text>
   </TouchableOpacity>
 );
 
-export default function WhatsAppBulkModal({ visible, onClose, boardData, onComplete }) {
+export default function WhatsAppBulkModal({ visible, onClose, boardData, onComplete, isDarkMode }) {
   const hasTransitioned = useRef(false);
   const [connectionStage, setConnectionStage] = useState('connecting');
   const [botNumber, setBotNumber] = useState('');  
@@ -302,12 +302,10 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       messageSummary: `Itens na fila: Fixos (${fixedItems.length}) / Variações (${varItems.length})`
     };
 
-    // CORREÇÃO: Obtenção segura do ID do board vinculado ao usuário logado
     let dbBoardId = null;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Busca o board com prefixo 'board_' vinculado a este usuário
         const { data: userBoards } = await supabase
           .from('crm_boards')
           .select('id')
@@ -598,13 +596,15 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
   if (!visible) return null;
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, themeStyles.modalContainer]}>
           
           <View style={styles.header}>
-            <Text style={styles.title}>Disparo de Mensagens</Text>
+            <Text style={[styles.title, themeStyles.title]}>Disparo de Mensagens</Text>
             <View style={styles.headerRightActions}>
               {isBotConnected && (
                 <View style={styles.connectedAccountInfo}>
@@ -613,24 +613,24 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                       <Text style={styles.startTopBtnText}>Iniciar Disparo</Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity style={styles.disconnectTopBtn} onPress={handleDisconnect}>
-                    <Text style={styles.disconnectTopBtnText}>Desconectar</Text>
+                  <TouchableOpacity style={[styles.disconnectTopBtn, themeStyles.disconnectTopBtn]} onPress={handleDisconnect}>
+                    <Text style={[styles.disconnectTopBtnText, themeStyles.disconnectTopBtnText]}>Desconectar</Text>
                   </TouchableOpacity>
                 </View>
               )}
               <TouchableOpacity onPress={handleCloseModal} style={styles.closeButton}>
-                <Text style={styles.closeButtonText}>✕</Text>
+                <Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           {isBotConnected && (
-            <View style={styles.tabsRow}>
-              <TouchableOpacity style={[styles.tabBtn, activeTab === 'disparar' && styles.tabBtnActive]} onPress={() => setActiveTab('disparar')}>
-                <Text style={[styles.tabText, activeTab === 'disparar' && styles.tabTextActive]}>Central de Disparos</Text>
+            <View style={[styles.tabsRow, themeStyles.tabsRow]}>
+              <TouchableOpacity style={[styles.tabBtn, activeTab === 'disparar' && (isDarkMode ? darkStyles.tabBtnActive : styles.tabBtnActive)]} onPress={() => setActiveTab('disparar')}>
+                <Text style={[styles.tabText, themeStyles.tabText, activeTab === 'disparar' && themeStyles.tabTextActive]}>Central de Disparos</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.tabBtn, activeTab === 'historico' && styles.tabBtnActive]} onPress={() => { setActiveTab('historico'); fetchHistorico(); }}>
-                <Text style={[styles.tabText, activeTab === 'historico' && styles.tabTextActive]}>Histórico</Text>
+              <TouchableOpacity style={[styles.tabBtn, activeTab === 'historico' && (isDarkMode ? darkStyles.tabBtnActive : styles.tabBtnActive)]} onPress={() => { setActiveTab('historico'); fetchHistorico(); }}>
+                <Text style={[styles.tabText, themeStyles.tabText, activeTab === 'historico' && themeStyles.tabTextActive]}>Histórico</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -638,18 +638,18 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           <View style={styles.fixedContentBox}>
             {loadingStatus ? (
               <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#2563eb" />
-                <Text style={styles.infoText}>Conectando Conta do WhatsApp...</Text>
+                <ActivityIndicator size="large" color={isDarkMode ? '#38bdf8' : '#2563eb'} />
+                <Text style={[styles.infoText, themeStyles.infoText]}>Conectando Conta do WhatsApp...</Text>
               </View>
             ) : connectionStage === 'connecting' ? (
               <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#2563eb" />
-                <Text style={styles.infoText}>Conectando Conta do WhatsApp...</Text>
+                <ActivityIndicator size="large" color={isDarkMode ? '#38bdf8' : '#2563eb'} />
+                <Text style={[styles.infoText, themeStyles.infoText]}>Conectando Conta do WhatsApp...</Text>
               </View>
             ) : connectionStage === 'disconnecting' ? (
               <View style={styles.centerBox}>
                 <ActivityIndicator size="large" color="#dc2626" />
-                <Text style={styles.infoText}>Desconectando Conta do WhatsApp...</Text>
+                <Text style={[styles.infoText, themeStyles.infoText]}>Desconectando Conta do WhatsApp...</Text>
               </View>
             ) : connectionStage === 'success' ? (
               <View style={styles.centerBox}>
@@ -659,18 +659,18 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
             ) : connectionStage === 'qr_code' ? (
               <View style={styles.centerBox}>
                 <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
-                <Text style={styles.infoText}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
+                <Text style={[styles.infoText, themeStyles.infoText]}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
                 {qrCodeImage ? (
                   <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
                 ) : (
-                  <ActivityIndicator color="#64748b" />
+                  <ActivityIndicator color={isDarkMode ? '#94a3b8' : '#64748b'} />
                 )}
               </View>
             ) : activeTab === 'historico' ? (
               <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
-                <Text style={styles.label}>Histórico de Disparos Realizados</Text>
+                <Text style={[styles.label, themeStyles.label]}>Histórico de Disparos Realizados</Text>
                 {historicoList.length === 0 ? (
-                  <Text style={styles.emptyText}>Nenhum disparo registrado ainda.</Text>
+                  <Text style={[styles.emptyText, themeStyles.emptyText]}>Nenhum disparo registrado ainda.</Text>
                 ) : (
                   historicoList.map((item) => {
                     const getCleanMessage = (fullText) => {
@@ -682,23 +682,23 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                     };
 
                     return (
-                      <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={styles.historyCard}>
+                      <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={[styles.historyCard, themeStyles.historyCard]}>
                         <View style={styles.historyHeader}>
                           <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>{item.status}</Text>
-                          <Text style={styles.historyDate}>Início: {item.inicio}</Text>
+                          <Text style={[styles.historyDate, themeStyles.historyDate]}>Início: {item.inicio}</Text>
                         </View>
-                        <Text style={styles.historyMsg}>
+                        <Text style={[styles.historyMsg, themeStyles.historyMsg]}>
                           <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
                         </Text>
                         <View style={{ marginVertical: 4 }}>
-                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Informações:</Text>
-                          <Text style={styles.historyMsgClean} numberOfLines={2}>
+                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: isDarkMode ? '#94a3b8' : '#64748b', textTransform: 'uppercase' }}>Informações:</Text>
+                          <Text style={[styles.historyMsgClean, themeStyles.historyMsgClean]} numberOfLines={2}>
                             {getCleanMessage(item.mensagem)}
                           </Text>
                         </View>
-                        <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
-                        <View style={styles.historyStatsRow}>
-                          <Text style={styles.historyStatItem}>👥 Alvos: {item.total_alvos}</Text>
+                        <Text style={[styles.historyDate, themeStyles.historyDate]}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+                        <View style={[styles.historyStatsRow, themeStyles.historyStatsRow]}>
+                          <Text style={[styles.historyStatItem, themeStyles.historyStatItem]}>👥 Alvos: {item.total_alvos}</Text>
                           <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
                           <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
                         </View>
@@ -712,8 +712,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                 
                 {!isSending && logs.length === 0 && (
                   <View style={styles.topActionRow}>
-                    <View style={styles.connectedBadgeInline}>
-                      <Text style={styles.connectedText}>🟢 WhatsApp Conectado: +{botNumber}</Text>
+                    <View style={[styles.connectedBadgeInline, themeStyles.connectedBadgeInline]}>
+                      <Text style={[styles.connectedText, themeStyles.connectedText]}>🟢 WhatsApp Conectado: +{botNumber}</Text>
                     </View>
                   </View>
                 )}
@@ -722,33 +722,33 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                   <>
                     <View style={styles.filtersRow}>
                       <View style={{flex: 1}}>
-                        <Text style={styles.label}>Coluna (Fase)</Text>
-                        <View style={styles.pickerContainer}>
-                          <select style={styles.webSelect} value={selectedPhaseId} onChange={(e) => setSelectedPhaseId(e.target.value)}>
-                            <option value="all">Todas as Fases</option>
+                        <Text style={[styles.label, themeStyles.label]}>Coluna (Fase)</Text>
+                        <View style={[styles.pickerContainer, themeStyles.pickerContainer]}>
+                          <select style={[styles.webSelect, themeStyles.webSelect]} value={selectedPhaseId} onChange={(e) => setSelectedPhaseId(e.target.value)}>
+                            <option value="all" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Todas as Fases</option>
                             {boardData?.phases?.map(phase => (
-                              <option key={phase.id} value={phase.id}>{phase.title} ({phase.clients?.length || 0})</option>
+                              <option key={phase.id} value={phase.id} style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>{phase.title} ({phase.clients?.length || 0})</option>
                             ))}
                           </select>
                         </View>
                       </View>
                       <View style={{flex: 1}}>
-                        <Text style={styles.label}>Origem ou Categoria</Text>
-                        <View style={styles.pickerContainer}>
-                          <select style={styles.webSelect} value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)}>
-                            <option value="all">Todas as Tags / Origens</option>
+                        <Text style={[styles.label, themeStyles.label]}>Origem ou Categoria</Text>
+                        <View style={[styles.pickerContainer, themeStyles.pickerContainer]}>
+                          <select style={[styles.webSelect, themeStyles.webSelect]} value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)}>
+                            <option value="all" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Todas as Tags / Origens</option>
                             <optgroup label="Origem / Plataforma">
-                              <option value="Instagram">Instagram</option>
-                              <option value="Facebook">Facebook</option>
-                              <option value="TikTok">TikTok</option>
-                              <option value="Google">Google</option>
-                              <option value="Indicação">Indicação</option>
+                              <option value="Instagram" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Instagram</option>
+                              <option value="Facebook" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Facebook</option>
+                              <option value="TikTok" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>TikTok</option>
+                              <option value="Google" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Google</option>
+                              <option value="Indicação" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Indicação</option>
                             </optgroup>
                             <optgroup label="Categoria / Produto">
-                              <option value="Auto">Auto (Veículos)</option>
-                              <option value="Imóvel">Imóvel</option>
-                              <option value="Serviço">Serviço</option>
-                              <option value="Investimento">Investimento</option>
+                              <option value="Auto" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Auto (Veículos)</option>
+                              <option value="Imóvel" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Imóvel</option>
+                              <option value="Serviço" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Serviço</option>
+                              <option value="Investimento" style={isDarkMode ? {backgroundColor: '#1e293b', color: '#f8fafc'} : {}}>Investimento</option>
                             </optgroup>
                           </select>
                         </View>
@@ -756,9 +756,9 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                     </View>
 
                     {messageItems.map((item, index) => (
-                      <View key={item.id} style={styles.itemBlock}>
+                      <View key={item.id} style={[styles.itemBlock, themeStyles.itemBlock]}>
                         <View style={styles.blockHeader}>
-                          <Text style={styles.label}>
+                          <Text style={[styles.label, themeStyles.label]}>
                             Item {index + 1}: {item.type === 'text' ? 'Texto' : item.type === 'image' ? 'Imagem' : item.type === 'video' ? 'Vídeo' : 'Áudio'}
                           </Text>
                           <TouchableOpacity onPress={() => handleRemoveItem(item.id)}>
@@ -769,51 +769,52 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                         {item.type === 'text' && (
                           <>
                             <TextInput
-                              style={styles.textAreaLarge}
+                              style={[styles.textAreaLarge, themeStyles.textAreaLarge]}
                               multiline
                               numberOfLines={3}
                               value={item.content}
                               onChangeText={(val) => handleUpdateItem(item.id, 'content', val)}
                               placeholder="Digite a mensagem aqui... Use {nome} para personalizar."
+                              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
                             />
-                            <CheckBox label="Esta mensagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                            <CheckBox label="Esta mensagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
                           </>
                         )}
 
                         {item.type === 'image' && (
                           <>
-                            <TouchableOpacity style={styles.mediaPickerBtn} onPress={() => handlePickFileForItem(item.id, ['image/*'])}>
-                              <Text style={styles.mediaPickerBtnText}>🖼️ {item.file ? 'Trocar Imagem' : 'Selecionar Imagem'}</Text>
+                            <TouchableOpacity style={[styles.mediaPickerBtn, themeStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['image/*'])}>
+                              <Text style={[styles.mediaPickerBtnText, themeStyles.mediaPickerBtnText]}>🖼️ {item.file ? 'Trocar Imagem' : 'Selecionar Imagem'}</Text>
                             </TouchableOpacity>
                             {item.file && (
                               <View style={{ marginTop: 8 }}>
                                 <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
-                                <TextInput style={[styles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda da imagem (opcional)..." />
+                                <TextInput style={[styles.textAreaLarge, themeStyles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda da imagem (opcional)..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                               </View>
                             )}
-                            <CheckBox label="Esta imagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                            <CheckBox label="Esta imagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
                           </>
                         )}
 
                         {item.type === 'video' && (
                           <>
-                            <TouchableOpacity style={styles.mediaPickerBtn} onPress={() => handlePickFileForItem(item.id, ['video/*'])}>
-                              <Text style={styles.mediaPickerBtnText}>🎥 {item.file ? 'Trocar Vídeo' : 'Selecionar Vídeo'}</Text>
+                            <TouchableOpacity style={[styles.mediaPickerBtn, themeStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['video/*'])}>
+                              <Text style={[styles.mediaPickerBtnText, themeStyles.mediaPickerBtnText]}>🎥 {item.file ? 'Trocar Vídeo' : 'Selecionar Vídeo'}</Text>
                             </TouchableOpacity>
                             {item.file && (
                               <View style={{ marginTop: 8 }}>
                                 <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
-                                <TextInput style={[styles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda do vídeo (opcional)..." />
+                                <TextInput style={[styles.textAreaLarge, themeStyles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda do vídeo (opcional)..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                               </View>
                             )}
-                            <CheckBox label="Este vídeo é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                            <CheckBox label="Este vídeo é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
                           </>
                         )}
 
                         {item.type === 'audio' && (
                           <>
-                            <TouchableOpacity style={styles.mediaPickerBtn} onPress={() => handlePickFileForItem(item.id, ['audio/*'])}>
-                              <Text style={styles.mediaPickerBtnText}>🎵 {item.file ? 'Trocar Áudio' : 'Selecionar Arquivo de Áudio'}</Text>
+                            <TouchableOpacity style={[styles.mediaPickerBtn, themeStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['audio/*'])}>
+                              <Text style={[styles.mediaPickerBtnText, themeStyles.mediaPickerBtnText]}>🎵 {item.file ? 'Trocar Áudio' : 'Selecionar Arquivo de Áudio'}</Text>
                             </TouchableOpacity>
                             <Text style={styles.audioFormatHint}>Formatos aceitos: MP3, WAV, OGG</Text>
                             {item.file && (
@@ -821,7 +822,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                                 <Text style={styles.selectedFileText}>Áudio: {item.file.name}</Text>
                               </View>
                             )}
-                            <CheckBox label="Este áudio é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} />
+                            <CheckBox label="Este áudio é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
                           </>
                         )}
                       </View>
@@ -829,17 +830,17 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
                     <View style={{ marginVertical: 12, position: 'relative' }}>
                       {!showAddMenu ? (
-                        <TouchableOpacity onPress={() => setShowAddMenu(true)} style={styles.addBtn}>
-                          <Text style={styles.addBtnText}>+ Adicionar Mensagem</Text>
+                        <TouchableOpacity onPress={() => setShowAddMenu(true)} style={[styles.addBtn, themeStyles.addBtn]}>
+                          <Text style={[styles.addBtnText, themeStyles.addBtnText]}>+ Adicionar Mensagem</Text>
                         </TouchableOpacity>
                       ) : (
-                        <View style={styles.floatingMenu}>
-                          <Text style={styles.menuTitle}>Selecione o tipo de item:</Text>
-                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('text')}><Text style={styles.menuItemText}>📝 Texto</Text></TouchableOpacity>
-                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('image')}><Text style={styles.menuItemText}>🖼️ Imagem</Text></TouchableOpacity>
-                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('video')}><Text style={styles.menuItemText}>🎥 Vídeo</Text></TouchableOpacity>
-                          <TouchableOpacity style={styles.menuItem} onPress={() => handleAddItem('audio')}><Text style={styles.menuItemText}>🎵 Áudio</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, backgroundColor: '#f1f5f9' }]} onPress={() => setShowAddMenu(false)}>
+                        <View style={[styles.floatingMenu, themeStyles.floatingMenu]}>
+                          <Text style={[styles.menuTitle, themeStyles.menuTitle]}>Selecione o tipo de item:</Text>
+                          <TouchableOpacity style={[styles.menuItem, themeStyles.menuItem]} onPress={() => handleAddItem('text')}><Text style={[styles.menuItemText, themeStyles.menuItemText]}>📝 Texto</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.menuItem, themeStyles.menuItem]} onPress={() => handleAddItem('image')}><Text style={[styles.menuItemText, themeStyles.menuItemText]}>🖼️ Imagem</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.menuItem, themeStyles.menuItem]} onPress={() => handleAddItem('video')}><Text style={[styles.menuItemText, themeStyles.menuItemText]}>🎥 Vídeo</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.menuItem, themeStyles.menuItem]} onPress={() => handleAddItem('audio')}><Text style={[styles.menuItemText, themeStyles.menuItemText]}>🎵 Áudio</Text></TouchableOpacity>
+                          <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }, isDarkMode ? {backgroundColor: '#0f172a'} : {backgroundColor: '#f1f5f9'}]} onPress={() => setShowAddMenu(false)}>
                             <Text style={[styles.menuItemText, { color: '#ef4444', textAlign: 'center' }]}>Cancelar</Text>
                           </TouchableOpacity>
                         </View>
@@ -852,7 +853,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                   <View style={styles.logWrapper}>
                     <View style={styles.logHeaderBar}>
                       <Text style={styles.progressLabel}>{progressText}</Text>
-                      {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
+                      {isSending && !isPaused && <ActivityIndicator size="small" color={isDarkMode ? '#38bdf8' : '#2563eb'} />}
                     </View>
                     <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
                       {logs.map((log, index) => (
@@ -884,14 +885,14 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
       <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
         <View style={styles.alertOverlay}>
-          <View style={styles.alertContent}>
-            <Text style={styles.alertTitle}>{alertTitle}</Text>
-            <Text style={styles.alertSubtitle}>{alertMessage}</Text>
+          <View style={[styles.alertContent, themeStyles.alertContent]}>
+            <Text style={[styles.alertTitle, themeStyles.alertTitle]}>{alertTitle}</Text>
+            <Text style={[styles.alertSubtitle, themeStyles.alertSubtitle]}>{alertMessage}</Text>
             <View style={styles.alertButtonsRow}>
               {alertActionType !== 'info' ? (
                 <>
-                  <TouchableOpacity style={[styles.alertBtn, styles.alertCancelBtn]} onPress={() => setIsAlertModalVisible(false)}>
-                    <Text style={styles.alertCancelBtnText}>Cancelar</Text>
+                  <TouchableOpacity style={[styles.alertBtn, themeStyles.alertCancelBtn]} onPress={() => setIsAlertModalVisible(false)}>
+                    <Text style={[styles.alertCancelBtnText, themeStyles.alertCancelBtnText]}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.alertBtn, styles.alertConfirmBtn]} onPress={handleAlertConfirm}>
                     <Text style={styles.alertConfirmBtnText}>Confirmar</Text>
@@ -907,62 +908,57 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         </View>
       </Modal>
 
-      <ReportModal visible={!!selectedReport} report={selectedReport} boardData={boardData} onClose={() => setSelectedReport(null)} />
+      <ReportModal visible={!!selectedReport} report={selectedReport} boardData={boardData} onClose={() => setSelectedReport(null)} isDarkMode={isDarkMode} />
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { width: '100%', maxWidth: 620, backgroundColor: '#ffffff', borderRadius: 16, padding: 24, height: 680 },
+  modalContainer: { width: '100%', maxWidth: 620, borderRadius: 16, padding: 24, height: 680 },
   fixedContentBox: { height: 500, overflow: 'hidden' },
   scrollContentContainer: { alignItems: 'stretch' },
   
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
+  title: { fontSize: 20, fontWeight: '700' },
   headerRightActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   
   startTopBtn: { backgroundColor: '#2563eb', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6, justifyContent: 'center' },
   startTopBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
 
-  disconnectTopBtn: { backgroundColor: '#fee2e2', borderWidth: 1, borderColor: '#fca5a5', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 6, justifyContent: 'center' },
-  disconnectTopBtnText: { color: '#dc2626', fontWeight: 'bold', fontSize: 12 },
-  
   closeButton: { padding: 4 },
-  closeButtonText: { fontSize: 20, color: '#64748b', fontWeight: 'bold' },
+  closeButtonText: { fontSize: 20, fontWeight: 'bold' },
 
-  tabsRow: { flexDirection: 'row', marginBottom: 16, backgroundColor: '#f1f5f9', borderRadius: 8, padding: 4 },
+  tabsRow: { flexDirection: 'row', marginBottom: 16, borderRadius: 8, padding: 4 },
   tabBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
-  tabBtnActive: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.1)' } }) },
-  tabText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
-  tabTextActive: { color: '#2563eb', fontWeight: 'bold' },
+  tabText: { fontSize: 13, fontWeight: '600' },
 
-  label: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 4, marginTop: 8 },
+  label: { fontSize: 13, fontWeight: '600', marginBottom: 4, marginTop: 8 },
   filtersRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
 
-  itemBlock: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12 },
+  itemBlock: { padding: 12, borderRadius: 8, borderWidth: 1, marginBottom: 12 },
   blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   removeText: { fontSize: 12, color: '#ef4444', fontWeight: 'bold' },
-  addBtn: { paddingVertical: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#2563eb', borderRadius: 8, backgroundColor: '#eff6ff' },
-  addBtnText: { color: '#2563eb', fontWeight: '700', fontSize: 14 },
+  addBtn: { paddingVertical: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderRadius: 8 },
+  addBtnText: { fontWeight: '700', fontSize: 14 },
   
-  floatingMenu: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 8, ...Platform.select({ web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.1)' } }) },
-  menuTitle: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6, textAlign: 'center' },
-  menuItem: { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  menuItemText: { fontSize: 14, fontWeight: '600', color: '#334155' },
+  floatingMenu: { borderWidth: 1, borderRadius: 8, padding: 8, ...Platform.select({ web: { boxShadow: '0px 4px 12px rgba(0,0,0,0.1)' } }) },
+  menuTitle: { fontSize: 12, fontWeight: 'bold', marginBottom: 6, textAlign: 'center' },
+  menuItem: { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1 },
+  menuItemText: { fontSize: 14, fontWeight: '600' },
 
-  mediaPickerBtn: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, alignItems: 'center', width: '100%' },
-  mediaPickerBtnText: { color: '#334155', fontWeight: '600', fontSize: 13 },
+  mediaPickerBtn: { borderWidth: 1, borderRadius: 8, padding: 10, alignItems: 'center', width: '100%' },
+  mediaPickerBtnText: { fontWeight: '600', fontSize: 13 },
   selectedFileText: { fontSize: 12, color: '#16a34a', fontWeight: '600', marginTop: 4 },
   audioFormatHint: { fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 4 },
 
   checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 6 },
-  checkbox: { width: 18, height: 18, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 4, marginRight: 8, justifyContent: 'center', alignItems: 'center' },
+  checkbox: { width: 18, height: 18, borderWidth: 1, borderRadius: 4, marginRight: 8, justifyContent: 'center', alignItems: 'center' },
   checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   checkmark: { color: '#ffffff', fontSize: 12, fontWeight: 'bold' },
-  checkboxLabel: { fontSize: 13, color: '#475569', flex: 1 },
+  checkboxLabel: { fontSize: 13, flex: 1 },
 
-  infoText: { fontSize: 15, color: '#475569', textAlign: 'center', marginTop: 12, marginBottom: 12 },
+  infoText: { fontSize: 15, textAlign: 'center', marginTop: 12, marginBottom: 12 },
   statusError: { fontSize: 18, fontWeight: 'bold', color: '#ef4444' },
   qrCode: { width: 220, height: 220, marginTop: 10 },
   
@@ -974,7 +970,6 @@ const styles = StyleSheet.create({
     marginBottom: 12 
   },
   connectedBadgeInline: { 
-    backgroundColor: '#dcfce7', 
     paddingVertical: 8, 
     paddingHorizontal: 16, 
     borderRadius: 8,
@@ -983,17 +978,16 @@ const styles = StyleSheet.create({
     display: 'inline-flex'
   },
   connectedText: { 
-    color: '#16a34a', 
     fontWeight: 'bold', 
     fontSize: 13, 
     whiteSpace: 'nowrap',
     textAlign: 'center'
   },
   
-  pickerContainer: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, overflow: 'hidden', marginBottom: 8 },
-  webSelect: { width: '100%', padding: 10, borderWidth: 0, backgroundColor: 'transparent', outlineStyle: 'none', fontSize: 14, color: '#0f172a', fontFamily: 'inherit' },
+  pickerContainer: { borderWidth: 1, borderRadius: 8, overflow: 'hidden', marginBottom: 8 },
+  webSelect: { width: '100%', padding: 10, borderWidth: 0, backgroundColor: 'transparent', outlineStyle: 'none', fontSize: 14, fontFamily: 'inherit' },
   
-  textAreaLarge: { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 10, fontSize: 14, color: '#0f172a', minHeight: 70, textAlignVertical: 'top', marginBottom: 6, outlineStyle: 'none' },
+  textAreaLarge: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 14, minHeight: 70, textAlignVertical: 'top', marginBottom: 6, outlineStyle: 'none' },
   primaryButton: { backgroundColor: '#2563eb', paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
   primaryButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
 
@@ -1012,28 +1006,109 @@ const styles = StyleSheet.create({
   btnCancel: { flex: 1, backgroundColor: '#dc2626', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   controlBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
 
-  emptyText: { textAlign: 'center', color: '#94a3b8', fontStyle: 'italic', marginTop: 40 },
-  historyCard: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, marginBottom: 10 },
+  emptyText: { textAlign: 'center', fontStyle: 'italic', marginTop: 40 },
+  historyCard: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 10 },
   historyHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   historyStatus: { fontWeight: 'bold', fontSize: 13 },
-  historyDate: { fontSize: 12, color: '#64748b' },
-  historyMsg: { fontSize: 13, color: '#334155', marginBottom: 6 },
-  historyStatsRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 6 },
-  historyStatItem: { fontSize: 12, fontWeight: '600', color: '#475569' },
+  historyDate: { fontSize: 12 },
+  historyMsg: { fontSize: 13, marginBottom: 6 },
+  historyStatsRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 6 },
+  historyStatItem: { fontSize: 12, fontWeight: '600' },
   connectedAccountInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  connectedNumberText: { fontSize: 13, fontWeight: '600', color: '#475569' },
-  historyMsgClean: { fontSize: 13, color: '#475569', backgroundColor: '#ffffff', padding: 6, borderRadius: 4, borderWidth: 1, borderColor: '#e2e8f0', fontStyle: 'italic', marginTop: 2 },
+  historyMsgClean: { fontSize: 13, padding: 6, borderRadius: 4, borderWidth: 1, fontStyle: 'italic', marginTop: 2 },
   statusSuccess: { color: '#16a34a', fontWeight: '800', textAlign: 'center' },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
 
   alertOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  alertContent: { backgroundColor: '#ffffff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 20px rgba(0,0,0,0.15)'} }) },
-  alertTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8, textAlign: 'center' },
-  alertSubtitle: { fontSize: 13, color: '#64748b', marginBottom: 20, textAlign: 'center', lineHeight: 18 },
+  alertContent: { borderRadius: 16, padding: 24, width: '100%', maxWidth: 360, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 20px rgba(0,0,0,0.15)'} }) },
+  alertTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
+  alertSubtitle: { fontSize: 13, marginBottom: 20, textAlign: 'center', lineHeight: 18 },
   alertButtonsRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  alertBtn: { flex: 1, paddingVertical: 12, borderRadius: '8px', alignItems: 'center' },
-  alertCancelBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1' },
-  alertCancelBtnText: { color: '#475569', fontWeight: 'bold', fontSize: 13 },
+  alertBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   alertConfirmBtn: { backgroundColor: '#2563eb' },
   alertConfirmBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 }
+});
+
+const lightStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#ffffff' },
+  title: { color: '#1e293b' },
+  disconnectTopBtn: { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+  disconnectTopBtnText: { color: '#dc2626' },
+  closeButtonText: { color: '#64748b' },
+  tabsRow: { backgroundColor: '#f1f5f9' },
+  tabBtnActive: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.1)' } }) },
+  tabText: { color: '#64748b' },
+  tabTextActive: { color: '#2563eb' },
+  label: { color: '#475569' },
+  itemBlock: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  addBtn: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
+  addBtnText: { color: '#2563eb' },
+  floatingMenu: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  menuTitle: { color: '#64748b' },
+  menuItem: { borderBottomColor: '#f1f5f9' },
+  menuItemText: { color: '#334155' },
+  mediaPickerBtn: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  mediaPickerBtnText: { color: '#334155' },
+  checkbox: { borderColor: '#cbd5e1' },
+  checkboxLabel: { color: '#475569' },
+  infoText: { color: '#475569' },
+  connectedBadgeInline: { backgroundColor: '#dcfce7' },
+  connectedText: { color: '#16a34a' },
+  pickerContainer: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  webSelect: { color: '#0f172a' },
+  textAreaLarge: { backgroundColor: '#ffffff', borderColor: '#cbd5e1', color: '#0f172a' },
+  emptyText: { color: '#94a3b8' },
+  historyCard: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  historyDate: { color: '#64748b' },
+  historyMsg: { color: '#334155' },
+  historyStatsRow: { borderTopColor: '#e2e8f0' },
+  historyStatItem: { color: '#475569' },
+  historyMsgClean: { color: '#475569', backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  alertContent: { backgroundColor: '#ffffff' },
+  alertTitle: { color: '#1e293b' },
+  alertSubtitle: { color: '#64748b' },
+  alertCancelBtn: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  alertCancelBtnText: { color: '#475569' }
+});
+
+const darkStyles = StyleSheet.create({
+  modalContainer: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  title: { color: '#f8fafc' },
+  disconnectTopBtn: { backgroundColor: '#450a0a', borderColor: '#7f1d1d' },
+  disconnectTopBtnText: { color: '#fca5a5' },
+  closeButtonText: { color: '#94a3b8' },
+  tabsRow: { backgroundColor: '#0f172a' },
+  tabBtnActive: { backgroundColor: '#334155' },
+  tabText: { color: '#94a3b8' },
+  tabTextActive: { color: '#ffffff' },
+  label: { color: '#94a3b8' },
+  itemBlock: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  addBtn: { borderColor: '#3b82f6', backgroundColor: '#172554' },
+  addBtnText: { color: '#60a5fa' },
+  floatingMenu: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  menuTitle: { color: '#94a3b8' },
+  menuItem: { borderBottomColor: '#334155' },
+  menuItemText: { color: '#f8fafc' },
+  mediaPickerBtn: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  mediaPickerBtnText: { color: '#f8fafc' },
+  checkbox: { borderColor: '#334155', backgroundColor: '#0f172a' },
+  checkboxLabel: { color: '#cbd5e1' },
+  infoText: { color: '#94a3b8' },
+  connectedBadgeInline: { backgroundColor: '#052e16' },
+  connectedText: { color: '#34d399' },
+  pickerContainer: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  webSelect: { color: '#f8fafc' },
+  textAreaLarge: { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' },
+  emptyText: { color: '#64748b' },
+  historyCard: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  historyDate: { color: '#94a3b8' },
+  historyMsg: { color: '#cbd5e1' },
+  historyStatsRow: { borderTopColor: '#334155' },
+  historyStatItem: { color: '#94a3b8' },
+  historyMsgClean: { color: '#cbd5e1', backgroundColor: '#1e293b', borderColor: '#334155' },
+  alertContent: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  alertTitle: { color: '#f8fafc' },
+  alertSubtitle: { color: '#94a3b8' },
+  alertCancelBtn: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  alertCancelBtnText: { color: '#cbd5e1' }
 });

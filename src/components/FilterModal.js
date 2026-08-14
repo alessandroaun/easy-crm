@@ -3,21 +3,25 @@ import {
   Modal, View, Text, TouchableOpacity, StyleSheet, Platform 
 } from 'react-native';
 
-export default function FilterModal({ visible, onClose, activeFilter, onSelectFilter }) {
+const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
+
+export default function FilterModal({ visible, onClose, activeFilter, onSelectFilter, isDarkMode }) {
   
   const handleSelect = (filterType) => {
     onSelectFilter(filterType);
     onClose();
   };
 
+  const themeStyles = isDarkMode ? darkStyles : lightStyles;
+
   const FilterOption = ({ value, label }) => {
     const isActive = activeFilter === value;
     return (
       <TouchableOpacity 
-        style={[styles.filterOption, isActive && styles.activeOption]}
+        style={[styles.filterOption, isActive && (isDarkMode ? darkStyles.activeOption : styles.activeOption)]}
         onPress={() => handleSelect(value)}
       >
-        <Text style={[styles.optionText, isActive && styles.activeOptionText]}>{label}</Text>
+        <Text style={[styles.optionText, themeStyles.optionText, isActive && (isDarkMode ? darkStyles.activeOptionText : styles.activeOptionText)]}>{label}</Text>
       </TouchableOpacity>
     );
   };
@@ -26,7 +30,7 @@ export default function FilterModal({ visible, onClose, activeFilter, onSelectFi
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         
-        <TouchableOpacity activeOpacity={1} style={styles.dropdownMenu}>
+        <TouchableOpacity activeOpacity={1} style={[styles.dropdownMenu, themeStyles.dropdownMenu]}>
           <FilterOption value="TODOS" label="Todos os Leads" />
           <FilterOption value="AUTO" label="Auto" />
           <FilterOption value="IMOVEL" label="Imóvel" />
@@ -53,10 +57,8 @@ const styles = StyleSheet.create({
     paddingLeft: 180, // Ajuste fino horizontal para alinhar diretamente abaixo do botão "Filtro"
   },
   dropdownMenu: {
-    backgroundColor: '#ffffff', 
     borderRadius: 8, 
     borderWidth: 1,
-    borderColor: '#cbd5e1',
     padding: 4,
     minWidth: 140, // Largura compacta ajustada ao texto
     ...Platform.select({ 
@@ -75,11 +77,40 @@ const styles = StyleSheet.create({
   },
   optionText: {
     fontSize: 13, 
-    color: '#475569', 
     fontWeight: '600',
+    fontFamily: MODERN_FONT,
   },
   activeOptionText: {
     color: '#2563eb',
+    fontWeight: '700'
+  }
+});
+
+/* Estilos de Tema Claro */
+const lightStyles = StyleSheet.create({
+  dropdownMenu: {
+    backgroundColor: '#ffffff', 
+    borderColor: '#cbd5e1',
+  },
+  optionText: {
+    color: '#475569', 
+  }
+});
+
+/* Estilos de Tema Escuro */
+const darkStyles = StyleSheet.create({
+  dropdownMenu: {
+    backgroundColor: '#1e293b', 
+    borderColor: '#334155',
+  },
+  optionText: {
+    color: '#94a3b8', 
+  },
+  activeOption: {
+    backgroundColor: '#1e3a8a',
+  },
+  activeOptionText: {
+    color: '#93c5fd',
     fontWeight: '700'
   }
 });
