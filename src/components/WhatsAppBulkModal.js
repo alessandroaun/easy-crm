@@ -16,7 +16,6 @@ export const setLeadUpdateCallback = (callback) => {
   onLeadUpdateCallback = callback;
 };
 
-// Componente CheckBox Customizado
 const CheckBox = ({ label, value, onValueChange }) => (
   <TouchableOpacity style={styles.checkboxContainer} onPress={() => onValueChange(!value)}>
     <View style={[styles.checkbox, value && styles.checkboxChecked]}>
@@ -33,7 +32,6 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   const [selectedPhaseId, setSelectedPhaseId] = useState('all');
   const [selectedTag, setSelectedTag] = useState('all');
 
-  // Estrutura dinâmica de itens de disparo (Array de blocos)
   const [messageItems, setMessageItems] = useState([]);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
@@ -93,6 +91,34 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     }
     return () => clearInterval(interval);
   }, [visible]);
+
+  const prevBoardId = useRef(boardData?.id);
+
+  useEffect(() => {
+    if (prevBoardId.current && boardData?.id && prevBoardId.current !== boardData.id) {
+      globalIsSending = false;
+      globalIsPaused = false;
+      globalCancelRequested = false;
+      globalLogs = [];
+      globalProgressText = '';
+      
+      setIsSending(false);
+      setIsPaused(false);
+      setLogs([]);
+      setProgressText('');
+    }
+    prevBoardId.current = boardData?.id;
+  }, [boardData?.id]);
+
+  const handleCloseModal = () => {
+    if (!globalIsSending && globalLogs.length > 0) {
+      globalLogs = [];
+      globalProgressText = '';
+      setLogs([]);
+      setProgressText('');
+    }
+    onClose();
+  };
 
   const checkBotStatus = async () => {
     try {
@@ -276,7 +302,27 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       messageSummary: `Itens na fila: Fixos (${fixedItems.length}) / Variações (${varItems.length})`
     };
 
-    const boardId = boardData?.id || 'crm_principal'; 
+    // CORREÇÃO: Obtenção segura do ID do board vinculado ao usuário logado
+    let dbBoardId = null;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Busca o board com prefixo 'board_' vinculado a este usuário
+        const { data: userBoards } = await supabase
+          .from('crm_boards')
+          .select('id')
+          .eq('user_id', user.id)
+          .ilike('id', 'board_%')
+          .order('id', { ascending: false })
+          .limit(1);
+
+        if (userBoards && userBoards.length > 0) {
+          dbBoardId = userBoards[0].id;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao identificar o ID correto do board:', err);
+    }
 
     for (let i = 0; i < validLeads.length; i++) {
       if (globalCancelRequested) break;
@@ -358,57 +404,47 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           date: new Date().toISOString() 
         };
 
-        // Notifica o componente pai instantaneamente para atualizar a interface
         if (onLeadUpdateCallback) {
           onLeadUpdateCallback(lead.id, zapComment.text);
         }
 
-        // SALVAMENTO IMEDIATO E ATUALIZAÇÃO DO BOARD NA MEMÓRIA E BANCO
-        if (boardId) {
+        if (dbBoardId) {
           try {
-            let query = supabase.from('crm_boards').select('id, data_payload');
-            if (isNaN(boardId)) {
-              query = query.eq('id', boardId);
-            } else {
-              query = query.eq('id', `board_${boardId}`);
-            }
-            
-            let { data: freshBoard, error: fetchErr } = await query.maybeSingle();
-            
-            if (fetchErr || !freshBoard) {
-              const fallbackRes = await supabase.from('crm_boards').select('id, data_payload').limit(1).maybeSingle();
-              if (fallbackRes.data) freshBoard = fallbackRes.data;
-            }
+            const { data: freshBoard } = await supabase
+              .from('crm_boards')
+              .select('id, data_payload')
+              .eq('id', dbBoardId)
+              .single();
 
             if (freshBoard && freshBoard.data_payload?.phases) {
-              let targetBoardTableId = freshBoard.id;
-              let updatedPhases = freshBoard.data_payload.phases.map(phase => {
-                if (!phase.clients) return phase;
-                let clients = phase.clients.map(c => {
-                  if (String(c.id) === String(lead.id)) {
-                    let comments = Array.isArray(c.comments) ? c.comments : [];
-                    return { ...c, whatsappError: false, comments: [zapComment, ...comments] };
-                  }
-                  return c;
-                });
-                return { ...phase, clients };
+              const updatedPhases = freshBoard.data_payload.phases.map(phase => {
+                return {
+                  ...phase,
+                  clients: phase.clients.map(c => {
+                    if (String(c.id) === String(lead.id)) {
+                      const comments = Array.isArray(c.comments) ? c.comments : [];
+                      return { 
+                        ...c, 
+                        whatsappError: false, 
+                        comments: [zapComment, ...comments] 
+                      };
+                    }
+                    return c;
+                  })
+                };
               });
 
               await supabase
                 .from('crm_boards')
                 .update({ data_payload: { ...freshBoard.data_payload, phases: updatedPhases } })
-                .eq('id', targetBoardTableId);
+                .eq('id', dbBoardId);
               
-              // ATUALIZA O BOARD LOCAL NA MEMÓRIA PARA REFLETIR NA TELA
-              if (boardData && boardData.phases) {
-                boardData.phases = updatedPhases;
-              }
+              boardData.phases = updatedPhases;
             }
           } catch (dbErr) {
-            console.error('Erro ao salvar comentário de sucesso no banco:', dbErr);
+            console.error('Erro ao persistir comentário no banco:', dbErr);
           }
         }
-
       } else {
         globalStats.error++;
         newLogItem = { status: 'error', text: `❌ Falha para ${lead.name} (${lead.phone}): ${leadErrorMsg}` };
@@ -423,24 +459,15 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           onLeadUpdateCallback(lead.id, failComment.text);
         }
 
-        if (boardId) {
+        if (dbBoardId) {
           try {
-            let query = supabase.from('crm_boards').select('id, data_payload');
-            if (isNaN(boardId)) {
-              query = query.eq('id', boardId);
-            } else {
-              query = query.eq('id', `board_${boardId}`);
-            }
-            
-            let { data: freshBoard, error: fetchErr } = await query.maybeSingle();
-            
-            if (fetchErr || !freshBoard) {
-              const fallbackRes = await supabase.from('crm_boards').select('id, data_payload').limit(1).maybeSingle();
-              if (fallbackRes.data) freshBoard = fallbackRes.data;
-            }
+            let { data: freshBoard } = await supabase
+              .from('crm_boards')
+              .select('id, data_payload')
+              .eq('id', dbBoardId)
+              .single();
 
             if (freshBoard && freshBoard.data_payload?.phases) {
-              let targetBoardTableId = freshBoard.id;
               let updatedPhases = freshBoard.data_payload.phases.map(phase => {
                 if (!phase.clients) return phase;
                 let clients = phase.clients.map(c => {
@@ -456,7 +483,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
               await supabase
                 .from('crm_boards')
                 .update({ data_payload: { ...freshBoard.data_payload, phases: updatedPhases } })
-                .eq('id', targetBoardTableId);
+                .eq('id', dbBoardId);
               
               if (boardData && boardData.phases) {
                 boardData.phases = updatedPhases;
@@ -483,7 +510,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
-    } 
+    }
 
     const endTime = new Date();
     const finalStatusText = globalCancelRequested ? '❌ Disparo Cancelado pelo Usuário' : '🎉 Disparo em Massa Concluído!';
@@ -549,8 +576,17 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       await fetch('http://localhost:3001/desconectar', { method: 'POST' });
       setIsBotConnected(false);
       setQrCodeImage(null);
+      
       globalIsSending = false;
+      globalIsPaused = false;
+      globalCancelRequested = false;
+      globalLogs = [];
+      globalProgressText = '';
+      
       setIsSending(false);
+      setIsPaused(false);
+      setLogs([]);
+      setProgressText('');
     } catch (e) {
       showAlert('Erro', 'Erro ao tentar desconectar.');
     }
@@ -582,7 +618,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                   </TouchableOpacity>
                 </View>
               )}
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <TouchableOpacity onPress={handleCloseModal} style={styles.closeButton}>
                 <Text style={styles.closeButtonText}>✕</Text>
               </TouchableOpacity>
             </View>

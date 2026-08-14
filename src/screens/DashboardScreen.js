@@ -93,6 +93,25 @@ export default function DashboardScreen() {
   const [activeNotifications, setActiveNotifications] = useState([]);
 
   useEffect(() => {
+  if (!loggedUserId) return;
+
+  const profileSubscription = supabase
+    .channel('public:user_profiles')
+    .on('postgres_changes', { 
+      event: 'UPDATE', 
+      schema: 'public', 
+      table: 'user_profiles',
+      filter: `id=eq.${loggedUserId}` 
+    }, (payload) => {
+      console.log("[DEBUG] Perfil alterado, recarregando dados...");
+      fetchInitialData(); // Recarrega o perfil e o quadro
+    })
+    .subscribe();
+
+  return () => supabase.removeChannel(profileSubscription);
+}, [loggedUserId]);
+
+  useEffect(() => {
     fetchInitialData();
     
     // Detecta se está rodando no ambiente Electron
@@ -110,7 +129,7 @@ export default function DashboardScreen() {
 
       setLoggedUserId(user.id);
 
-      // 1. Busca o perfil para saber se tá ativo e se é admin
+      // 1. Busca o perfil completo
       const { data: profile, error } = await supabase
         .from('user_profiles')
         .select('*')
@@ -119,9 +138,9 @@ export default function DashboardScreen() {
       
       setUserProfile(profile);
 
-      // Se não for ativo, para aqui.
+      // Se for ativo
       if (profile && profile.status === 'ativo') {
-        // Se for admin, busca todos os usuários ativos para o menu
+        // Se for admin, busca todos os usuários
         if (profile.role === 'admin') {
           const { data: users } = await supabase
             .from('user_profiles')
@@ -130,13 +149,14 @@ export default function DashboardScreen() {
           setUsersList(users || []);
         }
         
-        // Define o usuário atual (vai engatilhar o useEffect abaixo)
-        setCurrentUserId(user.id);
+        // CORREÇÃO: Forçamos a definição do currentUserId
+        // Se for Admin, ele começa visualizando o próprio quadro
+        setCurrentUserId(user.id); 
       } else {
         setLoading(false);
       }
     } catch (error) {
-      console.error(error);
+      console.error("Erro no fetch inicial:", error);
       setLoading(false);
     }
   };
@@ -194,7 +214,7 @@ export default function DashboardScreen() {
     const checkNotifications = async () => {
       
       // 1. Notificações do Kanban (Leads)
-      if (boardData) {
+      if (boardData && boardData.phases && Array.isArray(boardData.phases)) {
         const now = new Date();
         const notifs = [];
         boardData.phases.forEach(phase => {
@@ -216,28 +236,52 @@ export default function DashboardScreen() {
         setActiveNotifications(notifs);
       }
 
-      // 2. Notificações do Admin (Pedidos de Reset)
-      if (userProfile && userProfile.role === 'admin') {
-        try {
-          const { data } = await supabase
-            .from('user_profiles')
-            .select('id, email, name')
-            .eq('reset_requested', true);
-          
-          if (data) {
-            const resetNotifs = data.map(user => ({
-              id: `req_${user.id}`,
-              userId: user.id,
-              email: user.email,
-              name: user.name || 'Nome não informado',
-              type: 'ResetRequest'
-            }));
-            setAdminNotifications(resetNotifs);
-          }
-        } catch (error) {
-          console.error("Erro ao checar admin notifications:", error);
+      // Dentro do useEffect de verificação do admin em DashboardScreen.js:
+if (userProfile && userProfile.role === 'admin') {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('id, email, name, old_name, reset_requested, name_change_requested, name_change_alert');
+    
+    if (data && !error) {
+      const adminNotifs = [];
+      data.forEach(user => {
+        if (user.reset_requested) {
+          adminNotifs.push({
+            id: `req_reset_${user.id}`,
+            userId: user.id,
+            email: user.email,
+            name: user.name || 'Nome não informado',
+            type: 'ResetRequest'
+          });
         }
-      }
+        if (user.name_change_requested) {
+          adminNotifs.push({
+            id: `req_name_${user.id}`,
+            userId: user.id,
+            userEmail: user.email,
+            currentName: user.name || 'Nome não informado',
+            type: 'NameChangeRequest'
+          });
+        }
+        // Se a flag de alerta de mudança concluída estiver ativa
+        if (user.name_change_alert) {
+          adminNotifs.push({
+            id: `alert_name_${user.id}`,
+            userId: user.id,
+            userEmail: user.email,
+            oldName: user.old_name || 'Nome antigo',
+            newName: user.name || 'Nome atual',
+            type: 'NameChangeAlert'
+          });
+        }
+      });
+      setAdminNotifications(adminNotifs);
+    }
+  } catch (error) {
+    console.error("Erro ao checar admin notifications:", error);
+  }
+}
     };
 
     checkNotifications(); 
@@ -264,7 +308,38 @@ export default function DashboardScreen() {
     }
   }, [boardData]);
 
+  const handleClearNotificationHistory = () => {
+    if (!boardData) return;
+    const updatedBoard = JSON.parse(JSON.stringify(boardData));
+    updatedBoard.notificationHistory = [];
+    setBoardData(updatedBoard);
+    syncBoardToDatabase(updatedBoard);
+  };
+
+  const handleDismissSystem = (id) => {
+    if (!boardData) return;
+    const updatedBoard = JSON.parse(JSON.stringify(boardData));
+    
+    // Procura na caixa de entrada do sistema
+    const index = systemNotifications.findIndex(n => n.id === id);
+    if (index !== -1) {
+      const [dismissedItem] = systemNotifications.splice(index, 1);
+      setSystemNotifications([...systemNotifications]);
+      
+      // Adiciona ao histórico do board
+      if (!updatedBoard.notificationHistory) updatedBoard.notificationHistory = [];
+      updatedBoard.notificationHistory.unshift(dismissedItem);
+      
+      setBoardData(updatedBoard);
+      syncBoardToDatabase(updatedBoard);
+    }
+  };
+
   const boardScrollRef = useRef(null);
+
+  useEffect(() => {
+    console.log("[DEBUG] Estado boardData mudou:", boardData ? "Dados presentes" : "BOARD DATA ESTÁ VAZIO (NULL/UNDEF)");
+  }, [boardData]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && boardScrollRef.current) {
@@ -285,21 +360,30 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      console.log("[DEBUG] currentUserId é nulo ou indefinido.");
+      return;
+    }
 
     const fetchAndSubscribeBoard = async () => {
       setLoading(true);
+      console.log(`[DEBUG] Iniciando busca de board para usuário: ${currentUserId}`);
       
-      // Busca o board do usuário atual selecionado na "lente"
-      const { data: board } = await supabase
+      const { data: boards, error } = await supabase
         .from('crm_boards')
         .select('data_payload, id')
         .eq('user_id', currentUserId)
-        .maybeSingle();
+        .ilike('id', 'board_%') 
+        .order('id', { ascending: false })
+        .limit(1);
 
-      if (board) {
-        setBoardData(board.data_payload);
+      if (error) {
+        console.error("[DEBUG] Erro ao buscar board no Supabase:", error);
+      } else if (boards && boards.length > 0) {
+        console.log(`[DEBUG] Board encontrado com ID: ${boards[0].id}. Payload recebido com sucesso.`);
+        setBoardData(boards[0].data_payload);
       } else {
+        console.warn(`[DEBUG] Nenhum board 'board_%' encontrado para o usuário ${currentUserId}. Criando novo.`);
         const defaultData = { phases: [{ id: "phase_1", title: "Novo Cliente", clients: [] }], trash: [] };
         const newBoardId = `board_${Date.now()}`;
         await supabase.from('crm_boards').insert([{ id: newBoardId, user_id: currentUserId, data_payload: defaultData }]);
@@ -311,7 +395,8 @@ export default function DashboardScreen() {
 
     fetchAndSubscribeBoard();
 
-    // Inscreve no Realtime focando apenas no usuário da "lente"
+    // CORREÇÃO CRUCIAL: O Realtime agora escuta apenas alterações cuja ID comece com 'board_' 
+    // Isso evita que salvar as configurações ('config_...') limpe os cards do Kanban.
     const boardSubscription = supabase
       .channel(`realtime-board-${currentUserId}`)
       .on(
@@ -323,33 +408,48 @@ export default function DashboardScreen() {
           filter: `user_id=eq.${currentUserId}` 
         },
         (payload) => {
-          if (payload.new && payload.new.data_payload) {
+          // Só atualiza o Kanban se o evento pertencer ao quadro Kanban real e não às configurações
+          if (payload.new && payload.new.id && payload.new.id.startsWith('board_') && payload.new.data_payload) {
             setBoardData(payload.new.data_payload);
           }
         }
       )
       .subscribe();
 
-    // Limpa a inscrição antiga se o admin trocar de vendedor
     return () => {
       supabase.removeChannel(boardSubscription);
     };
   }, [currentUserId]);
 
   const syncBoardToDatabase = async (updatedBoard) => {
+    console.log("[DEBUG] Tentando sincronizar board para user:", currentUserId);
     try {
-      if (!currentUserId) return;
+      if (!currentUserId) {
+         console.error("[DEBUG] Sync falhou: currentUserId está vazio!");
+         return;
+      }
       
-      const { data, error } = await supabase
+      // Busca o ID correto do board antes de atualizar
+      const { data: boards } = await supabase
         .from('crm_boards')
-        .update({ data_payload: updatedBoard })
-        .eq('user_id', currentUserId) 
-        .select();
-      
-      if (error) throw error;
-      if (!data || data.length === 0) console.error("Falha silenciosa no RLS.");
+        .select('id')
+        .eq('user_id', currentUserId)
+        .ilike('id', 'board_%') // Garante que estamos pegando o Kanban
+        .limit(1);
+
+      if (boards && boards.length > 0) {
+        const boardId = boards[0].id;
+
+        const { data, error } = await supabase
+          .from('crm_boards')
+          .update({ data_payload: updatedBoard })
+          .eq('id', boardId) // Atualiza apenas o ID específico do board
+          .eq('user_id', currentUserId);
+        
+        if (error) throw error;
+      }
     } catch (error) {
-      console.error("Erro ao salvar:", error.message);
+      console.error("[DEBUG] Erro crítico no sync:", error.message);
     }
   };
 
@@ -508,6 +608,16 @@ export default function DashboardScreen() {
     syncBoardToDatabase(updatedBoard);
   };
 
+  const handleDismissNameChangeAlert = async (targetUserId, notificationId) => {
+  await supabase
+    .from('user_profiles')
+    .update({ name_change_alert: false })
+    .eq('id', targetUserId);
+    
+  setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
+  addAdminActionToHistory(`Confirmou visualização de mudança de identidade de um vendedor.`);
+};
+
   const handlePermanentDelete = (clientId) => {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
@@ -626,6 +736,7 @@ export default function DashboardScreen() {
 
       showCustomAlert('success', 'Sucesso', `Senha de ${targetEmail} redefinida para 'Senha123!' e e-mail de notificação enviado pelo Supabase.`);
       setAdminNotifications(prev => prev.filter(n => n.userId !== targetUserId));
+      addAdminActionToHistory(`Aprovou reset de senha para o e-mail ${targetEmail}`);
     } catch (err) {
       showCustomAlert('error', 'Erro', "Erro ao resetar: " + err.message);
     }
@@ -635,6 +746,64 @@ export default function DashboardScreen() {
   const handleRejectReset = async (targetUserId) => {
     await supabase.from('user_profiles').update({ reset_requested: false }).eq('id', targetUserId);
     setAdminNotifications(prev => prev.filter(n => n.userId !== targetUserId));
+    addAdminActionToHistory(`Recusou pedido de reset de senha.`);
+  };
+
+  const handleApproveNameChange = async (targetUserId, notificationId) => {
+    try {
+      // 1. Libera o campo no perfil do usuário e remove o pedido
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ can_edit_name: true, name_change_requested: false })
+        .eq('id', targetUserId);
+
+      if (error) throw error;
+
+      // 2. Busca estritamente o board do Kanban do vendedor (excluindo linhas de configuração 'config_')
+      const { data: vendorBoards } = await supabase
+        .from('crm_boards')
+        .select('data_payload, id')
+        .eq('user_id', targetUserId)
+        .ilike('id', 'board_%') // Garante que pega apenas os quadros Kanban reais
+        .order('id', { ascending: false })
+        .limit(1);
+
+      if (vendorBoards && vendorBoards.length > 0) {
+        const vendorBoardRow = vendorBoards[0];
+        const payload = vendorBoardRow.data_payload || {};
+
+        const approvalNotification = {
+          id: `app_name_${Date.now()}`,
+          type: 'NameChangeApproved',
+          date: new Date().toISOString()
+        };
+
+        payload.unreadNotifications = [approvalNotification, ...(payload.unreadNotifications || [])];
+
+        // Atualiza estritamente a linha do Kanban do usuário sem mexer na tabela de configurações ('config_...')
+        await supabase
+          .from('crm_boards')
+          .update({ data_payload: payload })
+          .eq('id', vendorBoardRow.id)
+          .eq('user_id', targetUserId); // Dupla segurança para nunca afetar dados errados
+      }
+
+      // 3. Remove o card da lista do admin sem exibir modal de alerta
+      setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
+      setSystemNotifications(prev => prev.filter(n => n.id !== notificationId));
+      addAdminActionToHistory(`Autorizou a alteração de nome de um vendedor.`);
+    } catch (err) {
+      console.error("Erro ao aprovar mudança de nome:", err);
+    }
+  };
+
+  const handleRejectNameChange = async (targetUserId, notificationId) => {
+    // 1. Apenas retira o bloqueio pendente
+    await supabase.from('user_profiles').update({ name_change_requested: false }).eq('id', targetUserId);
+    // 2. Remove o card visualmente sem modal de alerta
+    setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
+    setSystemNotifications(prev => prev.filter(n => n.id !== notificationId));
+    addAdminActionToHistory(`Recusou a alteração de nome de um vendedor.`);
   };
 
   // ===== FUNÇÃO ATUALIZADA: O PRÓPRIO USUÁRIO TROCAR A SENHA (PADRÃO SENHA123!) =====
@@ -671,8 +840,9 @@ export default function DashboardScreen() {
     if (!boardData) return null;
     const query = searchQuery.toLowerCase();
     
-    const filteredPhases = boardData.phases.map(phase => {
-      const filteredClients = phase.clients.filter(client => {
+    // O (boardData.phases || []) impede o erro "reading 'map'"
+    const filteredPhases = (boardData.phases || []).map(phase => {
+      const filteredClients = (phase.clients || []).filter(client => {
         
         const matchesText = !query || 
           (client.name?.toLowerCase().includes(query)) || 
@@ -721,7 +891,8 @@ export default function DashboardScreen() {
     return { ...boardData, phases: filteredPhases };
   };
 
-  const filteredBoardData = getFilteredBoard();
+  // Substitua a linha atual por esta:
+const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
   if (loading) {
     return (
@@ -777,11 +948,15 @@ export default function DashboardScreen() {
       }
 
       // 2. Busca o Kanban do vendedor destino diretamente do banco
-      const { data: targetBoardRow } = await supabase
+      const { data: targetBoards } = await supabase
         .from('crm_boards')
         .select('data_payload, id')
         .eq('user_id', targetUserId)
-        .maybeSingle();
+        .like('id', 'board_%') // <-- PROTEÇÃO AQUI TAMBÉM
+        .order('id', { ascending: false })
+        .limit(1);
+
+      const targetBoardRow = targetBoards && targetBoards.length > 0 ? targetBoards[0] : null;
 
       if (targetBoardRow && targetBoardRow.data_payload) {
         let targetBoard = targetBoardRow.data_payload;
@@ -864,11 +1039,15 @@ export default function DashboardScreen() {
       await syncBoardToDatabase(updatedCurrentBoard);
 
       // 2. Busca o board do vendedor destino
-      const { data: targetBoardRow } = await supabase
+      const { data: targetBoards } = await supabase
         .from('crm_boards')
         .select('data_payload, id')
         .eq('user_id', bulkTargetUserId)
-        .maybeSingle();
+        .like('id', 'board_%') // <-- PROTEÇÃO AQUI TAMBÉM
+        .order('id', { ascending: false })
+        .limit(1);
+
+      const targetBoardRow = targetBoards && targetBoards.length > 0 ? targetBoards[0] : null;
 
       if (targetBoardRow && targetBoardRow.data_payload) {
         let targetBoard = targetBoardRow.data_payload;
@@ -905,6 +1084,22 @@ export default function DashboardScreen() {
     } catch (err) {
       showCustomAlert('error', 'Erro', 'Falha na transferência em massa: ' + err.message);
     }
+  };
+
+  const addAdminActionToHistory = (message) => {
+    if (!boardData) return;
+    const updatedBoard = JSON.parse(JSON.stringify(boardData));
+    if (!updatedBoard.notificationHistory) updatedBoard.notificationHistory = [];
+    
+    updatedBoard.notificationHistory.unshift({
+      id: `hist_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      text: `Admin: ${message}`,
+      date: new Date().toISOString(),
+      type: 'Sistema' // Usamos Sistema para renderizar como texto padrão
+    });
+    
+    setBoardData(updatedBoard);
+    syncBoardToDatabase(updatedBoard);
   };
 
   const selectedTargetUserObj = usersList.find(u => u.id === bulkTargetUserId);
@@ -1125,38 +1320,39 @@ export default function DashboardScreen() {
 
       {/* RENDERIZAÇÃO CONDICIONAL DAS TELAS */}
       
-      {activeView === 'kanban' && (
-  <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
-    {filteredBoardData?.phases?.map((phase) => (
-      <KanbanColumn 
-        key={phase.id} 
-        phase={phase} 
-        onDropClient={handleDropClient} 
-        onDeleteClient={handleMoveToTrash}
-        onOpenClient={handleOpenClientDetails}
-        onEditPhase={(p) => setEditingPhase(p)}
-        onReorderPhase={handleReorderPhase}
-        onAddComment={handleAddCommentToClient}
-        isBulkSelecting={isBulkTransferActive}
-        selectedLeadIds={selectedLeadIds}
-        onToggleSelectLead={(clientId) => {
-          setSelectedLeadIds(prev => 
-            prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
-          );
-        }}
-        onSelectAllInPhase={(phaseClientIds) => {
-          setSelectedLeadIds(prev => Array.from(new Set([...prev, ...phaseClientIds])));
-        }}
-        onDeselectAllInPhase={(phaseClientIds) => {
-          setSelectedLeadIds(prev => prev.filter(id => !phaseClientIds.includes(id)));
-        }}
-      />
-    ))}
-    <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
-      <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
-    </TouchableOpacity>
-  </ScrollView>
-)}
+      {activeView === 'kanban' && boardData && boardData.phases && (
+        <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
+          {/* PROTEGIDO: Adicionado ?. em filteredBoardData e phases */}
+          {filteredBoardData?.phases?.map((phase) => (
+            <KanbanColumn 
+              key={phase.id} 
+              phase={phase} 
+              onDropClient={handleDropClient} 
+              onDeleteClient={handleMoveToTrash}
+              onOpenClient={handleOpenClientDetails}
+              onEditPhase={(p) => setEditingPhase(p)}
+              onReorderPhase={handleReorderPhase}
+              onAddComment={handleAddCommentToClient}
+              isBulkSelecting={isBulkTransferActive}
+              selectedLeadIds={selectedLeadIds}
+              onToggleSelectLead={(clientId) => {
+                setSelectedLeadIds(prev => 
+                  prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
+                );
+              }}
+              onSelectAllInPhase={(phaseClientIds) => {
+                setSelectedLeadIds(prev => Array.from(new Set([...prev, ...phaseClientIds])));
+              }}
+              onDeselectAllInPhase={(phaseClientIds) => {
+                setSelectedLeadIds(prev => prev.filter(id => !phaseClientIds.includes(id)));
+              }}
+            />
+          ))}
+          <TouchableOpacity style={styles.addPhaseButton} onPress={() => setIsPhaseModalVisible(true)}>
+            <Text style={styles.addPhaseText}>+ Adicionar Fase</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
 
       {activeView === 'minha_central' && (
         <MinhaCentral boardData={boardData} onOpenClient={handleOpenClientDetails} />
@@ -1167,8 +1363,11 @@ export default function DashboardScreen() {
       )}
 
       {activeView === 'configuracao' && (
-        <Configuracao />
-      )}
+  <Configuracao onConfigSaved={() => {
+    // Atualiza os dados do perfil sem quebrar o kanban
+    fetchInitialData();
+  }} />
+)}
 
       {activeView === 'admin_panel' && (<AdminPanel />)}
 
@@ -1249,7 +1448,7 @@ export default function DashboardScreen() {
                         nestedScrollEnabled={true}
                         showsVerticalScrollIndicator={false}
                       >
-                        {usersList.map(u => {
+                        {(usersList || []).map(u => {
                           const isSelectedUser = currentUserId === u.id;
                           return (
                             <TouchableOpacity 
@@ -1312,15 +1511,19 @@ export default function DashboardScreen() {
       <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} />
       <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} isAdmin={userProfile?.role === 'admin'} usersList={usersList} currentUserId={currentUserId} onTransferLead={handleTransferLead} />
       <NotificationModal 
-        visible={isNotifModalVisible} 
-        onClose={() => setIsNotifModalVisible(false)} 
-        // Junta todas as notificações (Leads + Sistema + Resets do Admin)
-        notifications={[...activeNotifications, ...systemNotifications, ...adminNotifications]} 
-        onDismiss={handleDismissNotification}
-        onDismissSystem={() => setSystemNotifications([])} 
-        onApproveReset={handleApproveReset} 
-        onRejectReset={handleRejectReset}   
-      />
+    visible={isNotifModalVisible} 
+    onClose={() => setIsNotifModalVisible(false)} 
+    notifications={[...(activeNotifications || []), ...(systemNotifications || []), ...(adminNotifications || [])]} 
+    historyNotifications={boardData?.notificationHistory || []}
+    onDismiss={handleDismissNotification}
+    onDismissSystem={handleDismissSystem} 
+    onApproveReset={handleApproveReset} 
+    onRejectReset={handleRejectReset} 
+    onApproveNameChange={handleApproveNameChange}
+    onRejectNameChange={handleRejectNameChange}
+    onDismissNameChangeAlert={handleDismissNameChangeAlert}
+    onClearHistory={handleClearNotificationHistory}
+  />
 
       <WhatsAppBulkModal 
         visible={isWhatsAppModalVisible} 
