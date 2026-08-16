@@ -80,7 +80,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       hasTransitioned.current = false; 
       checkBotStatus();
       fetchHistorico();
-      interval = setInterval(checkBotStatus, 3000);
+      // Polling Acelerado: A cada 1.5 segundos para resposta muito mais rápida do servidor
+      interval = setInterval(checkBotStatus, 1500);
       
       setIsSending(globalIsSending);
       setIsPaused(globalIsPaused);
@@ -125,21 +126,31 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       const response = await fetch('http://localhost:3001/status');
       const data = await response.json();
 
-      if (data.connected) {
+      // Checa se já está pronto para uso
+      if (data.connected && data.status === 'READY') {
         setIsBotConnected(true);
         if (data.number) setBotNumber(data.number);
 
-        if (!hasTransitioned.current) {
+        if (!hasTransitioned.current || connectionStage !== 'ready') {
           hasTransitioned.current = true;
           setConnectionStage('ready');
         }
       } else {
         setIsBotConnected(false);
         
-        if (data.qrCode) {
+        // Interpreta os novos estados em tempo real
+        if (data.status === 'AUTHENTICATING') {
+          hasTransitioned.current = false;
+          setConnectionStage('authenticating');
+        } else if (data.status === 'LOADING') {
+          hasTransitioned.current = false;
+          setConnectionStage('loading');
+        } else if (data.status === 'QR_CODE' && data.qrCode) {
           hasTransitioned.current = false;
           setConnectionStage('qr_code');
           setQrCodeImage(data.qrCode);
+        } else if (data.status === 'INITIALIZING') {
+          setConnectionStage('connecting');
         } else {
           setQrCodeImage(null);
           setConnectionStage(prev => prev === 'disconnecting' ? 'disconnecting' : 'connecting');
@@ -596,8 +607,294 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
   if (!visible) return null;
 
-  // Variável para lidar com as opções de Select com e sem Dark Mode
   const optionStyle = isDarkMode ? { backgroundColor: '#1e293b', color: '#f8fafc' } : {};
+
+  // Renderização Dinâmica e Fluída
+  const renderContentBox = () => {
+    if (loadingStatus) {
+      return (
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Conectando Conta do WhatsApp...</Text>
+        </View>
+      );
+    }
+
+    if (connectionStage === 'connecting') {
+      return (
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Inicializando servidor interno (Aguarde)...</Text>
+        </View>
+      );
+    }
+
+    if (connectionStage === 'authenticating') {
+      return (
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color="#10b981" />
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText, {color: '#10b981', fontWeight: 'bold'}]}>Leitura concluída! Autenticando sua conta...</Text>
+        </View>
+      );
+    }
+
+    if (connectionStage === 'loading') {
+      return (
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color="#f59e0b" />
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText, {color: '#f59e0b', fontWeight: 'bold'}]}>Baixando mensagens e sincronizando (Pode demorar)...</Text>
+        </View>
+      );
+    }
+
+    if (connectionStage === 'disconnecting') {
+      return (
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color="#dc2626" />
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Desconectando Conta do WhatsApp...</Text>
+        </View>
+      );
+    }
+
+    if (connectionStage === 'qr_code') {
+      return (
+        <View style={styles.centerBox}>
+          <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
+          {qrCodeImage ? (
+            <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
+          ) : (
+            <ActivityIndicator color="#64748b" />
+          )}
+        </View>
+      );
+    }
+
+    if (activeTab === 'historico') {
+      return (
+        <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
+          <Text style={[styles.label, isDarkMode && darkStyles.label]}>Histórico de Disparos Realizados</Text>
+          {historicoList.length === 0 ? (
+            <Text style={[styles.emptyText, isDarkMode && darkStyles.emptyText]}>Nenhum disparo registrado ainda.</Text>
+          ) : (
+            historicoList.map((item) => {
+              const getCleanMessage = (fullText) => {
+                if (!fullText) return 'Sem mensagem.';
+                if (fullText.includes('[DADOS_EXTRA:')) {
+                  return fullText.split('[DADOS_EXTRA:')[0].trim();
+                }
+                return fullText;
+              };
+
+              return (
+                <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={[styles.historyCard, isDarkMode && darkStyles.historyCard]}>
+                  <View style={styles.historyHeader}>
+                    <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>{item.status}</Text>
+                    <Text style={styles.historyDate}>Início: {item.inicio}</Text>
+                  </View>
+                  <Text style={[styles.historyMsg, isDarkMode && darkStyles.historyMsg]}>
+                    <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
+                  </Text>
+                  <View style={{ marginVertical: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Informações:</Text>
+                    <Text style={[styles.historyMsgClean, isDarkMode && darkStyles.historyMsgClean]} numberOfLines={2}>
+                      {getCleanMessage(item.mensagem)}
+                    </Text>
+                  </View>
+                  <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+                  <View style={[styles.historyStatsRow, isDarkMode && darkStyles.historyStatsRow]}>
+                    <Text style={[styles.historyStatItem, isDarkMode && darkStyles.historyStatItem]}>👥 Alvos: {item.total_alvos}</Text>
+                    <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
+                    <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      );
+    }
+
+    return (
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer} style={{height: 450}}>
+        {!isSending && logs.length === 0 && (
+          <View style={styles.topActionRow}>
+            <View style={styles.connectedBadgeInline}>
+              <Text style={styles.connectedText}>🟢 WhatsApp Conectado: +{botNumber}</Text>
+            </View>
+          </View>
+        )}
+
+        {!isSending && logs.length === 0 && (
+          <>
+            <View style={styles.filtersRow}>
+              <View style={{flex: 1}}>
+                <Text style={[styles.label, isDarkMode && darkStyles.label]}>Coluna (Fase)</Text>
+                <View style={[styles.pickerContainer, isDarkMode && darkStyles.pickerContainer]}>
+                  <select 
+                    style={isDarkMode ? { ...styles.webSelect, ...darkStyles.webSelect } : styles.webSelect} 
+                    value={selectedPhaseId} 
+                    onChange={(e) => setSelectedPhaseId(e.target.value)}
+                  >
+                    <option value="all" style={optionStyle}>Todas as Fases</option>
+                    {boardData?.phases?.map(phase => (
+                      <option key={phase.id} value={phase.id} style={optionStyle}>{phase.title} ({phase.clients?.length || 0})</option>
+                    ))}
+                  </select>
+                </View>
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={[styles.label, isDarkMode && darkStyles.label]}>Origem ou Categoria</Text>
+                <View style={[styles.pickerContainer, isDarkMode && darkStyles.pickerContainer]}>
+                  <select 
+                    style={isDarkMode ? { ...styles.webSelect, ...darkStyles.webSelect } : styles.webSelect} 
+                    value={selectedTag} 
+                    onChange={(e) => setSelectedTag(e.target.value)}
+                  >
+                    <option value="all" style={optionStyle}>Todas as Tags / Origens</option>
+                    <optgroup label="Origem / Plataforma" style={optionStyle}>
+                      <option value="Instagram" style={optionStyle}>Instagram</option>
+                      <option value="Facebook" style={optionStyle}>Facebook</option>
+                      <option value="TikTok" style={optionStyle}>TikTok</option>
+                      <option value="Google" style={optionStyle}>Google</option>
+                      <option value="Indicação" style={optionStyle}>Indicação</option>
+                    </optgroup>
+                    <optgroup label="Categoria / Produto" style={optionStyle}>
+                      <option value="Auto" style={optionStyle}>Auto (Veículos)</option>
+                      <option value="Imóvel" style={optionStyle}>Imóvel</option>
+                      <option value="Serviço" style={optionStyle}>Serviço</option>
+                      <option value="Investimento" style={optionStyle}>Investimento</option>
+                    </optgroup>
+                  </select>
+                </View>
+              </View>
+            </View>
+
+            {messageItems.map((item, index) => (
+              <View key={item.id} style={[styles.itemBlock, isDarkMode && darkStyles.itemBlock]}>
+                <View style={styles.blockHeader}>
+                  <Text style={[styles.label, isDarkMode && darkStyles.label, {marginTop: 0}]}>
+                    Item {index + 1}: {item.type === 'text' ? 'Texto' : item.type === 'image' ? 'Imagem' : item.type === 'video' ? 'Vídeo' : 'Áudio'}
+                  </Text>
+                  <TouchableOpacity onPress={() => handleRemoveItem(item.id)}>
+                    <Text style={styles.removeText}>Remover</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {item.type === 'text' && (
+                  <>
+                    <TextInput
+                      style={[styles.textAreaLarge, isDarkMode && darkStyles.textAreaLarge]}
+                      multiline
+                      numberOfLines={3}
+                      value={item.content}
+                      onChangeText={(val) => handleUpdateItem(item.id, 'content', val)}
+                      placeholder="Digite a mensagem aqui... Use {nome} para personalizar."
+                      placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                    />
+                    <CheckBox label="Esta mensagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
+                  </>
+                )}
+
+                {item.type === 'image' && (
+                  <>
+                    <TouchableOpacity style={[styles.mediaPickerBtn, isDarkMode && darkStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['image/*'])}>
+                      <Text style={[styles.mediaPickerBtnText, isDarkMode && darkStyles.mediaPickerBtnText]}>🖼️ {item.file ? 'Trocar Imagem' : 'Selecionar Imagem'}</Text>
+                    </TouchableOpacity>
+                    {item.file && (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
+                        <TextInput style={[styles.textAreaLarge, isDarkMode && darkStyles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda da imagem (opcional)..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                      </View>
+                    )}
+                    <CheckBox label="Esta imagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
+                  </>
+                )}
+
+                {item.type === 'video' && (
+                  <>
+                    <TouchableOpacity style={[styles.mediaPickerBtn, isDarkMode && darkStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['video/*'])}>
+                      <Text style={[styles.mediaPickerBtnText, isDarkMode && darkStyles.mediaPickerBtnText]}>🎥 {item.file ? 'Trocar Vídeo' : 'Selecionar Vídeo'}</Text>
+                    </TouchableOpacity>
+                    {item.file && (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
+                        <TextInput style={[styles.textAreaLarge, isDarkMode && darkStyles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda do vídeo (opcional)..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                      </View>
+                    )}
+                    <CheckBox label="Este vídeo é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
+                  </>
+                )}
+
+                {item.type === 'audio' && (
+                  <>
+                    <TouchableOpacity style={[styles.mediaPickerBtn, isDarkMode && darkStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['audio/*'])}>
+                      <Text style={[styles.mediaPickerBtnText, isDarkMode && darkStyles.mediaPickerBtnText]}>🎵 {item.file ? 'Trocar Áudio' : 'Selecionar Arquivo de Áudio'}</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.audioFormatHint}>Formatos aceitos: MP3, WAV, OGG</Text>
+                    {item.file && (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={styles.selectedFileText}>Áudio: {item.file.name}</Text>
+                      </View>
+                    )}
+                    <CheckBox label="Este áudio é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
+                  </>
+                )}
+              </View>
+            ))}
+
+            <View style={{ marginVertical: 12, position: 'relative' }}>
+              {!showAddMenu ? (
+                <TouchableOpacity onPress={() => setShowAddMenu(true)} style={[styles.addBtn, isDarkMode && darkStyles.addBtn]}>
+                  <Text style={styles.addBtnText}>+ Adicionar Mensagem</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.floatingMenu, isDarkMode && darkStyles.floatingMenu]}>
+                  <Text style={[styles.menuTitle, isDarkMode && darkStyles.menuTitle]}>Selecione o tipo de item:</Text>
+                  <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('text')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>📝 Texto</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('image')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>🖼️ Imagem</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('video')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>🎥 Vídeo</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('audio')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>🎵 Áudio</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, backgroundColor: isDarkMode ? '#334155' : '#f1f5f9' }]} onPress={() => setShowAddMenu(false)}>
+                    <Text style={[styles.menuItemText, { color: '#ef4444', textAlign: 'center' }]}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </>
+        )}
+
+        {(isSending || logs.length > 0) && (
+          <View style={styles.logWrapper}>
+            <View style={styles.logHeaderBar}>
+              <Text style={styles.progressLabel}>{progressText}</Text>
+              {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
+            </View>
+            <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
+              {logs.map((log, index) => (
+                <Text key={index} style={[styles.logItem, log.status === 'error' ? styles.logError : styles.logSuccess]}>{log.text}</Text>
+              ))}
+            </ScrollView>
+            {isSending && (
+              <View style={styles.controlButtonsRow}>
+                <TouchableOpacity style={[styles.controlBtn, isPaused ? styles.btnResume : styles.btnPause]} onPress={handleTogglePause}>
+                  <Text style={styles.controlBtnText}>{isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
+                  <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {!isSending && (
+              <TouchableOpacity style={[styles.primaryButton, { marginTop: 16, marginBottom: 20 }]} onPress={() => { globalLogs = []; setLogs([]); }}>
+                <Text style={styles.primaryButtonText}>Fazer Novo Disparo</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
 
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
@@ -637,259 +934,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           )}
 
           <View style={styles.fixedContentBox}>
-            {loadingStatus ? (
-              <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#2563eb" />
-                <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Conectando Conta do WhatsApp...</Text>
-              </View>
-            ) : connectionStage === 'connecting' ? (
-              <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#2563eb" />
-                <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Conectando Conta do WhatsApp...</Text>
-              </View>
-            ) : connectionStage === 'disconnecting' ? (
-              <View style={styles.centerBox}>
-                <ActivityIndicator size="large" color="#dc2626" />
-                <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Desconectando Conta do WhatsApp...</Text>
-              </View>
-            ) : connectionStage === 'success' ? (
-              <View style={styles.centerBox}>
-                <Text style={{ fontSize: 80 }}>✅</Text>
-                <Text style={[styles.statusSuccess, { fontSize: 22, marginTop: 20 }]}>Conexão bem sucedida!</Text>
-              </View>
-            ) : connectionStage === 'qr_code' ? (
-              <View style={styles.centerBox}>
-                <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
-                <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
-                {qrCodeImage ? (
-                  <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
-                ) : (
-                  <ActivityIndicator color="#64748b" />
-                )}
-              </View>
-            ) : activeTab === 'historico' ? (
-              <ScrollView showsVerticalScrollIndicator={true} style={{height: 450}}>
-                <Text style={[styles.label, isDarkMode && darkStyles.label]}>Histórico de Disparos Realizados</Text>
-                {historicoList.length === 0 ? (
-                  <Text style={[styles.emptyText, isDarkMode && darkStyles.emptyText]}>Nenhum disparo registrado ainda.</Text>
-                ) : (
-                  historicoList.map((item) => {
-                    const getCleanMessage = (fullText) => {
-                      if (!fullText) return 'Sem mensagem.';
-                      if (fullText.includes('[DADOS_EXTRA:')) {
-                        return fullText.split('[DADOS_EXTRA:')[0].trim();
-                      }
-                      return fullText;
-                    };
-
-                    return (
-                      <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={[styles.historyCard, isDarkMode && darkStyles.historyCard]}>
-                        <View style={styles.historyHeader}>
-                          <Text style={[styles.historyStatus, item.status === 'Cancelado' ? {color: '#ef4444'} : {color: '#16a34a'}]}>{item.status}</Text>
-                          <Text style={styles.historyDate}>Início: {item.inicio}</Text>
-                        </View>
-                        <Text style={[styles.historyMsg, isDarkMode && darkStyles.historyMsg]}>
-                          <Text style={{fontWeight:'bold'}}>Conta WhatsApp:</Text> +{item.whatsapp_numero || 'N/A'}
-                        </Text>
-                        <View style={{ marginVertical: 4 }}>
-                          <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Informações:</Text>
-                          <Text style={[styles.historyMsgClean, isDarkMode && darkStyles.historyMsgClean]} numberOfLines={2}>
-                            {getCleanMessage(item.mensagem)}
-                          </Text>
-                        </View>
-                        <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
-                        <View style={[styles.historyStatsRow, isDarkMode && darkStyles.historyStatsRow]}>
-                          <Text style={[styles.historyStatItem, isDarkMode && darkStyles.historyStatItem]}>👥 Alvos: {item.total_alvos}</Text>
-                          <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
-                          <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer} style={{height: 450}}>
-                
-                {!isSending && logs.length === 0 && (
-                  <View style={styles.topActionRow}>
-                    <View style={styles.connectedBadgeInline}>
-                      <Text style={styles.connectedText}>🟢 WhatsApp Conectado: +{botNumber}</Text>
-                    </View>
-                  </View>
-                )}
-
-                {!isSending && logs.length === 0 && (
-                  <>
-                    <View style={styles.filtersRow}>
-                      <View style={{flex: 1}}>
-                        <Text style={[styles.label, isDarkMode && darkStyles.label]}>Coluna (Fase)</Text>
-                        <View style={[styles.pickerContainer, isDarkMode && darkStyles.pickerContainer]}>
-                          {/* CORREÇÃO DO CRASH: Estilo agora é passado como Objeto plano e não mais como Array [] */}
-                          <select 
-                            style={isDarkMode ? { ...styles.webSelect, ...darkStyles.webSelect } : styles.webSelect} 
-                            value={selectedPhaseId} 
-                            onChange={(e) => setSelectedPhaseId(e.target.value)}
-                          >
-                            <option value="all" style={optionStyle}>Todas as Fases</option>
-                            {boardData?.phases?.map(phase => (
-                              <option key={phase.id} value={phase.id} style={optionStyle}>{phase.title} ({phase.clients?.length || 0})</option>
-                            ))}
-                          </select>
-                        </View>
-                      </View>
-                      <View style={{flex: 1}}>
-                        <Text style={[styles.label, isDarkMode && darkStyles.label]}>Origem ou Categoria</Text>
-                        <View style={[styles.pickerContainer, isDarkMode && darkStyles.pickerContainer]}>
-                          {/* CORREÇÃO DO CRASH: Estilo agora é passado como Objeto plano e não mais como Array [] */}
-                          <select 
-                            style={isDarkMode ? { ...styles.webSelect, ...darkStyles.webSelect } : styles.webSelect} 
-                            value={selectedTag} 
-                            onChange={(e) => setSelectedTag(e.target.value)}
-                          >
-                            <option value="all" style={optionStyle}>Todas as Tags / Origens</option>
-                            <optgroup label="Origem / Plataforma" style={optionStyle}>
-                              <option value="Instagram" style={optionStyle}>Instagram</option>
-                              <option value="Facebook" style={optionStyle}>Facebook</option>
-                              <option value="TikTok" style={optionStyle}>TikTok</option>
-                              <option value="Google" style={optionStyle}>Google</option>
-                              <option value="Indicação" style={optionStyle}>Indicação</option>
-                            </optgroup>
-                            <optgroup label="Categoria / Produto" style={optionStyle}>
-                              <option value="Auto" style={optionStyle}>Auto (Veículos)</option>
-                              <option value="Imóvel" style={optionStyle}>Imóvel</option>
-                              <option value="Serviço" style={optionStyle}>Serviço</option>
-                              <option value="Investimento" style={optionStyle}>Investimento</option>
-                            </optgroup>
-                          </select>
-                        </View>
-                      </View>
-                    </View>
-
-                    {messageItems.map((item, index) => (
-                      <View key={item.id} style={[styles.itemBlock, isDarkMode && darkStyles.itemBlock]}>
-                        <View style={styles.blockHeader}>
-                          <Text style={[styles.label, isDarkMode && darkStyles.label, {marginTop: 0}]}>
-                            Item {index + 1}: {item.type === 'text' ? 'Texto' : item.type === 'image' ? 'Imagem' : item.type === 'video' ? 'Vídeo' : 'Áudio'}
-                          </Text>
-                          <TouchableOpacity onPress={() => handleRemoveItem(item.id)}>
-                            <Text style={styles.removeText}>Remover</Text>
-                          </TouchableOpacity>
-                        </View>
-
-                        {item.type === 'text' && (
-                          <>
-                            <TextInput
-                              style={[styles.textAreaLarge, isDarkMode && darkStyles.textAreaLarge]}
-                              multiline
-                              numberOfLines={3}
-                              value={item.content}
-                              onChangeText={(val) => handleUpdateItem(item.id, 'content', val)}
-                              placeholder="Digite a mensagem aqui... Use {nome} para personalizar."
-                              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-                            />
-                            <CheckBox label="Esta mensagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
-                          </>
-                        )}
-
-                        {item.type === 'image' && (
-                          <>
-                            <TouchableOpacity style={[styles.mediaPickerBtn, isDarkMode && darkStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['image/*'])}>
-                              <Text style={[styles.mediaPickerBtnText, isDarkMode && darkStyles.mediaPickerBtnText]}>🖼️ {item.file ? 'Trocar Imagem' : 'Selecionar Imagem'}</Text>
-                            </TouchableOpacity>
-                            {item.file && (
-                              <View style={{ marginTop: 8 }}>
-                                <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
-                                <TextInput style={[styles.textAreaLarge, isDarkMode && darkStyles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda da imagem (opcional)..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
-                              </View>
-                            )}
-                            <CheckBox label="Esta imagem é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
-                          </>
-                        )}
-
-                        {item.type === 'video' && (
-                          <>
-                            <TouchableOpacity style={[styles.mediaPickerBtn, isDarkMode && darkStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['video/*'])}>
-                              <Text style={[styles.mediaPickerBtnText, isDarkMode && darkStyles.mediaPickerBtnText]}>🎥 {item.file ? 'Trocar Vídeo' : 'Selecionar Vídeo'}</Text>
-                            </TouchableOpacity>
-                            {item.file && (
-                              <View style={{ marginTop: 8 }}>
-                                <Text style={styles.selectedFileText}>Arquivo: {item.file.name}</Text>
-                                <TextInput style={[styles.textAreaLarge, isDarkMode && darkStyles.textAreaLarge, { minHeight: 45, marginTop: 6 }]} value={item.caption} onChangeText={(val) => handleUpdateItem(item.id, 'caption', val)} placeholder="Legenda do vídeo (opcional)..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
-                              </View>
-                            )}
-                            <CheckBox label="Este vídeo é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
-                          </>
-                        )}
-
-                        {item.type === 'audio' && (
-                          <>
-                            <TouchableOpacity style={[styles.mediaPickerBtn, isDarkMode && darkStyles.mediaPickerBtn]} onPress={() => handlePickFileForItem(item.id, ['audio/*'])}>
-                              <Text style={[styles.mediaPickerBtnText, isDarkMode && darkStyles.mediaPickerBtnText]}>🎵 {item.file ? 'Trocar Áudio' : 'Selecionar Arquivo de Áudio'}</Text>
-                            </TouchableOpacity>
-                            <Text style={styles.audioFormatHint}>Formatos aceitos: MP3, WAV, OGG</Text>
-                            {item.file && (
-                              <View style={{ marginTop: 8 }}>
-                                <Text style={styles.selectedFileText}>Áudio: {item.file.name}</Text>
-                              </View>
-                            )}
-                            <CheckBox label="Este áudio é uma variação (alternar no disparo)" value={item.isVariation} onValueChange={(val) => handleUpdateItem(item.id, 'isVariation', val)} isDarkMode={isDarkMode} />
-                          </>
-                        )}
-                      </View>
-                    ))}
-
-                    <View style={{ marginVertical: 12, position: 'relative' }}>
-                      {!showAddMenu ? (
-                        <TouchableOpacity onPress={() => setShowAddMenu(true)} style={[styles.addBtn, isDarkMode && darkStyles.addBtn]}>
-                          <Text style={styles.addBtnText}>+ Adicionar Mensagem</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={[styles.floatingMenu, isDarkMode && darkStyles.floatingMenu]}>
-                          <Text style={[styles.menuTitle, isDarkMode && darkStyles.menuTitle]}>Selecione o tipo de item:</Text>
-                          <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('text')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>📝 Texto</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('image')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>🖼️ Imagem</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('video')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>🎥 Vídeo</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.menuItem, isDarkMode && darkStyles.menuItem]} onPress={() => handleAddItem('audio')}><Text style={[styles.menuItemText, isDarkMode && darkStyles.menuItemText]}>🎵 Áudio</Text></TouchableOpacity>
-                          <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, backgroundColor: isDarkMode ? '#334155' : '#f1f5f9' }]} onPress={() => setShowAddMenu(false)}>
-                            <Text style={[styles.menuItemText, { color: '#ef4444', textAlign: 'center' }]}>Cancelar</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  </>
-                )}
-
-                {(isSending || logs.length > 0) && (
-                  <View style={styles.logWrapper}>
-                    <View style={styles.logHeaderBar}>
-                      <Text style={styles.progressLabel}>{progressText}</Text>
-                      {isSending && !isPaused && <ActivityIndicator size="small" color="#2563eb" />}
-                    </View>
-                    <ScrollView style={styles.logContainer} nestedScrollEnabled={true}>
-                      {logs.map((log, index) => (
-                        <Text key={index} style={[styles.logItem, log.status === 'error' ? styles.logError : styles.logSuccess]}>{log.text}</Text>
-                      ))}
-                    </ScrollView>
-                    {isSending && (
-                      <View style={styles.controlButtonsRow}>
-                        <TouchableOpacity style={[styles.controlBtn, isPaused ? styles.btnResume : styles.btnPause]} onPress={handleTogglePause}>
-                          <Text style={styles.controlBtnText}>{isPaused ? 'Continuar Disparos' : 'Pausar Disparos'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.btnCancel} onPress={handleCancelSend}>
-                          <Text style={styles.controlBtnText}>Cancelar Disparos</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                    {!isSending && (
-                      <TouchableOpacity style={[styles.primaryButton, { marginTop: 16, marginBottom: 20 }]} onPress={() => { globalLogs = []; setLogs([]); }}>
-                        <Text style={styles.primaryButtonText}>Fazer Novo Disparo</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-              </ScrollView>
-            )}
+            {renderContentBox()}
           </View>
         </View>
       </View>
