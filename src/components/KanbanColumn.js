@@ -1,3 +1,4 @@
+// KanbanColumn
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Pressable } from 'react-native';
 import ClientCard from './ClientCard';
@@ -66,7 +67,7 @@ const getDarkPaletteColor = (hexColor, isDark) => {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 };
 
-export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOpenClient, onEditPhase, onReorderPhase, onAddComment, isBulkSelecting, selectedLeadIds, onToggleSelectLead, onSelectAllInPhase, onDeselectAllInPhase, isDarkMode }) {
+export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOpenClient, onEditPhase, onReorderPhase, onAddComment, isBulkSelecting, selectedLeadIds, onToggleSelectLead, onSelectAllInPhase, onDeselectAllInPhase, isDarkMode, isAdmin }) {
   const columnRef = useRef(null);
   const [showSortMenu, setShowSortMenu] = useState(false);
 
@@ -186,9 +187,11 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
             <Text style={[styles.actionSymbol, themeStyles.actionSymbol]}>⇄</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.iconActionButton, themeStyles.iconActionButton]} onPress={() => onEditPhase(phase)}>
-            <Text style={[styles.actionSymbol, themeStyles.actionSymbol]}>⚙️</Text>
-          </TouchableOpacity>
+          {isAdmin && (
+            <TouchableOpacity style={[styles.iconActionButton, themeStyles.iconActionButton]} onPress={() => onEditPhase(phase)}>
+              <Text style={[styles.actionSymbol, themeStyles.actionSymbol]}>⚙️</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {showSortMenu && (
@@ -315,7 +318,6 @@ const styles = StyleSheet.create({
   scrollArea: { flex: 1 },
 });
 
-/* Estilos de Tema Claro */
 const lightStyles = StyleSheet.create({
   column: { borderColor: 'rgba(0,0,0,0.03)' },
   title: { color: '#111827' },
@@ -331,7 +333,6 @@ const lightStyles = StyleSheet.create({
   sortMenuText: { color: '#1e293b' }
 });
 
-/* Estilos de Tema Escuro */
 const darkStyles = StyleSheet.create({
   column: { borderColor: 'rgba(255,255,255,0.08)' },
   title: { color: '#f8fafc' },

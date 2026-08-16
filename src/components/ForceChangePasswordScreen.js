@@ -9,7 +9,7 @@ const validatePassword = (pwd) => {
   return regex.test(pwd);
 };
 
-export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMode, toggleDarkMode }) {
+export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMode }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -63,15 +63,6 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={[styles.card, currentTheme.card]}>
           
-          {/* Botão de Alternância do Modo Escuro / Claro */}
-          <TouchableOpacity 
-            style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
-            onPress={() => toggleDarkMode(!isDarkMode)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
-
           <View style={styles.headerContainer}>
             <Image 
                 source={require('../../assets/logo_A11_sem_fundo.png')} 
@@ -159,35 +150,12 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
   modalSubtitle: { fontSize: 13, marginBottom: 20, textAlign: 'center', lineHeight: 18 },
   modalBtn: { width: '100%', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  modalBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
-
-  themeToggleButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  themeToggleIcon: {
-    fontSize: 16,
-  }
+  modalBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 }
 });
 
-/* Estilos de Cores para o Modo Claro */
 const lightStyles = StyleSheet.create({
   container: { backgroundColor: '#f1f5f9' },
-  card: { 
-    backgroundColor: '#ffffff', 
-    ...Platform.select({ 
-      web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.08)' }, 
-      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } 
-    }) 
-  },
-  themeToggleButton: { backgroundColor: '#f1f5f9' },
+  card: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.08)' }, default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } }) },
   title: { color: '#0f172a' },
   subtitle: { color: '#64748b' },
   label: { color: '#475569' },
@@ -199,17 +167,9 @@ const lightStyles = StyleSheet.create({
   modalBtn: { backgroundColor: '#2563eb' }
 });
 
-/* Estilos de Cores para o Modo Escuro */
 const darkStyles = StyleSheet.create({
   container: { backgroundColor: '#0f172a' },
-  card: { 
-    backgroundColor: '#1e293b', 
-    ...Platform.select({ 
-      web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.4)' }, 
-      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12 } 
-    }) 
-  },
-  themeToggleButton: { backgroundColor: '#334155' },
+  card: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 40px rgba(0,0,0,0.4)' }, default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12 } }) },
   title: { color: '#f8fafc' },
   subtitle: { color: '#94a3b8' },
   label: { color: '#cbd5e1' },

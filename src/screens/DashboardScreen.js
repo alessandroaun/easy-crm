@@ -1,5 +1,6 @@
+// DashboardScreen
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions, Animated, Image } from 'react-native';
 import KanbanColumn from '../components/KanbanColumn';
 import AddClientModal from '../components/AddClientModal';
 import AddPhaseModal from '../components/AddPhaseModal';
@@ -53,7 +54,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [newPassConfirm, setNewPassConfirm] = useState('');
   const [isChangingPass, setIsChangingPass] = useState(false);
 
-  // Adicione este estado e referência de animação para o menu lateral
   const slideAnim = useRef(new Animated.Value(-280)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const [isMenuRendered, setIsMenuRendered] = useState(false);
@@ -133,28 +133,27 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [activeNotifications, setActiveNotifications] = useState([]);
 
   useEffect(() => {
-  if (!loggedUserId) return;
+    if (!loggedUserId) return;
 
-  const profileSubscription = supabase
-    .channel('public:user_profiles')
-    .on('postgres_changes', { 
-      event: 'UPDATE', 
-      schema: 'public', 
-      table: 'user_profiles',
-      filter: `id=eq.${loggedUserId}` 
-    }, (payload) => {
-      console.log("[DEBUG] Perfil alterado, recarregando dados...");
-      fetchInitialData(); 
-    })
-    .subscribe();
+    const profileSubscription = supabase
+      .channel('public:user_profiles')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'user_profiles',
+        filter: `id=eq.${loggedUserId}` 
+      }, (payload) => {
+        console.log("[DEBUG] Perfil alterado, recarregando dados...");
+        fetchInitialData(); 
+      })
+      .subscribe();
 
-  return () => supabase.removeChannel(profileSubscription);
-}, [loggedUserId]);
+    return () => supabase.removeChannel(profileSubscription);
+  }, [loggedUserId]);
 
   useEffect(() => {
     fetchInitialData();
     
-    // Detecta se está rodando no ambiente Electron
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const userAgent = navigator.userAgent.toLowerCase();
       const isElectronEnv = userAgent.includes('electron') || window.electron || (window.process && window.process.versions && window.process.versions.electron);
@@ -169,7 +168,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
 
       setLoggedUserId(user.id);
 
-      // 1. Busca o perfil completo
       const { data: profile, error } = await supabase
         .from('user_profiles')
         .select('*')
@@ -178,9 +176,7 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
       
       setUserProfile(profile);
 
-      // Se for ativo
       if (profile && profile.status === 'ativo') {
-        // Se for admin, busca todos os usuários
         if (profile.role === 'admin') {
           const { data: users } = await supabase
             .from('user_profiles')
@@ -189,8 +185,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
           setUsersList(users || []);
         }
         
-        // CORREÇÃO: Forçamos a definição do currentUserId
-        // Se for Admin, ele começa visualizando o próprio quadro
         setCurrentUserId(user.id); 
       } else {
         setLoading(false);
@@ -249,16 +243,19 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
     };
   }, []);
 
-  // ===== CORREÇÃO: O CÉREBRO DAS NOTIFICAÇÕES AGORA BUSCA DADOS DO ADMIN =====
   useEffect(() => {
     const checkNotifications = async () => {
       
-      // 1. Notificações do Kanban (Leads)
+      // 1. Notificações do Kanban (Leads) e Pós-Venda (Boletos)
       if (boardData && boardData.phases && Array.isArray(boardData.phases)) {
         const now = new Date();
         const notifs = [];
+        let newUnreadSystems = [];
+
         boardData.phases.forEach(phase => {
           phase.clients.forEach(client => {
+            
+            // Checagem de Agendamentos
             if (client.appointments) {
               client.appointments.forEach(appt => {
                 if (!appt.notified) {
@@ -271,79 +268,132 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
                 }
               });
             }
+
+            // Checagem de Vencimento de Contratos (Acompanhamento Pós-Venda - 5 Dias de antecedência)
+            if (client.dealClosed && client.contracts) {
+              client.contracts.forEach(contract => {
+                const dia = parseInt(contract.diaVencimento);
+                if (dia > 0 && dia <= 31) {
+                  const nextVencimento = new Date(now.getFullYear(), now.getMonth(), dia);
+                  // Se já passou do dia de vencimento, olhamos para o próximo mês
+                  if (now.getDate() > dia + 1) {
+                    nextVencimento.setMonth(nextVencimento.getMonth() + 1);
+                  }
+                  
+                  const diffTime = nextVencimento - now;
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                  if (diffDays <= 5 && diffDays >= 0) {
+                    const notifId = `boleto_${contract.id}_${nextVencimento.getFullYear()}_${nextVencimento.getMonth()}`;
+                    
+                    const alreadyActive = systemNotifications.some(n => n.id === notifId);
+                    const alreadyHistory = boardData.notificationHistory?.some(n => n.id === notifId);
+                    const alreadyUnread = boardData.unreadNotifications?.some(n => n.id === notifId) || newUnreadSystems.some(n => n.id === notifId);
+                    
+                    if (!alreadyActive && !alreadyHistory && !alreadyUnread) {
+                      newUnreadSystems.push({
+                        id: notifId,
+                        type: 'Sistema',
+                        text: `💰 Alerta de Pós-Venda: O boleto do contrato de ${client.name} (Cat: ${contract.categoria || 'N/A'}) vence em ${diffDays} dias (${dia}/${nextVencimento.getMonth() + 1}).`,
+                        date: new Date().toISOString()
+                      });
+                    }
+                  }
+                }
+              });
+            }
+
           });
         });
+
         setActiveNotifications(notifs);
+
+        if (newUnreadSystems.length > 0) {
+          const updatedBoard = JSON.parse(JSON.stringify(boardData));
+          updatedBoard.unreadNotifications = [...newUnreadSystems, ...(updatedBoard.unreadNotifications || [])];
+          setBoardData(updatedBoard);
+          syncBoardToDatabase(updatedBoard);
+        }
       }
 
-      // Dentro do useEffect de verificação do admin em DashboardScreen.js:
-if (userProfile && userProfile.role === 'admin') {
-  try {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('id, email, name, old_name, reset_requested, name_change_requested, name_change_alert');
-    
-    if (data && !error) {
-      const adminNotifs = [];
-      data.forEach(user => {
-        if (user.reset_requested) {
-          adminNotifs.push({
-            id: `req_reset_${user.id}`,
-            userId: user.id,
-            email: user.email,
-            name: user.name || 'Nome não informado',
-            type: 'ResetRequest'
-          });
+      if (userProfile && userProfile.role === 'admin') {
+        try {
+          const { data: users, error: usersError } = await supabase
+            .from('user_profiles')
+            .select('id, email, name, old_name, reset_requested, name_change_requested, name_change_alert');
+          
+          const { data: configsData } = await supabase.from('crm_boards').select('id, data_payload').ilike('id', 'config_%');
+
+          if (users && !usersError) {
+            const adminNotifs = [];
+            users.forEach(user => {
+              if (user.reset_requested) {
+                adminNotifs.push({
+                  id: `req_reset_${user.id}`,
+                  userId: user.id,
+                  email: user.email,
+                  name: user.name || 'Nome não informado',
+                  type: 'ResetRequest'
+                });
+              }
+              if (user.name_change_requested) {
+                adminNotifs.push({
+                  id: `req_name_${user.id}`,
+                  userId: user.id,
+                  userEmail: user.email,
+                  currentName: user.name || 'Nome não informado',
+                  type: 'NameChangeRequest'
+                });
+              }
+              if (user.name_change_alert) {
+                adminNotifs.push({
+                  id: `alert_name_${user.id}`,
+                  userId: user.id,
+                  userEmail: user.email,
+                  oldName: user.old_name || 'Nome antigo',
+                  newName: user.name || 'Nome atual',
+                  type: 'NameChangeAlert'
+                });
+              }
+            });
+
+            if (configsData) {
+               configsData.forEach(c => {
+                  if (c.data_payload && c.data_payload.pendingRequest) {
+                     const uid = c.id.replace('config_', '');
+                     const usr = users.find(u => u.id === uid);
+                     adminNotifs.push({
+                        id: `req_param_${uid}`,
+                        userId: uid,
+                        userName: usr ? usr.name : 'Vendedor',
+                        type: 'ParamChangeRequest'
+                     });
+                  }
+               });
+            }
+
+            setAdminNotifications(adminNotifs);
+          }
+        } catch (error) {
+          console.error("Erro ao checar admin notifications:", error);
         }
-        if (user.name_change_requested) {
-          adminNotifs.push({
-            id: `req_name_${user.id}`,
-            userId: user.id,
-            userEmail: user.email,
-            currentName: user.name || 'Nome não informado',
-            type: 'NameChangeRequest'
-          });
-        }
-        // Se a flag de alerta de mudança concluída estiver ativa
-        if (user.name_change_alert) {
-          adminNotifs.push({
-            id: `alert_name_${user.id}`,
-            userId: user.id,
-            userEmail: user.email,
-            oldName: user.old_name || 'Nome antigo',
-            newName: user.name || 'Nome atual',
-            type: 'NameChangeAlert'
-          });
-        }
-      });
-      setAdminNotifications(adminNotifs);
-    }
-  } catch (error) {
-    console.error("Erro ao checar admin notifications:", error);
-  }
-}
+      }
     };
 
     checkNotifications(); 
     const timer = setInterval(checkNotifications, 60000); 
     return () => clearInterval(timer);
-  }, [boardData, userProfile]);
+  }, [boardData, userProfile, systemNotifications]);
 
   useEffect(() => {
-    // Motor de Notificações Injetadas via Transferência
     if (boardData && boardData.unreadNotifications && boardData.unreadNotifications.length > 0) {
-      
-      // Joga para a lista local visual
       setSystemNotifications(prev => [...boardData.unreadNotifications, ...prev]);
       
-      // Remove do banco de dados para não notificar duas vezes
       const updatedBoard = JSON.parse(JSON.stringify(boardData));
       delete updatedBoard.unreadNotifications;
       
       setBoardData(updatedBoard);
       syncBoardToDatabase(updatedBoard);
-      
-      // Abre o modal de notificação para chamar a atenção
       setIsNotifModalVisible(true);
     }
   }, [boardData]);
@@ -360,26 +410,26 @@ if (userProfile && userProfile.role === 'admin') {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     
-    // Procura na caixa de entrada do sistema
     const index = systemNotifications.findIndex(n => n.id === id);
     if (index !== -1) {
       const [dismissedItem] = systemNotifications.splice(index, 1);
       setSystemNotifications([...systemNotifications]);
       
-      // Adiciona ao histórico do board
       if (!updatedBoard.notificationHistory) updatedBoard.notificationHistory = [];
       updatedBoard.notificationHistory.unshift(dismissedItem);
       
       setBoardData(updatedBoard);
       syncBoardToDatabase(updatedBoard);
+      return;
+    }
+
+    const adminIndex = adminNotifications.findIndex(n => n.id === id);
+    if (adminIndex !== -1) {
+      setAdminNotifications(prev => prev.filter(n => n.id !== id));
     }
   };
 
   const boardScrollRef = useRef(null);
-
-  useEffect(() => {
-    console.log("[DEBUG] Estado boardData mudou:", boardData ? "Dados presentes" : "BOARD DATA ESTÁ VAZIO (NULL/UNDEF)");
-  }, [boardData]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && boardScrollRef.current) {
@@ -400,15 +450,10 @@ if (userProfile && userProfile.role === 'admin') {
   }, []);
 
   useEffect(() => {
-    if (!currentUserId) {
-      console.log("[DEBUG] currentUserId é nulo ou indefinido.");
-      return;
-    }
+    if (!currentUserId) return;
 
     const fetchAndSubscribeBoard = async () => {
       setLoading(true);
-      console.log(`[DEBUG] Iniciando busca de board para usuário: ${currentUserId}`);
-      
       const { data: boards, error } = await supabase
         .from('crm_boards')
         .select('data_payload, id')
@@ -420,10 +465,8 @@ if (userProfile && userProfile.role === 'admin') {
       if (error) {
         console.error("[DEBUG] Erro ao buscar board no Supabase:", error);
       } else if (boards && boards.length > 0) {
-        console.log(`[DEBUG] Board encontrado com ID: ${boards[0].id}. Payload recebido com sucesso.`);
         setBoardData(boards[0].data_payload);
       } else {
-        console.warn(`[DEBUG] Nenhum board 'board_%' encontrado para o usuário ${currentUserId}. Criando novo.`);
         const defaultData = { phases: [{ id: "phase_1", title: "Novo Cliente", clients: [] }], trash: [] };
         const newBoardId = `board_${Date.now()}`;
         await supabase.from('crm_boards').insert([{ id: newBoardId, user_id: currentUserId, data_payload: defaultData }]);
@@ -435,8 +478,6 @@ if (userProfile && userProfile.role === 'admin') {
 
     fetchAndSubscribeBoard();
 
-    // CORREÇÃO CRUCIAL: O Realtime agora escuta apenas alterações cuja ID comece com 'board_' 
-    // Isso evita que salvar das configurações ('config_...') limpe os cards do Kanban.
     const boardSubscription = supabase
       .channel(`realtime-board-${currentUserId}`)
       .on(
@@ -448,7 +489,6 @@ if (userProfile && userProfile.role === 'admin') {
           filter: `user_id=eq.${currentUserId}` 
         },
         (payload) => {
-          // Só atualiza o Kanban se o evento pertencer ao quadro Kanban real e não às configurações
           if (payload.new && payload.new.id && payload.new.id.startsWith('board_') && payload.new.data_payload) {
             setBoardData(payload.new.data_payload);
           }
@@ -462,28 +502,22 @@ if (userProfile && userProfile.role === 'admin') {
   }, [currentUserId]);
 
   const syncBoardToDatabase = async (updatedBoard) => {
-    console.log("[DEBUG] Tentando sincronizar board para user:", currentUserId);
     try {
-      if (!currentUserId) {
-         console.error("[DEBUG] Sync falhou: currentUserId está vazio!");
-         return;
-      }
+      if (!currentUserId) return;
       
-      // Busca o ID correto do board antes de atualizar
       const { data: boards } = await supabase
         .from('crm_boards')
         .select('id')
         .eq('user_id', currentUserId)
-        .ilike('id', 'board_%') // Garante que estamos pegando o Kanban
+        .ilike('id', 'board_%')
         .limit(1);
 
       if (boards && boards.length > 0) {
         const boardId = boards[0].id;
-
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('crm_boards')
           .update({ data_payload: updatedBoard })
-          .eq('id', boardId) // Atualiza apenas o ID específico do board
+          .eq('id', boardId)
           .eq('user_id', currentUserId);
         
         if (error) throw error;
@@ -561,7 +595,6 @@ if (userProfile && userProfile.role === 'admin') {
     
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
     updatedBoard.phases.push(newPhase);
-    
     updatedBoard.phases.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     setBoardData(updatedBoard); 
@@ -579,7 +612,6 @@ if (userProfile && userProfile.role === 'admin') {
     if (clientIndex === -1) return;
     
     const [movedClient] = updatedBoard.phases[sourcePhaseIndex].clients.splice(clientIndex, 1);
-    
     movedClient.updatedAt = new Date().toISOString();
 
     if (sourcePhaseId !== targetPhaseId) {
@@ -595,7 +627,6 @@ if (userProfile && userProfile.role === 'admin') {
 
     if (targetClientId && targetClientId !== clientId) {
       const targetClientIndex = updatedBoard.phases[targetPhaseIndex].clients.findIndex(c => c.id === targetClientId);
-      
       if (targetClientIndex !== -1) {
         updatedBoard.phases[targetPhaseIndex].clients.splice(targetClientIndex, 0, movedClient);
       } else {
@@ -649,14 +680,10 @@ if (userProfile && userProfile.role === 'admin') {
   };
 
   const handleDismissNameChangeAlert = async (targetUserId, notificationId) => {
-  await supabase
-    .from('user_profiles')
-    .update({ name_change_alert: false })
-    .eq('id', targetUserId);
-    
-  setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
-  addAdminActionToHistory(`Confirmou visualização de mudança de identidade de um vendedor.`);
-};
+    await supabase.from('user_profiles').update({ name_change_alert: false }).eq('id', targetUserId);
+    setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
+    addAdminActionToHistory(`Confirmou visualização de mudança de identidade de um vendedor.`);
+  };
 
   const handlePermanentDelete = (clientId) => {
     if (!boardData) return;
@@ -758,7 +785,6 @@ if (userProfile && userProfile.role === 'admin') {
 
   const handleApproveReset = async (targetUserId, targetEmail) => {
     try {
-      // 1. Reseta a senha do usuário via RPC para 'Senha123!'
       const { error } = await supabase.rpc('admin_reset_user_credentials', {
         target_user_id: targetUserId,
         new_email: targetEmail,
@@ -766,15 +792,10 @@ if (userProfile && userProfile.role === 'admin') {
       });
       if (error) throw error;
       
-      // 2. Remove a flag de pedido de reset
       await supabase.from('user_profiles').update({ reset_requested: false }).eq('id', targetUserId);
+      await supabase.auth.resetPasswordForEmail(targetEmail, { redirectTo: 'https://seu-app.com/update-password' });
 
-      // 3. Dispara o e-mail nativo de recuperação do Supabase informando o e-mail do usuário
-      await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: 'https://seu-app.com/update-password', // Opcional: link para redirecionar se necessário
-      });
-
-      showCustomAlert('success', 'Sucesso', `Senha de ${targetEmail} redefinida para 'Senha123!' e e-mail de notificação enviado pelo Supabase.`);
+      showCustomAlert('success', 'Sucesso', `Senha de ${targetEmail} redefinida para 'Senha123!' e e-mail de notificação enviado.`);
       setAdminNotifications(prev => prev.filter(n => n.userId !== targetUserId));
       addAdminActionToHistory(`Aprovou reset de senha para o e-mail ${targetEmail}`);
     } catch (err) {
@@ -782,7 +803,6 @@ if (userProfile && userProfile.role === 'admin') {
     }
   };
 
-  // Função para o Admin recusar o reset
   const handleRejectReset = async (targetUserId) => {
     await supabase.from('user_profiles').update({ reset_requested: false }).eq('id', targetUserId);
     setAdminNotifications(prev => prev.filter(n => n.userId !== targetUserId));
@@ -791,22 +811,10 @@ if (userProfile && userProfile.role === 'admin') {
 
   const handleApproveNameChange = async (targetUserId, notificationId) => {
     try {
-      // 1. Libera o campo no perfil do usuário e remove o pedido
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ can_edit_name: true, name_change_requested: false })
-        .eq('id', targetUserId);
-
+      const { error } = await supabase.from('user_profiles').update({ can_edit_name: true, name_change_requested: false }).eq('id', targetUserId);
       if (error) throw error;
 
-      // 2. Busca estritamente o board do Kanban do vendedor (excluindo linhas de configuração 'config_')
-      const { data: vendorBoards } = await supabase
-        .from('crm_boards')
-        .select('data_payload, id')
-        .eq('user_id', targetUserId)
-        .ilike('id', 'board_%') // Garante que pega apenas os quadros Kanban reais
-        .order('id', { ascending: false })
-        .limit(1);
+      const { data: vendorBoards } = await supabase.from('crm_boards').select('data_payload, id').eq('user_id', targetUserId).ilike('id', 'board_%').limit(1);
 
       if (vendorBoards && vendorBoards.length > 0) {
         const vendorBoardRow = vendorBoards[0];
@@ -819,16 +827,9 @@ if (userProfile && userProfile.role === 'admin') {
         };
 
         payload.unreadNotifications = [approvalNotification, ...(payload.unreadNotifications || [])];
-
-        // Atualiza estritamente a linha do Kanban do usuário sem mexer na tabela de configurações ('config_...')
-        await supabase
-          .from('crm_boards')
-          .update({ data_payload: payload })
-          .eq('id', vendorBoardRow.id)
-          .eq('user_id', targetUserId); // Dupla segurança para nunca afetar dados errados
+        await supabase.from('crm_boards').update({ data_payload: payload }).eq('id', vendorBoardRow.id).eq('user_id', targetUserId); 
       }
 
-      // 3. Remove o card da lista do admin sem exibir modal de alerta
       setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
       setSystemNotifications(prev => prev.filter(n => n.id !== notificationId));
       addAdminActionToHistory(`Autorizou a alteração de nome de um vendedor.`);
@@ -838,23 +839,17 @@ if (userProfile && userProfile.role === 'admin') {
   };
 
   const handleRejectNameChange = async (targetUserId, notificationId) => {
-    // 1. Apenas retira o bloqueio pendente
     await supabase.from('user_profiles').update({ name_change_requested: false }).eq('id', targetUserId);
-    // 2. Remove o card visualmente sem modal de alerta
     setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
     setSystemNotifications(prev => prev.filter(n => n.id !== notificationId));
     addAdminActionToHistory(`Recusou a alteração de nome de um vendedor.`);
   };
 
-  // ===== FUNÇÃO ATUALIZADA: O PRÓPRIO USUÁRIO TROCAR A SENHA (PADRÃO SENHA123!) =====
   const handleUpdateOwnPassword = async () => {
-    const validatePassword = (pwd) => {
-      const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$/;
-      return regex.test(pwd);
-    };
+    const validatePassword = (pwd) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$/.test(pwd);
 
     if (!validatePassword(newPass)) {
-      showCustomAlert('error', 'Senha Inválida', 'A senha deve conter no mínimo 6 caracteres, incluindo letra maiúscula, minúscula, número e caractere especial (Ex: Senha123!).');
+      showCustomAlert('error', 'Senha Inválida', 'A senha deve conter no mínimo 6 caracteres, com maiúscula, minúscula, número e caractere especial.');
       return;
     }
     if (newPass !== newPassConfirm) {
@@ -880,7 +875,6 @@ if (userProfile && userProfile.role === 'admin') {
     if (!boardData) return null;
     const query = searchQuery.toLowerCase();
     
-    // O (boardData.phases || []) impede o erro "reading 'map'"
     const filteredPhases = (boardData.phases || []).map(phase => {
       const filteredClients = (phase.clients || []).filter(client => {
         
@@ -896,31 +890,14 @@ if (userProfile && userProfile.role === 'admin') {
         const isWaError = client.whatsappError === true;
 
         switch(activeFilter) {
-          case 'AUTO':
-            matchesTag = cat.includes('auto') || cat.includes('carro');
-            break;
-          case 'IMOVEL':
-            matchesTag = cat.includes('imóvel') || cat.includes('casa') || cat.includes('apartamento');
-            break;
-          case 'INVESTIMENTO':
-            matchesTag = cat.includes('investimento');
-            break;
-          case 'INSTAGRAM':
-            matchesTag = plat.includes('instagram') || plat === 'ig';
-            break;
-          case 'FACEBOOK':
-            matchesTag = plat.includes('facebook') || plat === 'fb';
-            break;
-          case 'COM_WA':
-            matchesTag = !isWaError; 
-            break;
-          case 'SEM_WA':
-            matchesTag = isWaError; 
-            break;
-          case 'TODOS':
-          default:
-            matchesTag = true;
-            break;
+          case 'AUTO': matchesTag = cat.includes('auto') || cat.includes('carro'); break;
+          case 'IMOVEL': matchesTag = cat.includes('imóvel') || cat.includes('casa') || cat.includes('apartamento'); break;
+          case 'INVESTIMENTO': matchesTag = cat.includes('investimento'); break;
+          case 'INSTAGRAM': matchesTag = plat.includes('instagram') || plat === 'ig'; break;
+          case 'FACEBOOK': matchesTag = plat.includes('facebook') || plat === 'fb'; break;
+          case 'COM_WA': matchesTag = !isWaError; break;
+          case 'SEM_WA': matchesTag = isWaError; break;
+          case 'TODOS': default: matchesTag = true; break;
         }
 
         return matchesText && matchesTag;
@@ -931,9 +908,7 @@ if (userProfile && userProfile.role === 'admin') {
     return { ...boardData, phases: filteredPhases };
   };
 
-  // Substitua a linha atual por esta:
-const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
-
+  const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
   const currentTheme = isDarkMode ? darkStyles : lightStyles;
 
   if (loading) {
@@ -944,7 +919,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
     );
   }
 
-  // TELA DE BLOQUEIO (Conta Pendente ou Inativa)
   if (!userProfile || userProfile.status !== 'ativo') {
     return (
       <View style={[styles.container, currentTheme.container, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
@@ -971,7 +945,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
     try {
       if (!boardData) return;
       
-      // 1. Remove do Kanban atual (de onde o lead está saindo)
       const updatedCurrentBoard = JSON.parse(JSON.stringify(boardData));
       let leadRemoved = false;
       
@@ -989,12 +962,11 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         syncBoardToDatabase(updatedCurrentBoard);
       }
 
-      // 2. Busca o Kanban do vendedor destino diretamente do banco
       const { data: targetBoards } = await supabase
         .from('crm_boards')
         .select('data_payload, id')
         .eq('user_id', targetUserId)
-        .like('id', 'board_%') // <-- PROTEÇÃO AQUI TAMBÉM
+        .like('id', 'board_%')
         .order('id', { ascending: false })
         .limit(1);
 
@@ -1003,7 +975,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       if (targetBoardRow && targetBoardRow.data_payload) {
         let targetBoard = targetBoardRow.data_payload;
         
-        // Insere comentário automático (se não foi desmarcado)
         if (!withoutComment) {
           const transferComment = {
             id: `sys_transf_${Date.now()}`,
@@ -1013,15 +984,12 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
           leadData.comments = [transferComment, ...(leadData.comments || [])];
         }
 
-        // Reseta o "updatedAt" para aparecer lá em cima na fila
         leadData.updatedAt = new Date().toISOString();
 
-        // Adiciona na primeira fase (Novo Cliente) do vendedor destino
         if (targetBoard.phases.length > 0) {
            targetBoard.phases[0].clients.unshift(leadData);
         }
         
-        // 3. Prepara a Notificação Cruzada para o destino
         const fromUser = usersList.find(u => u.id === currentUserId);
         const fromName = fromUser ? (fromUser.name || fromUser.email) : 'outro vendedor';
         
@@ -1032,14 +1000,9 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
           date: new Date().toISOString()
         };
         
-        // Anexa a notificação na "caixa de entrada" do board dele
         targetBoard.unreadNotifications = [newNotif, ...(targetBoard.unreadNotifications || [])];
 
-        // 4. Salva o Kanban atualizado do vendedor destino no banco
-        await supabase
-          .from('crm_boards')
-          .update({ data_payload: targetBoard })
-          .eq('id', targetBoardRow.id);
+        await supabase.from('crm_boards').update({ data_payload: targetBoard }).eq('id', targetBoardRow.id);
           
         showCustomAlert('success', 'Transferência Concluída', `O lead foi transferido com sucesso.`);
       } else {
@@ -1056,7 +1019,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       const updatedCurrentBoard = JSON.parse(JSON.stringify(boardData));
       const extractedLeads = [];
 
-      // 1. Remove os leads selecionados do board atual
       updatedCurrentBoard.phases.forEach(phase => {
         phase.clients = phase.clients.filter(client => {
           if (selectedLeadIds.includes(client.id)) {
@@ -1076,16 +1038,14 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
       if (extractedLeads.length === 0) return;
 
-      // Atualiza o board de origem
       setBoardData(updatedCurrentBoard);
       await syncBoardToDatabase(updatedCurrentBoard);
 
-      // 2. Busca o board do vendedor destino
       const { data: targetBoards } = await supabase
         .from('crm_boards')
         .select('data_payload, id')
         .eq('user_id', bulkTargetUserId)
-        .like('id', 'board_%') // <-- PROTEÇÃO AQUI TAMBÉM
+        .like('id', 'board_%')
         .order('id', { ascending: false })
         .limit(1);
 
@@ -1110,13 +1070,9 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
         targetBoard.unreadNotifications = [newNotif, ...(targetBoard.unreadNotifications || [])];
 
-        await supabase
-          .from('crm_boards')
-          .update({ data_payload: targetBoard })
-          .eq('id', targetBoardRow.id);
+        await supabase.from('crm_boards').update({ data_payload: targetBoard }).eq('id', targetBoardRow.id);
       }
 
-      // Resetar os estados da transferência em massa
       setIsBulkTransferActive(false);
       setBulkTargetUserId(null);
       setSelectedLeadIds([]);
@@ -1137,7 +1093,7 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       id: `hist_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       text: `Admin: ${message}`,
       date: new Date().toISOString(),
-      type: 'Sistema' // Usamos Sistema para renderizar como texto padrão
+      type: 'Sistema' 
     });
     
     setBoardData(updatedBoard);
@@ -1152,43 +1108,60 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
   return (
     <View style={[styles.container, currentTheme.container]}>
       
-      {/* ===== INÍCIO DO CABEÇALHO CONDICIONAL ===== */}
       {isMobile ? (
-        // LAYOUT EXCLUSIVO PARA CELULAR (Organizado em 3 linhas compactas)
         <View style={[styles.topHeaderMobileContainer, currentTheme.topHeader]}>
-          
-          {/* 1ª Linha: Menu + Logo + Notificações + DarkMode Toggle */}
           <View style={styles.mobileRowTop}>
             <View style={styles.headerLeftGroup}>
               <TouchableOpacity style={styles.menuButton} onPress={openSidebar}>
                 <Text style={[styles.menuIcon, currentTheme.menuIcon]}>☰</Text>
               </TouchableOpacity>
-              <Text style={styles.logoText3D}>ALÊ CRM</Text>
+              <Image source={require('../../assets/logoCRM.png')} style={styles.logoImage} resizeMode="contain" />
             </View>
             
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <TouchableOpacity 
-                style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
-                onPress={() => toggleDarkMode(!isDarkMode)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
-                <Text style={styles.iconBtnText}>🔔</Text>
-                {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationBadgeText}>
-                      {activeNotifications.length + systemNotifications.length + adminNotifications.length}
-                    </Text>
+            <TouchableOpacity 
+              style={[styles.themeToggleButtonFancy, currentTheme.themeToggleButtonFancy]} 
+              onPress={() => toggleDarkMode(!isDarkMode)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.themeToggleInner}>
+                {isDarkMode ? (
+                  <View style={styles.sunContainer}>
+                    <View style={styles.sunCore} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '0deg' }] }]} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '45deg' }] }]} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '90deg' }] }]} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '135deg' }] }]} />
+                  </View>
+                ) : (
+                  <View style={styles.moonContainer}>
+                    <View style={styles.moonCrescent} />
                   </View>
                 )}
-              </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+
+              <TouchableOpacity 
+              style={[styles.notificationBtnFancy, currentTheme.notificationBtnFancy]} 
+              onPress={() => setIsNotifModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.bellContainer}>
+                <View style={[styles.bellTop, { backgroundColor: isDarkMode ? '#cbd5e1' : '#475569' }]} />
+                <View style={[styles.bellBottom, { backgroundColor: isDarkMode ? '#cbd5e1' : '#475569' }]} />
+              </View>
+              
+              {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {activeNotifications.length + systemNotifications.length + adminNotifications.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
             </View>
           </View>
 
-          {/* 2ª Linha: Busca + Filtro (100% da largura) */}
           <View style={styles.mobileRowMiddle}>
             <View style={[styles.searchContainer, currentTheme.searchContainer]}>
               <TextInput
@@ -1209,7 +1182,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
             </TouchableOpacity>
           </View>
 
-          {/* 3ª Linha: Ações de Lixeira, Importar, Transferir Leads (se admin) e Novo */}
           <View style={styles.mobileRowBottom}>
             {userProfile?.role === 'admin' && (
               <View style={{ position: 'relative', flex: 1 }}>
@@ -1264,13 +1236,12 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
         </View>
       ) : (
-        // LAYOUT EXCLUSIVO PARA COMPUTADOR
         <View style={[styles.topHeader, currentTheme.topHeader]}>
           <View style={styles.headerLeftGroup}>
             <TouchableOpacity style={styles.menuButton} onPress={openSidebar}>
               <Text style={[styles.menuIcon, currentTheme.menuIcon]}>☰</Text>
             </TouchableOpacity>
-            <Text style={styles.logoText3D}>ALÊ CRM</Text>
+            <Image source={require('../../assets/logoCRM.png')} style={styles.logoImage} resizeMode="contain" />
 
             <View style={styles.headerCenter}>
               <View style={[styles.searchContainer, currentTheme.searchContainer]}>
@@ -1295,15 +1266,37 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 
           <View style={styles.headerRight}>
             <TouchableOpacity 
-              style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
+              style={[styles.themeToggleButtonFancy, currentTheme.themeToggleButtonFancy]} 
               onPress={() => toggleDarkMode(!isDarkMode)}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
             >
-              <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
+              <View style={styles.themeToggleInner}>
+                {isDarkMode ? (
+                  <View style={styles.sunContainer}>
+                    <View style={styles.sunCore} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '0deg' }] }]} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '45deg' }] }]} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '90deg' }] }]} />
+                    <View style={[styles.sunRay, { transform: [{ rotate: '135deg' }] }]} />
+                  </View>
+                ) : (
+                  <View style={styles.moonContainer}>
+                    <View style={styles.moonCrescent} />
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotifModalVisible(true)}>
-              <Text style={styles.iconBtnText}>🔔</Text>
+            <TouchableOpacity 
+              style={[styles.notificationBtnFancy, currentTheme.notificationBtnFancy]} 
+              onPress={() => setIsNotifModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.bellContainer}>
+                <View style={[styles.bellTop, { backgroundColor: isDarkMode ? '#cbd5e1' : '#475569' }]} />
+                <View style={[styles.bellBottom, { backgroundColor: isDarkMode ? '#cbd5e1' : '#475569' }]} />
+              </View>
+              
               {(activeNotifications.length + systemNotifications.length + adminNotifications.length) > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationBadgeText}>
@@ -1313,7 +1306,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
               )}
             </TouchableOpacity>
 
-            {/* O BOTÃO DISPARAZAP SÓ APARECE SE FOR NO ELECTRON E USUÁRIO LOGADO PRÓPRIO */}
             {Platform.OS === 'web' && isElectron && currentUserId === loggedUserId && (
               <TouchableOpacity 
                 style={[styles.actionBtnSecondary, { backgroundColor: '#16a34a', borderColor: '#16a34a' }]} 
@@ -1376,13 +1368,9 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
           </View>
         </View>
       )}
-      {/* ===== FIM DO CABEÇALHO ===== */}
 
-      {/* RENDERIZAÇÃO CONDICIONAL DAS TELAS */}
-      
       {activeView === 'kanban' && boardData && boardData.phases && (
         <ScrollView ref={boardScrollRef} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} style={styles.boardContainer}>
-          {/* PROTEGIDO: Adicionado ?. em filteredBoardData e phases */}
           {filteredBoardData?.phases?.map((phase) => (
             <KanbanColumn 
               key={phase.id} 
@@ -1407,11 +1395,14 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
                 setSelectedLeadIds(prev => prev.filter(id => !phaseClientIds.includes(id)));
               }}
               isDarkMode={isDarkMode}
+              isAdmin={userProfile?.role === 'admin'}
             />
           ))}
-          <TouchableOpacity style={[styles.addPhaseButton, currentTheme.addPhaseButton]} onPress={() => setIsPhaseModalVisible(true)}>
-            <Text style={[styles.addPhaseText, currentTheme.addPhaseText]}>+ Adicionar Fase</Text>
-          </TouchableOpacity>
+          {userProfile?.role === 'admin' && (
+            <TouchableOpacity style={[styles.addPhaseButton, currentTheme.addPhaseButton]} onPress={() => setIsPhaseModalVisible(true)}>
+              <Text style={[styles.addPhaseText, currentTheme.addPhaseText]}>+ Adicionar Fase</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       )}
 
@@ -1424,15 +1415,13 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       )}
 
       {activeView === 'configuracao' && (
-  <Configuracao isDarkMode={isDarkMode} onConfigSaved={() => {
-    // Atualiza os dados do perfil sem quebrar o kanban
-    fetchInitialData();
-  }} />
-)}
+        <Configuracao isDarkMode={isDarkMode} onConfigSaved={() => {
+          fetchInitialData();
+        }} />
+      )}
 
       {activeView === 'admin_panel' && (<AdminPanel isDarkMode={isDarkMode} />)}
 
-      {/* BOTÃO FLUTUANTE DE TRANSFERÊNCIA EM MASSA */}
       {isBulkTransferActive && selectedLeadIds.length > 0 && bulkTargetUserId && (
         <TouchableOpacity 
           style={styles.floatingBulkBtn} 
@@ -1442,7 +1431,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         </TouchableOpacity>
       )}
 
-      {/* ===== MODAL DO MENU LATERAL ANIMADO E RESPONSIVO ===== */}
       {isMenuRendered && (
         <View style={styles.sidebarOverlay}>
           <Animated.View style={[styles.sidebarBackdrop, { opacity: backdropOpacity }]}>
@@ -1456,7 +1444,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
             { transform: [{ translateX: slideAnim }] }
           ]}>
             
-            {/* TOPO DO MENU: NOME E E-MAIL DO USUÁRIO */}
             <View style={[styles.sidebarHeaderContainer, currentTheme.sidebarHeaderContainer]}>
               <Text style={[styles.sidebarUserName, currentTheme.sidebarUserName, isMobile && styles.sidebarUserNameMobile]} numberOfLines={1}>
                 Olá, {userProfile?.name ? userProfile.name.trim().split(' ')[0] : (userProfile?.email ? userProfile.email.split('@')[0] : 'Usuário')}
@@ -1504,14 +1491,13 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
                     <Text style={[styles.adminMenuItemText, currentTheme.adminMenuItemText, isMobile && styles.adminMenuItemTextMobile]}>Painel Administrativo</Text>
                   </TouchableOpacity>
 
-                  {/* Seção Simples e Moderna de Vendedores */}
                   <View style={[styles.sellersBox, currentTheme.sellersBox]}>
                     <TouchableOpacity 
                       style={[styles.sellersHeaderToggle, isMobile && styles.sellersHeaderToggleMobile]}
                       onPress={() => setIsSellersDropdownOpen(!isSellersDropdownOpen)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.sellersHeaderTitle, currentTheme.sellersHeaderTitle, isMobile && styles.sellersHeaderTitleMobile]}>CRM dos Vendedores</Text>
+                      <Text style={[styles.sellersHeaderTitle, currentTheme.sellersHeaderTitle, isMobile && styles.sellersHeaderTitleMobile]}>Painel Geral</Text>
                       <Text style={[styles.sellersHeaderArrow, currentTheme.sellersHeaderArrow]}>{isSellersDropdownOpen ? '▴' : '▾'}</Text>
                     </TouchableOpacity>
                     
@@ -1584,21 +1570,22 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
       <ImportLeadsModal visible={isImportModalVisible} onClose={() => setIsImportModalVisible(false)} onImport={handleImportLeads} isDarkMode={isDarkMode} />
       <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} isDarkMode={isDarkMode} />
       <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} isAdmin={userProfile?.role === 'admin'} usersList={usersList} currentUserId={currentUserId} onTransferLead={handleTransferLead} isDarkMode={isDarkMode} />
+      
       <NotificationModal 
-    visible={isNotifModalVisible} 
-    onClose={() => setIsNotifModalVisible(false)} 
-    notifications={[...(activeNotifications || []), ...(systemNotifications || []), ...(adminNotifications || [])]} 
-    historyNotifications={boardData?.notificationHistory || []}
-    onDismiss={handleDismissNotification}
-    onDismissSystem={handleDismissSystem} 
-    onApproveReset={handleApproveReset} 
-    onRejectReset={handleRejectReset} 
-    onApproveNameChange={handleApproveNameChange}
-    onRejectNameChange={handleRejectNameChange}
-    onDismissNameChangeAlert={handleDismissNameChangeAlert}
-    onClearHistory={handleClearNotificationHistory}
-    isDarkMode={isDarkMode}
-  />
+        visible={isNotifModalVisible} 
+        onClose={() => setIsNotifModalVisible(false)} 
+        notifications={[...(activeNotifications || []), ...(systemNotifications || []), ...(adminNotifications || [])]} 
+        historyNotifications={boardData?.notificationHistory || []}
+        onDismiss={handleDismissNotification}
+        onDismissSystem={handleDismissSystem} 
+        onApproveReset={handleApproveReset} 
+        onRejectReset={handleRejectReset} 
+        onApproveNameChange={handleApproveNameChange}
+        onRejectNameChange={handleRejectNameChange}
+        onDismissNameChangeAlert={handleDismissNameChangeAlert}
+        onClearHistory={handleClearNotificationHistory}
+        isDarkMode={isDarkMode}
+      />
 
       <WhatsAppBulkModal 
         visible={isWhatsAppModalVisible} 
@@ -1611,7 +1598,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         isDarkMode={isDarkMode}
       />
 
-      {/* ===== MODAL DE TROCA DE SENHA ===== */}
       {isChangePassModalVisible && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, currentTheme.modalContent]}>
@@ -1647,7 +1633,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         </View>
       )}
 
-      {/* MODAL DE CONFIRMAÇÃO DE LOGOUT */}
       {isLogoutModalVisible && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, currentTheme.modalContent]}>
@@ -1658,18 +1643,14 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
                 <Text style={[styles.cancelBtnText, currentTheme.cancelBtnText]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmBtn} onPress={async () => {
-                
-                // 1. DESCONECTA O WHATSAPP AUTOMATICAMENTE DO SERVIDOR
                 try {
                   await fetch('http://localhost:3001/desconectar', { method: 'POST' });
                 } catch (e) {
                   console.log('API do WhatsApp offline ou inacessível no momento do logout:', e.message);
                 }
 
-                // 2. ENCERRA A SESSÃO DO SUPABASE
                 await supabase.auth.signOut();
                 setIsLogoutModalVisible(false);
-                
               }}>
                 <Text style={styles.confirmBtnText}>Sair</Text>
               </TouchableOpacity>
@@ -1678,7 +1659,6 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
         </View>
       )}
 
-      {/* MODAL DE ALERTA CUSTOMIZADO COM FADE */}
       {alertConfig.visible && (
         <View style={styles.successAlertOverlay}>
           <Animated.View style={[styles.successAlertBox, currentTheme.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
@@ -1700,440 +1680,132 @@ const filteredBoardData = boardData ? getFilteredBoard() : { phases: [] };
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1, 
-  },
-  
-  /* --- ESTILOS DO CABEÇALHO DESKTOP (Preservados) --- */
-  topHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    zIndex: 50,
-  },
-  headerLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-  },
-  menuButton: {
-    padding: 2,
-  },
-  menuIcon: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  logoText3D: {
-    fontFamily: MODERN_FONT,
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#1e3a8a', 
-    fontStyle: 'italic',
-    letterSpacing: -1,
+  container: { flex: 1 },
+
+  logoImage: {
+    width: 110,
+    height: 40,
+    marginLeft: 8,
+    resizeMode: 'contain',
     ...Platform.select({
-      web: { textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb' }
+      web: { objectFit: 'contain' }
     })
   },
-  headerCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 6,
-    flex: 1,
-    height: 32,
-    paddingHorizontal: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontFamily: MODERN_FONT,
-    fontSize: 12,
-    ...Platform.select({ web: { outlineStyle: 'none' } })
-  },
-  filterBtn: {
-    borderWidth: 1,
-    borderRadius: 6,
-    height: 32,
-    paddingHorizontal: 10,
+
+  notificationBtnFancy: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
-    marginLeft: 6,
-  },
-  filterBtnActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
-  },
-  filterBtnText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  filterBtnTextActive: {
-    color: '#2563EB',
-  },
-  headerRight: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  iconBtn: {
-    padding: 4,
+    borderWidth: 1,
     position: 'relative',
+    ...Platform.select({
+      web: { transition: 'all 0.2s ease', cursor: 'pointer' }
+    })
   },
-  iconBtnText: {
-    fontSize: 16,
-  },
-  notificationBadge: {
-    position: 'absolute', 
-    top: 0, 
-    right: 0,
-    backgroundColor: '#ef4444', 
-    borderRadius: 8, 
-    width: 14, 
-    height: 14,
-    alignItems: 'center', 
+  bellContainer: { width: 16, height: 18, justifyContent: 'center', alignItems: 'center' },
+  bellTop: { width: 14, height: 10, borderTopLeftRadius: 7, borderTopRightRadius: 7, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  bellBottom: { width: 4, height: 3, marginTop: 1, borderRadius: 2 },
+
+  themeToggleButtonFancy: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
-    borderWidth: 1, 
-    borderColor: '#ffffff'
-  },
-  notificationBadgeText: { 
-    color: '#ffffff', 
-    fontSize: 8, 
-    fontWeight: 'bold',
-    fontFamily: MODERN_FONT
-  },
-  actionBtnSecondary: {
+    alignItems: 'center',
     borderWidth: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    ...Platform.select({
+      web: { transition: 'all 0.2s ease', cursor: 'pointer', boxShadow: '0px 2px 5px rgba(0,0,0,0.05)' }
+    })
   },
-  actionBtnSecondaryText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  actionBtnPrimary: {
-    backgroundColor: '#2563eb', 
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  actionBtnPrimaryText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
+  themeToggleInner: { width: 20, height: 20, justifyContent: 'center', alignItems: 'center' },
+  sunContainer: { width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
+  sunCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fbbf24' },
+  sunRay: { position: 'absolute', width: 2, height: 14, backgroundColor: '#fbbf24', borderRadius: 1 },
+  moonContainer: { width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
+  moonCrescent: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#64748b', borderRightColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '-45deg' }] },
+  
+  topHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, zIndex: 50 },
+  headerLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  menuButton: { padding: 2 },
+  menuIcon: { fontSize: 20, fontWeight: 'bold' },
+  logoText3D: { fontFamily: MODERN_FONT, fontSize: 18, fontWeight: '900', color: '#1e3a8a', fontStyle: 'italic', letterSpacing: -1, ...Platform.select({ web: { textShadow: '1px 1px 0px #3b82f6, 2px 2px 0px #2563eb' } }) },
+  headerCenter: { flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 6, flex: 1, height: 32, paddingHorizontal: 8 },
+  searchInput: { flex: 1, fontFamily: MODERN_FONT, fontSize: 12, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  filterBtn: { borderWidth: 1, borderRadius: 6, height: 32, paddingHorizontal: 10, justifyContent: 'center', marginLeft: 6 },
+  filterBtnActive: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
+  filterBtnText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
+  filterBtnTextActive: { color: '#2563EB' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  iconBtn: { padding: 4, position: 'relative' },
+  iconBtnText: { fontSize: 16 },
+  notificationBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: '#ef4444', borderRadius: 8, width: 14, height: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#ffffff' },
+  notificationBadgeText: { color: '#ffffff', fontSize: 8, fontWeight: 'bold', fontFamily: MODERN_FONT },
+  actionBtnSecondary: { borderWidth: 1, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6 },
+  actionBtnSecondaryText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700' },
+  actionBtnPrimary: { backgroundColor: '#2563eb', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 },
+  actionBtnPrimaryText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', color: '#ffffff' },
 
-  /* --- NOVOS ESTILOS EXCLUSIVOS DO CABEÇALHO MOBILE --- */
-  topHeaderMobileContainer: {
-    paddingHorizontal: 10,
-    paddingTop: 6,      
-    paddingBottom: 8,   
-    borderBottomWidth: 1,
-    zIndex: 50,
-  },
-  mobileRowTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,    
-  },
-  mobileRowMiddle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 6,    
-  },
-  mobileRowBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-    width: '100%',
-  },
-  mobileActionBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6, 
-  },
+  topHeaderMobileContainer: { paddingHorizontal: 10, paddingTop: 6, paddingBottom: 8, borderBottomWidth: 1, zIndex: 50 },
+  mobileRowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  mobileRowMiddle: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 6 },
+  mobileRowBottom: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, width: '100%' },
+  mobileActionBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
 
-  /* --- ÁREA DO KANBAN --- */
-  boardContainer: {
-    flex: 1,
-    paddingTop: 16, 
-    paddingHorizontal: 16,
-  },
-  addPhaseButton: {
-    width: 300,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderStyle: 'dashed',
-    borderWidth: 2,
-    maxHeight: 52,
-    marginRight: 24,
-  },
-  addPhaseText: {
-    fontFamily: MODERN_FONT,
-    fontWeight: '700',
-    fontSize: 14,
-  },
+  boardContainer: { flex: 1, paddingTop: 16, paddingHorizontal: 16 },
+  addPhaseButton: { width: 300, borderRadius: 12, padding: 16, alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed', borderWidth: 2, maxHeight: 52, marginRight: 24 },
+  addPhaseText: { fontFamily: MODERN_FONT, fontWeight: '700', fontSize: 14 },
 
-  /* --- ESTILOS DO MENU LATERAL (ANIMAÇÃO E RESPONSIVIDADE) --- */
-  sidebarOverlay: { 
-    position: 'absolute', 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
-    zIndex: 9999, 
-    flexDirection: 'row' 
-  },
-  sidebarBackdrop: { 
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)' 
-  },
-  sidebarContent: { 
-    position: 'absolute', 
-    top: 0, 
-    left: 0, 
-    bottom: 0, 
-    width: 230, 
-    paddingHorizontal: 14,
-    paddingTop: 20,
-    paddingBottom: 20,
-    justifyContent: 'space-between',
-    zIndex: 10000,
-  },
-  sidebarContentMobile: {
-    width: '78%', // Largura ideal e confortável para toque em celulares
-    maxWidth: 300,
-    paddingHorizontal: 18,
-    paddingTop: 24,
-    paddingBottom: 24,
-  },
-  sidebarHeaderContainer: {
-    marginBottom: 12,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-  },
-  sidebarUserName: { 
-    fontFamily: MODERN_FONT, 
-    fontSize: 18, 
-    fontWeight: '800', 
-    letterSpacing: -0.3,
-  },
-  sidebarUserNameMobile: {
-    fontSize: 16, // Ajuste proporcional para telas menores sem perder legibilidade
-  },
-  sidebarUserEmail: {
-    fontFamily: MODERN_FONT,
-    fontSize: 10,
-    marginTop: 2,
-  },
-  sidebarUserEmailMobile: {
-    fontSize: 11,
-  },
-  sidebarMenuContainer: {
-    flex: 1,
-    gap: 6,
-    flexShrink: 1,
-    marginBottom: 8,
-  },
-  menuItem: { 
-    paddingVertical: 10, 
-    paddingHorizontal: 12, 
-    borderRadius: 8, 
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  menuItemMobile: {
-    paddingVertical: 13, // Área de toque maior e mais confortável no celular
-    paddingHorizontal: 14,
-  },
-  menuItemActive: { 
-    backgroundColor: '#f8fafc', 
-    borderColor: '#e2e8f0',
-    borderLeftWidth: 3, 
-    borderLeftColor: '#2563eb' 
-  },
-  menuItemActiveDark: {
-    backgroundColor: '#334155',
-    borderColor: '#475569',
-    borderLeftWidth: 3,
-    borderLeftColor: '#3b82f6'
-  },
-  menuItemText: { 
-    fontFamily: MODERN_FONT, 
-    fontSize: 12, 
-    fontWeight: '600', 
-  },
-  menuItemTextMobile: {
-    fontSize: 14, // Fonte ampliada no mobile para melhor visualização
-  },
-  menuItemTextActive: { 
-    color: '#2563eb',
-    fontWeight: '700',
-  },
-  adminSectionContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    gap: 6,
-    flexShrink: 1,
-  },
-  adminMenuItem: {
-    borderWidth: 1,
-    paddingVertical: 9,
-  },
-  adminMenuItemText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  adminMenuItemTextMobile: {
-    fontSize: 14,
-  },
-  sellersBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: 'hidden',
-    flexShrink: 1,
-  },
-  sellersHeaderToggle: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-  },
-  sellersHeaderToggleMobile: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  sellersHeaderTitle: {
-    fontFamily: MODERN_FONT,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  sellersHeaderTitleMobile: {
-    fontSize: 13,
-  },
-  sellersHeaderArrow: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  sellersDropdownList: {
-    maxHeight: 150,
-    minHeight: 40,
-    borderTopWidth: 1,
-    paddingVertical: 2,
-  },
-  sellerItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    gap: 6,
-  },
-  sellerItemRowMobile: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  sellerIndicatorDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#cbd5e1',
-  },
-  sellerIndicatorDotActive: {
-    backgroundColor: '#2563eb',
-  },
-  sellerItemText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 11,
-    fontWeight: '500',
-    flex: 1,
-  },
-  sellerItemTextMobile: {
-    fontSize: 13,
-  },
-  sellerItemTextActive: {
-    fontWeight: '700',
-  },
-  sidebarFooterContainer: {
-    paddingTop: 10,
-    borderTopWidth: 1,
-    gap: 6,
-  },
-  sidebarFooterButtonChangePass: {
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  sidebarFooterButtonMobile: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  sidebarFooterButtonChangePassText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  sidebarFooterButtonTextMobile: {
-    fontSize: 13,
-  },
-  sidebarFooterButtonLogout: {
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  sidebarFooterButtonLogoutText: {
-    fontFamily: MODERN_FONT,
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  sidebarOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, flexDirection: 'row' },
+  sidebarBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.45)' },
+  sidebarContent: { position: 'absolute', top: 0, left: 0, bottom: 0, width: 180, paddingHorizontal: 14, paddingTop: 20, paddingBottom: 20, justifyContent: 'space-between', zIndex: 10000 },
+  sidebarContentMobile: { width: '60%', maxWidth: 300, paddingHorizontal: 18, paddingTop: 24, paddingBottom: 24 },
+  sidebarHeaderContainer: { marginBottom: 12, paddingBottom: 10, borderBottomWidth: 1 },
+  sidebarUserName: { fontFamily: MODERN_FONT, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  sidebarUserNameMobile: { fontSize: 23 },
+  sidebarUserEmail: { fontFamily: MODERN_FONT, fontSize: 10, marginTop: 2 },
+  sidebarUserEmailMobile: { fontSize: 13 },
+  sidebarMenuContainer: { flex: 1, gap: 6, flexShrink: 1, marginBottom: 8 },
+  menuItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: 'transparent' },
+  menuItemMobile: { paddingVertical: 12, paddingHorizontal: 14 },
+  menuItemActive: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', borderLeftWidth: 3, borderLeftColor: '#2563eb' },
+  menuItemActiveDark: { backgroundColor: '#334155', borderColor: '#475569', borderLeftWidth: 3, borderLeftColor: '#3b82f6' },
+  menuItemText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '600' },
+  menuItemTextMobile: { fontSize: 18 },
+  menuItemTextActive: { color: '#2563eb', fontWeight: '700' },
+  adminSectionContainer: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, gap: 6, flexShrink: 1 },
+  adminMenuItem: { borderWidth: 1, paddingVertical: 9 },
+  adminMenuItemText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
+  adminMenuItemTextMobile: { fontSize: 15, alignSelf: 'center' },
+  sellersBox: { borderRadius: 30, borderWidth: 1, overflow: 'hidden', flexShrink: 1, alignItems: 'center' },
+  sellersHeaderToggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12 },
+  sellersHeaderToggleMobile: { paddingVertical: 12, paddingHorizontal: 14 },
+  sellersHeaderTitle: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  sellersHeaderTitleMobile: { fontSize: 15 },
+  sellersHeaderArrow: { fontSize: 11, fontWeight: 'bold' },
+  sellersDropdownList: { maxHeight: 150, minHeight: 40, borderTopWidth: 1, paddingVertical: 2 },
+  sellerItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 10, gap: 6 },
+  sellerItemRowMobile: { paddingVertical: 10, paddingHorizontal: 12 },
+  sellerIndicatorDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#cbd5e1' },
+  sellerIndicatorDotActive: { backgroundColor: '#2563eb' },
+  sellerItemText: { fontFamily: MODERN_FONT, fontSize: 11, fontWeight: '500', flex: 1 },
+  sellerItemTextMobile: { fontSize: 13 },
+  sellerItemTextActive: { fontWeight: '700' },
+  sidebarFooterContainer: { paddingTop: 10, borderTopWidth: 1, gap: 6 },
+  sidebarFooterButtonChangePass: { paddingVertical: 9, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1 },
+  sidebarFooterButtonMobile: { paddingVertical: 12, paddingHorizontal: 14 },
+  sidebarFooterButtonChangePassText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '600' },
+  sidebarFooterButtonTextMobile: { fontSize: 15 },
+  sidebarFooterButtonLogout: { paddingVertical: 9, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1 },
+  sidebarFooterButtonLogoutText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
 
-  /* --- ESTILOS DOS MODAIS CUSTOMIZADOS --- */
-  modalOverlay: { 
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
-    backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 
-  },
-  modalContent: { 
-    padding: 24, borderRadius: 16, width: '90%', maxWidth: 320, 
-    alignItems: 'center' 
-  },
+  modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 },
+  modalContent: { padding: 24, borderRadius: 16, width: '90%', maxWidth: 320, alignItems: 'center' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   modalText: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
-  passInput: {
-    width: '100%',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontFamily: MODERN_FONT,
-    ...Platform.select({ web: { outlineStyle: 'none' } })
-  },
+  passInput: { width: '100%', borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 12, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center' },
   cancelBtnText: { fontWeight: 'bold' },
@@ -2148,79 +1820,27 @@ const styles = StyleSheet.create({
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
   successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
 
-  bulkDropdownMenu: {
-    position: 'absolute',
-    top: 40,
-    left: 0,
-    right: 0,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 6,
-    zIndex: 1000,
-  },
-  bulkDropdownTitle: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    paddingHorizontal: 4,
-  },
-  bulkDropdownItem: {
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 4,
-  },
-  bulkDropdownItemText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  floatingBulkBtn: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    backgroundColor: '#2563eb',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    zIndex: 999,
-    ...Platform.select({ web: { boxShadow: '0px 6px 16px rgba(37, 99, 235, 0.4)' } })
-  },
-  floatingBulkBtnText: {
-    color: '#ffffff',
-    fontWeight: '800',
-    fontSize: 14,
-    fontFamily: MODERN_FONT,
-  },
-  themeToggleButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  themeToggleIcon: {
-    fontSize: 15,
-  },
-  blockTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center'
-  },
-  blockText: {
-    fontSize: 16,
-    textAlign: 'center',
-    maxWidth: 400
-  }
+  bulkDropdownMenu: { position: 'absolute', top: 40, left: 0, right: 0, borderWidth: 1, borderRadius: 8, padding: 6, zIndex: 1000 },
+  bulkDropdownTitle: { fontSize: 11, fontWeight: 'bold', marginBottom: 4, paddingHorizontal: 4 },
+  bulkDropdownItem: { paddingVertical: 8, paddingHorizontal: 6, borderRadius: 4 },
+  bulkDropdownItemText: { fontSize: 12, fontWeight: '600' },
+  floatingBulkBtn: { position: 'absolute', bottom: 24, right: 24, backgroundColor: '#2563eb', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 30, zIndex: 999, ...Platform.select({ web: { boxShadow: '0px 6px 16px rgba(37, 99, 235, 0.4)' } }) },
+  floatingBulkBtnText: { color: '#ffffff', fontWeight: '800', fontSize: 14, fontFamily: MODERN_FONT },
+  themeToggleButton: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center' },
+  themeToggleIcon: { fontSize: 15 },
+  blockTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
+  blockText: { fontSize: 16, textAlign: 'center', maxWidth: 400 }
 });
 
-/* Estilos para o Modo Claro */
 const lightStyles = StyleSheet.create({
   container: { backgroundColor: '#F9FAFB' },
   topHeader: { backgroundColor: '#ffffff', borderBottomColor: '#e2e8f0', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } }) },
   menuIcon: { color: '#334155' },
   themeToggleButton: { backgroundColor: '#f1f5f9' },
+  themeToggleButtonFancy: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
   searchContainer: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
   searchInput: { color: '#0f172a' },
+  notificationBtnFancy: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
   filterBtn: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
   filterBtnText: { color: '#475569' },
   actionBtnSecondary: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
@@ -2264,7 +1884,6 @@ const lightStyles = StyleSheet.create({
   blockText: { color: '#64748b' }
 });
 
-/* Estilos para o Modo Escuro */
 const darkStyles = StyleSheet.create({
   container: { backgroundColor: '#0f172a' },
   topHeader: { backgroundColor: '#1e293b', borderBottomColor: '#334155', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.2)' } }) },
@@ -2274,8 +1893,10 @@ const darkStyles = StyleSheet.create({
   searchInput: { color: '#f8fafc' },
   filterBtn: { backgroundColor: '#1e293b', borderColor: '#334155' },
   filterBtnText: { color: '#94a3b8' },
+  themeToggleButtonFancy: { backgroundColor: '#1e293b', borderColor: '#334155' },
   actionBtnSecondary: { backgroundColor: '#1e293b', borderColor: '#334155' },
   actionBtnSecondaryText: { color: '#cbd5e1' },
+  notificationBtnFancy: { backgroundColor: '#1e293b', borderColor: '#334155' },
   addPhaseButton: { backgroundColor: 'rgba(30, 41, 59, 0.5)', borderColor: '#334155' },
   addPhaseText: { color: '#94a3b8' },
   sidebarContent: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '6px 0px 25px rgba(0,0,0,0.4)' } }) },
@@ -2312,5 +1933,5 @@ const darkStyles = StyleSheet.create({
   successAlertTitle: { color: '#f8fafc' },
   successAlertMessage: { color: '#94a3b8' },
   blockTitle: { color: '#f8fafc' },
-  blockText: { color: '#94a3b8' }
+  blockText: { color: '#94a3b8' },
 });

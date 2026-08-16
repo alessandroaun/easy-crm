@@ -160,6 +160,8 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
     let estagnadosNovoCliente = [];
     let contatosRealizados = [];
     let standByAlerts = [];
+    let boletosProximos = [];
+    let parcelasAtrasadas = [];
 
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -223,8 +225,65 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
             });
           }
 
-          if (isFechado) {
-            vendasMes += creditValue;
+          // Cálculo da Meta (Somatório Exato dos Contratos)
+          if (client.dealClosed || isFechado) {
+            let sumContratos = 0;
+            if (client.contracts && client.contracts.length > 0) {
+              client.contracts.forEach(c => {
+                sumContratos += parseMoney(c.valorContrato);
+              });
+            }
+            vendasMes += sumContratos > 0 ? sumContratos : creditValue;
+          }
+
+          // Inteligência de Pós-Venda
+          if (client.dealClosed && client.contracts) {
+            client.contracts.forEach((contract, idx) => {
+              // 1. Alerta de Vencimento
+              const dia = parseInt(contract.diaVencimento);
+              if (dia > 0 && dia <= 31) {
+                const nextVencimento = new Date(now.getFullYear(), now.getMonth(), dia);
+                if (now.getDate() > dia + 1) {
+                  nextVencimento.setMonth(nextVencimento.getMonth() + 1);
+                }
+                const diffTime = nextVencimento - now;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays <= 5 && diffDays >= 0) {
+                  boletosProximos.push({ 
+                    clientName: client.name, 
+                    contractCat: contract.categoria || `Contrato ${idx + 1}`,
+                    diffDays, 
+                    dia,
+                    originalPhaseId: phase.id,
+                    client
+                  });
+                }
+              }
+
+              // 2. Alerta de Atraso no Acompanhamento (> 2 meses sem atualizar pagamento)
+              if (client.dealClosedDate) {
+                const closedDate = new Date(client.dealClosedDate);
+                if (!isNaN(closedDate.getTime())) {
+                  const monthsPassed = (now.getFullYear() - closedDate.getFullYear()) * 12 + (now.getMonth() - closedDate.getMonth());
+                  const parcelasPagasCount = (contract.parcelasPagas || []).filter(p => p).length;
+
+                  if (monthsPassed >= 2) {
+                    const gap = monthsPassed - parcelasPagasCount;
+                    if (gap >= 2) {
+                      parcelasAtrasadas.push({
+                        clientName: client.name,
+                        contractCat: contract.categoria || `Contrato ${idx + 1}`,
+                        monthsPassed,
+                        parcelasPagasCount,
+                        originalPhaseId: phase.id,
+                        client
+                      });
+                    }
+                  }
+                }
+              }
+            });
           }
 
           if (isNegociacao) {
@@ -254,7 +313,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
 
     return { 
       inactive, noContact, hot, highChance, todayAppts, calls, whatsapps, sims, overdue, allClients,
-      vendasMes, negMesAtual, negMesesAnteriores, estagnadosNovoCliente, contatosRealizados, standByAlerts 
+      vendasMes, negMesAtual, negMesesAnteriores, estagnadosNovoCliente, contatosRealizados, standByAlerts, boletosProximos, parcelasAtrasadas 
     };
   }, [boardData]);
 
@@ -471,6 +530,38 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
 
               <Text style={[styles.sectionTitle, themeStyles.sectionTitle, { marginTop: 28 }]}>Alertas e Oportunidades</Text>
 
+              {/* PÓS-VENDA: BOLETOS E ACOMPANHAMENTO */}
+              {metrics.boletosProximos.length > 0 && (
+                metrics.boletosProximos.slice(0, 2).map((alert, idx) => (
+                  <TouchableOpacity 
+                    key={`bol_${idx}`} 
+                    style={[styles.alertCardBoleto, themeStyles.alertCardBoleto]} 
+                    onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
+                  >
+                    <Text style={[styles.alertTitleBoleto, themeStyles.alertTitleBoleto]}>🗓️ Vencimento Próximo</Text>
+                    <Text style={[styles.alertTextBoleto, themeStyles.alertTextBoleto]}>
+                      O boleto de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> ({alert.contractCat}) vence {alert.diffDays === 0 ? 'hoje' : `em ${alert.diffDays} dia(s)`}.
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+
+              {metrics.parcelasAtrasadas.length > 0 && (
+                metrics.parcelasAtrasadas.slice(0, 2).map((alert, idx) => (
+                  <TouchableOpacity 
+                    key={`atr_${idx}`} 
+                    style={[styles.alertCardDanger, themeStyles.alertCardDanger]} 
+                    onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
+                  >
+                    <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atualize o Pós-Venda</Text>
+                    <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
+                      O contrato de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> fechou há {alert.monthsPassed} meses, mas só {alert.parcelasPagasCount} parcela(s) constam como paga(s).
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+
+              {/* ALERTAS TRADICIONAIS */}
               {metrics.estagnadosNovoCliente.length > 0 && (
                 <View style={[styles.alertCardDanger, themeStyles.alertCardDanger]}>
                   <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atenção Crítica de Base</Text>
@@ -495,7 +586,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
                 ))
               )}
 
-              {metrics.estagnadosNovoCliente.length === 0 && metrics.standByAlerts.length === 0 && (
+              {metrics.estagnadosNovoCliente.length === 0 && metrics.standByAlerts.length === 0 && metrics.boletosProximos.length === 0 && metrics.parcelasAtrasadas.length === 0 && (
                 <View style={[styles.emptyStateCard, themeStyles.emptyStateCard]}>
                   <Text style={[styles.emptyStateText, themeStyles.emptyStateText]}>✨ Pipeline saudável! Sem gargalos críticos no momento.</Text>
                 </View>
@@ -684,6 +775,10 @@ const styles = StyleSheet.create({
   alertTitleInfo: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', marginBottom: 6 },
   alertTextInfo: { fontFamily: MODERN_FONT, fontSize: 13, lineHeight: 20 },
 
+  alertCardBoleto: { borderRadius: 14, padding: 18, borderWidth: 1, marginBottom: 12, ...Platform.select({ web: { cursor: 'pointer' } }) },
+  alertTitleBoleto: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', marginBottom: 6 },
+  alertTextBoleto: { fontFamily: MODERN_FONT, fontSize: 13, lineHeight: 20 },
+
   emptyStateCard: { borderRadius: 14, padding: 20, borderWidth: 1, alignItems: 'center' },
   emptyStateText: { fontFamily: MODERN_FONT, fontSize: 13, textAlign: 'center' },
 
@@ -755,6 +850,9 @@ const lightStyles = StyleSheet.create({
   alertCardInfo: { backgroundColor: '#f0fdfa', borderColor: '#ccfbf1' },
   alertTitleInfo: { color: '#0f766e' },
   alertTextInfo: { color: '#115e59' },
+  alertCardBoleto: { backgroundColor: '#fffbeb', borderColor: '#fde68a' },
+  alertTitleBoleto: { color: '#b45309' },
+  alertTextBoleto: { color: '#92400e' },
   emptyStateCard: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
   emptyStateText: { color: '#64748b' },
   tabContentContainer: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
@@ -816,6 +914,9 @@ const darkStyles = StyleSheet.create({
   alertCardInfo: { backgroundColor: '#042f2e', borderColor: '#115e59' },
   alertTitleInfo: { color: '#5eead4' },
   alertTextInfo: { color: '#99f6e4' },
+  alertCardBoleto: { backgroundColor: '#422006', borderColor: '#713f12' },
+  alertTitleBoleto: { color: '#fcd34d' },
+  alertTextBoleto: { color: '#fde68a' },
   emptyStateCard: { backgroundColor: '#1e293b', borderColor: '#334155' },
   emptyStateText: { color: '#94a3b8' },
   tabContentContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },

@@ -26,12 +26,24 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
   const [ticketMedio, setTicketMedio] = useState('');
   const [conversionRateGoal, setConversionRateGoal] = useState('');
   const [goalHistory, setGoalHistory] = useState([]);
+  
+  const [hasPendingParamRequest, setHasPendingParamRequest] = useState(false);
 
   const [newPass, setNewPass] = useState('');
   const [newPassConfirm, setNewPassConfirm] = useState('');
   const [isChangingPass, setIsChangingPass] = useState(false);
 
   const [customModal, setCustomModal] = useState({ visible: false, title: '', message: '', type: 'info' });
+  
+  // Modal de Pedido de Parâmetros
+  const [isParamRequestModalVisible, setIsParamRequestModalVisible] = useState(false);
+  const [reqGoal, setReqGoal] = useState('');
+  const [reqCalls, setReqCalls] = useState('');
+  const [reqSims, setReqSims] = useState('');
+  const [reqNegs, setReqNegs] = useState('');
+  const [reqTicket, setReqTicket] = useState('');
+  const [reqConv, setReqConv] = useState('');
+  const [reqJustification, setReqJustification] = useState('');
 
   const showAlertModal = (title, message, type = 'info') => {
     setCustomModal({ visible: true, title, message, type });
@@ -94,6 +106,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
         setTicketMedio(p.ticketMedio || '100.000');
         setConversionRateGoal(p.conversionRateGoal || '12');
         setGoalHistory(p.goalHistory || []);
+        setHasPendingParamRequest(!!p.pendingRequest);
       } else {
         const defaultHistory = [
           { id: 1, month: 'Julho / 2026', goal: '2.000.000', reached: '2.430.000', status: 'success' },
@@ -142,19 +155,69 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
     }
   };
 
+  const openParamRequestModal = () => {
+    setReqGoal(monthlyGoal);
+    setReqCalls(dailyCalls);
+    setReqSims(dailySims);
+    setReqNegs(dailyNeg);
+    setReqTicket(ticketMedio);
+    setReqConv(conversionRateGoal);
+    setReqJustification('');
+    setIsParamRequestModalVisible(true);
+  };
+
+  const handleSubmitParamRequest = async () => {
+    if (!reqJustification.trim()) {
+      showAlertModal("Atenção", "Por favor, insira uma justificativa para a alteração.", "error");
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: configs } = await supabase.from('crm_boards').select('data_payload').eq('id', `config_${user.id}`).limit(1);
+      const p = configs && configs.length > 0 ? configs[0].data_payload : {};
+
+      p.pendingRequest = {
+        goal: reqGoal, calls: reqCalls, sims: reqSims, negs: reqNegs, ticket: reqTicket, conv: reqConv, justification: reqJustification
+      };
+
+      const { error } = await supabase.from('crm_boards').update({ data_payload: p }).eq('id', `config_${user.id}`);
+      if (error) throw error;
+
+      setHasPendingParamRequest(true);
+      setIsParamRequestModalVisible(false);
+      showAlertModal("Solicitação Enviada", "O administrador avaliará as mudanças nas suas metas e parâmetros.", "success");
+    } catch (err) {
+      showAlertModal("Erro", "Não foi possível enviar a solicitação.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const updatedConfig = { monthlyGoal, dailyCalls, dailyNeg, dailySims, ticketMedio, conversionRateGoal, goalHistory };
-      const { error: configError } = await supabase
-        .from('crm_boards')
-        .update({ data_payload: updatedConfig })
-        .eq('id', `config_${user.id}`);
+      // Se for admin, pode salvar as metas diretamente
+      if (userRole === 'admin') {
+        const { data: configs } = await supabase.from('crm_boards').select('data_payload').eq('id', `config_${user.id}`).limit(1);
+        let p = configs && configs.length > 0 ? configs[0].data_payload : {};
+        
+        p.monthlyGoal = monthlyGoal;
+        p.dailyCalls = dailyCalls;
+        p.dailyNeg = dailyNeg;
+        p.dailySims = dailySims;
+        p.ticketMedio = ticketMedio;
+        p.conversionRateGoal = conversionRateGoal;
+        p.goalHistory = goalHistory;
 
-      if (configError) throw configError;
+        await supabase.from('crm_boards').update({ data_payload: p }).eq('id', `config_${user.id}`);
+      }
 
       const hasChanged = originalName !== displayName;
       if (hasChanged) {
@@ -166,11 +229,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
           updatePayload.name_change_alert = true;
         }
 
-        const { error: profileError } = await supabase
-          .from('user_profiles')
-          .update(updatePayload)
-          .eq('id', user.id);
-
+        const { error: profileError } = await supabase.from('user_profiles').update(updatePayload).eq('id', user.id);
         if (profileError) throw profileError;
         
         setOriginalName(displayName);
@@ -180,11 +239,8 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
         }
       }
       
-      if (onConfigSaved) {
-        onConfigSaved();
-      }
-
-      showAlertModal("Salvo com Sucesso", "Suas configurações foram atualizadas.", "success");
+      if (onConfigSaved) onConfigSaved();
+      showAlertModal("Salvo com Sucesso", "Suas configurações de perfil foram atualizadas.", "success");
     } catch (err) {
       console.error("Erro ao salvar configurações:", err);
       showAlertModal("Erro", "Ocorreu um erro ao salvar as configurações.", "error");
@@ -218,16 +274,10 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
     }
   };
 
-  const handleCurrencyChange = (text) => {
+  const handleCurrencyChange = (text, setter) => {
     const rawNumber = text.replace(/\D/g, '');
-    if (!rawNumber) return setMonthlyGoal('');
-    setMonthlyGoal(new Intl.NumberFormat('pt-BR').format(parseInt(rawNumber, 10)));
-  };
-
-  const handleTicketCurrencyChange = (text) => {
-    const rawNumber = text.replace(/\D/g, '');
-    if (!rawNumber) return setTicketMedio('');
-    setTicketMedio(new Intl.NumberFormat('pt-BR').format(parseInt(rawNumber, 10)));
+    if (!rawNumber) return setter('');
+    setter(new Intl.NumberFormat('pt-BR').format(parseInt(rawNumber, 10)));
   };
 
   if (loading) {
@@ -239,6 +289,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
   }
 
   const themeStyles = isDarkMode ? darkStyles : lightStyles;
+  const isReadOnly = userRole !== 'admin';
 
   return (
     <View style={[styles.container, themeStyles.container]}>
@@ -251,6 +302,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
 
         <View style={[styles.grid, isMobile && styles.gridMobile]}>
           
+          {/* COLUNA 1: IDENTIDADE E SEGURANÇA */}
           <View style={styles.column}>
             <View style={[styles.card, themeStyles.card]}>
               <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Identidade</Text>
@@ -297,12 +349,21 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
             </View>
           </View>
 
+          {/* COLUNA 2: METAS E PARÂMETROS */}
           <View style={styles.column}>
             <View style={[styles.card, themeStyles.card]}>
-              <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Meta ({getCurrentMonthLabel()})</Text>
-              <View style={[styles.currencyInputContainer, themeStyles.currencyInputContainer]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottomWidth: 1, paddingBottom: 6 }}>
+                <Text style={[styles.cardTitle, themeStyles.cardTitle, { borderBottomWidth: 0, marginBottom: 0, paddingBottom: 0 }]}>Meta ({getCurrentMonthLabel()})</Text>
+                {isReadOnly && (
+                  <TouchableOpacity style={[styles.requestButton, themeStyles.requestButton, hasPendingParamRequest && styles.requestButtonDisabled, { paddingVertical: 4 }]} onPress={openParamRequestModal} disabled={hasPendingParamRequest}>
+                    <Text style={[styles.requestButtonText, themeStyles.requestButtonText]}>{hasPendingParamRequest ? 'Solicitação Pendente' : 'Solicitar Alteração'}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              <View style={[styles.currencyInputContainer, themeStyles.currencyInputContainer, isReadOnly && themeStyles.inputDisabled]}>
                 <Text style={[styles.currencySymbol, themeStyles.currencySymbol]}>R$</Text>
-                <TextInput style={[styles.currencyInput, themeStyles.currencyInput]} value={monthlyGoal} onChangeText={handleCurrencyChange} keyboardType="numeric" placeholder="0" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                <TextInput style={[styles.currencyInput, themeStyles.currencyInput, isReadOnly && themeStyles.inputDisabled]} value={monthlyGoal} onChangeText={(t) => handleCurrencyChange(t, setMonthlyGoal)} keyboardType="numeric" editable={!isReadOnly} />
               </View>
             </View>
 
@@ -311,30 +372,31 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
               <View style={[styles.row, isMobile && styles.rowMobile]}>
                 <View style={styles.inputGroupRow}>
                   <Text style={[styles.label, themeStyles.label]}>Ligações</Text>
-                  <TextInput style={[styles.inputSmall, themeStyles.input]} value={dailyCalls} onChangeText={setDailyCalls} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                  <TextInput style={[styles.inputSmall, themeStyles.input, isReadOnly && themeStyles.inputDisabled]} value={dailyCalls} onChangeText={setDailyCalls} keyboardType="numeric" editable={!isReadOnly} />
                 </View>
                 <View style={styles.inputGroupRow}>
                   <Text style={[styles.label, themeStyles.label]}>Simulações</Text>
-                  <TextInput style={[styles.inputSmall, themeStyles.input]} value={dailySims} onChangeText={setDailySims} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                  <TextInput style={[styles.inputSmall, themeStyles.input, isReadOnly && themeStyles.inputDisabled]} value={dailySims} onChangeText={setDailySims} keyboardType="numeric" editable={!isReadOnly} />
                 </View>
                 <View style={styles.inputGroupRow}>
                   <Text style={[styles.label, themeStyles.label]}>Negociações</Text>
-                  <TextInput style={[styles.inputSmall, themeStyles.input]} value={dailyNeg} onChangeText={setDailyNeg} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                  <TextInput style={[styles.inputSmall, themeStyles.input, isReadOnly && themeStyles.inputDisabled]} value={dailyNeg} onChangeText={setDailyNeg} keyboardType="numeric" editable={!isReadOnly} />
                 </View>
               </View>
               <View style={[styles.row, { marginTop: 12 }, isMobile && styles.rowMobile]}>
                 <View style={styles.inputGroupRow}>
                   <Text style={[styles.label, themeStyles.label]}>Ticket Médio (R$)</Text>
-                  <TextInput style={[styles.input, themeStyles.input]} value={ticketMedio} onChangeText={handleTicketCurrencyChange} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                  <TextInput style={[styles.input, themeStyles.input, isReadOnly && themeStyles.inputDisabled]} value={ticketMedio} onChangeText={(t) => handleCurrencyChange(t, setTicketMedio)} keyboardType="numeric" editable={!isReadOnly} />
                 </View>
                 <View style={styles.inputGroupRow}>
                   <Text style={[styles.label, themeStyles.label]}>Conversão (%)</Text>
-                  <TextInput style={[styles.input, themeStyles.input]} value={conversionRateGoal} onChangeText={setConversionRateGoal} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                  <TextInput style={[styles.input, themeStyles.input, isReadOnly && themeStyles.inputDisabled]} value={conversionRateGoal} onChangeText={setConversionRateGoal} keyboardType="numeric" editable={!isReadOnly} />
                 </View>
               </View>
             </View>
           </View>
 
+          {/* COLUNA 3: HISTÓRICO */}
           <View style={styles.column}>
             <View style={[styles.card, themeStyles.card]}>
               <Text style={[styles.cardTitle, themeStyles.cardTitle]}>Histórico</Text>
@@ -370,11 +432,12 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
         </View>
 
         <TouchableOpacity style={[styles.saveButton, saving && { backgroundColor: '#94a3b8' }]} onPress={handleSaveConfig} disabled={saving}>
-          <Text style={styles.saveButtonText}>{saving ? 'Salvando...' : 'Salvar Configurações'}</Text>
+          <Text style={styles.saveButtonText}>{saving ? 'Salvando...' : 'Salvar Perfil'}</Text>
         </TouchableOpacity>
 
       </ScrollView>
 
+      {/* MODAL DE ALERTA GERAL */}
       <Modal visible={customModal.visible} transparent={true} animationType="fade" onRequestClose={closeAlertModal}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, themeStyles.modalContainer]}>
@@ -388,6 +451,66 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL DE SOLICITAÇÃO DE PARÂMETROS */}
+      <Modal visible={isParamRequestModalVisible} transparent={true} animationType="fade" onRequestClose={() => setIsParamRequestModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, themeStyles.modalContainer, { maxWidth: 500, width: '95%' }]}>
+            <Text style={[styles.modalHeaderTitle, themeStyles.modalHeaderTitle, { marginBottom: 12 }]}>Solicitar Alteração de Metas e Parâmetros</Text>
+            <Text style={[styles.modalMessageText, themeStyles.modalMessageText, { marginBottom: 16 }]}>Altere os valores desejados e insira uma justificativa para enviar ao Administrador.</Text>
+
+            <ScrollView style={{ maxHeight: '60vh', marginBottom: 16 }}>
+              <Text style={[styles.label, themeStyles.label]}>Nova Meta do Mês (R$)</Text>
+              <TextInput style={[styles.input, themeStyles.input, { marginBottom: 10 }]} value={reqGoal} onChangeText={(t) => handleCurrencyChange(t, setReqGoal)} keyboardType="numeric" />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, themeStyles.label]}>Ligações Diárias</Text>
+                  <TextInput style={[styles.input, themeStyles.input]} value={reqCalls} onChangeText={setReqCalls} keyboardType="numeric" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, themeStyles.label]}>Simulações</Text>
+                  <TextInput style={[styles.input, themeStyles.input]} value={reqSims} onChangeText={setReqSims} keyboardType="numeric" />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, themeStyles.label]}>Negociações</Text>
+                  <TextInput style={[styles.input, themeStyles.input]} value={reqNegs} onChangeText={setReqNegs} keyboardType="numeric" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, themeStyles.label]}>Conversão (%)</Text>
+                  <TextInput style={[styles.input, themeStyles.input]} value={reqConv} onChangeText={setReqConv} keyboardType="numeric" />
+                </View>
+              </View>
+
+              <Text style={[styles.label, themeStyles.label]}>Novo Ticket Médio (R$)</Text>
+              <TextInput style={[styles.input, themeStyles.input, { marginBottom: 16 }]} value={reqTicket} onChangeText={(t) => handleCurrencyChange(t, setReqTicket)} keyboardType="numeric" />
+
+              <Text style={[styles.label, themeStyles.label]}>Justificativa da Solicitação</Text>
+              <TextInput 
+                style={[styles.input, themeStyles.input, { height: 80, textAlignVertical: 'top' }]} 
+                value={reqJustification} 
+                onChangeText={setReqJustification} 
+                multiline={true} 
+                placeholder="Explique o motivo da alteração..." 
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} 
+              />
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={[styles.modalButtonPrimary, themeStyles.secondaryButton, { flex: 1, backgroundColor: 'transparent' }]} onPress={() => setIsParamRequestModalVisible(false)}>
+                <Text style={[styles.modalButtonPrimaryText, themeStyles.secondaryButtonText]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButtonPrimary, { flex: 1, backgroundColor: '#2563eb' }]} onPress={handleSubmitParamRequest}>
+                <Text style={styles.modalButtonPrimaryText}>Enviar Solicitação</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }

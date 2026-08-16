@@ -1,9 +1,9 @@
+// ClientDetailsModal
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Linking, useWindowDimensions, Animated 
+  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, useWindowDimensions, Animated 
 } from 'react-native';
 import { setLeadUpdateCallback } from './WhatsAppBulkModal';
-import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../services/supabaseClient';
 
 export default function ClientDetailsModal({ visible, onClose, clientData, onSave, isAdmin, usersList, currentUserId, onTransferLead, isDarkMode }) {
@@ -13,7 +13,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const [formData, setFormData] = useState({});
   const [originalData, setOriginalData] = useState({}); 
   const [activeTab, setActiveTab] = useState('informacoes');
-  const [uploadingDoc, setUploadingDoc] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
   
   const [apptType, setApptType] = useState('Ligar');
@@ -93,6 +92,56 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleContractChange = (contractId, field, value) => {
+    setFormData(prev => {
+      const updatedContracts = (prev.contracts || []).map(c => 
+        c.id === contractId ? { ...c, [field]: value } : c
+      );
+      return { ...prev, contracts: updatedContracts };
+    });
+  };
+
+  const handleToggleInstallment = (contractId, index) => {
+    setFormData(prev => {
+      const updatedContracts = (prev.contracts || []).map(c => {
+        if (c.id === contractId) {
+          const newPagas = [...(c.parcelasPagas || [])];
+          newPagas[index] = !newPagas[index];
+          return { ...c, parcelasPagas: newPagas };
+        }
+        return c;
+      });
+      return { ...prev, contracts: updatedContracts };
+    });
+  };
+
+  const handleAddContract = () => {
+    setFormData(prev => ({
+      ...prev,
+      contracts: [...(prev.contracts || []), {
+        id: `contract_${Date.now()}`, administradora: '', numeroContrato: '', grupo: '', cota: '', valorContrato: '', valorParcela: '', prazo: '', categoria: '', diaVencimento: '', parcelasPagas: []
+      }]
+    }));
+  };
+
+  const toggleDealClosed = () => {
+    setFormData(prev => {
+      const isNowClosed = !prev.dealClosed;
+      return {
+        ...prev,
+        dealClosed: isNowClosed,
+        dealClosedDate: isNowClosed ? (prev.dealClosedDate || new Date().toISOString()) : prev.dealClosedDate,
+        clientStatus: isNowClosed ? (prev.clientStatus || 'Cliente Não Contemplado') : null,
+        contracts: isNowClosed && (!prev.contracts || prev.contracts.length === 0) ? [{
+          id: `contract_${Date.now()}`, administradora: '', numeroContrato: '', grupo: '', cota: '', valorContrato: '', valorParcela: '', prazo: '', categoria: '', diaVencimento: '', parcelasPagas: []
+        }] : prev.contracts
+      };
+    });
+    if (!formData.dealClosed) {
+      setActiveTab('acompanhamento');
+    }
+  };
+
   const handleDateChange = (text) => {
     let cleaned = text.replace(/\D/g, '');
     if (cleaned.length > 2) cleaned = cleaned.replace(/^(\d{2})(\d)/, '$1/$2');
@@ -107,7 +156,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   };
 
   const handleSave = () => {
-    // INTERCEPTADOR DE TRANSFERÊNCIA
     if (activeTab === 'transferir') {
       if (!selectedTransferUserId) {
         showCustomAlert('error', 'Atenção', 'Selecione um vendedor de destino para transferir o lead.');
@@ -142,6 +190,10 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       if ((updatedData[key] || '') !== (originalData[key] || '')) {
         changes.push(`- ${fieldsToTrack[key]}: alterado.`);
       }
+    }
+
+    if (updatedData.dealClosed !== originalData.dealClosed) {
+      changes.push(`- Status de Negócio: ${updatedData.dealClosed ? 'Fechado' : 'Aberto'}.`);
     }
 
     if (changes.length > 0) {
@@ -216,30 +268,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     });
   };
 
-  const handleUpload = async (fieldKey) => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
-      if (result.canceled) return;
-      setUploadingDoc(true);
-      const asset = result.assets[0];
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      const fileExt = asset.name.split('.').pop();
-      const fileName = `${clientData.id}_${fieldKey}_${Date.now()}.${fileExt}`;
-      const filePath = `${clientData.id}/${fileName}`;
-      const { error } = await supabase.storage.from('crm_documents').upload(filePath, blob, { cacheControl: '3600', upsert: true });
-      if (error) throw error;
-      const { data: publicUrlData } = supabase.storage.from('crm_documents').getPublicUrl(filePath);
-      handleChange(fieldKey, publicUrlData.publicUrl);
-      showCustomAlert('success', 'Sucesso', 'Upload concluído com sucesso!');
-    } catch (error) {
-      console.error("Erro no upload:", error);
-      showCustomAlert('error', 'Erro', 'Erro ao fazer o upload do documento.');
-    } finally {
-      setUploadingDoc(false);
-    }
-  };
-
   if (!clientData) return null;
 
   const themeStyles = isDarkMode ? darkStyles : lightStyles;
@@ -302,6 +330,48 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     </View>
   );
 
+  const renderInstallments = (contract) => {
+    const prazo = parseInt(contract.prazo) || 0;
+    if (prazo <= 0) return <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Informe o prazo do contrato para exibir as parcelas.</Text>;
+    
+    const parcelasPagas = contract.parcelasPagas || [];
+    let highestPaid = -1;
+    for (let i = 0; i < prazo; i++) {
+        if (parcelasPagas[i]) highestPaid = i;
+    }
+    
+    let visibleCount = 12;
+    while (visibleCount <= prazo) {
+        let allCheckedInBlock = true;
+        for (let i = visibleCount - 12; i < visibleCount; i++) {
+            if (!parcelasPagas[i]) {
+                allCheckedInBlock = false; break;
+            }
+        }
+        if (allCheckedInBlock && visibleCount < prazo) {
+            visibleCount += 12;
+        } else {
+            break;
+        }
+    }
+    visibleCount = Math.min(visibleCount, prazo);
+    
+    const boxes = [];
+    for (let i = 0; i < visibleCount; i++) {
+        const isChecked = !!parcelasPagas[i];
+        boxes.push(
+            <TouchableOpacity 
+              key={i} 
+              style={[styles.installmentBox, themeStyles.installmentBox, isChecked && styles.installmentBoxChecked]} 
+              onPress={() => handleToggleInstallment(contract.id, i)}
+            >
+              <Text style={[styles.installmentText, isChecked && styles.installmentTextChecked]}>{i + 1}</Text>
+            </TouchableOpacity>
+        );
+    }
+    return <View style={styles.installmentsGrid}>{boxes}</View>;
+  };
+
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -329,7 +399,15 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               <Text style={[styles.title, themeStyles.title, isMobile && styles.titleMobile]} numberOfLines={1}>{formData.name || 'Detalhes do Lead'}</Text>
               {formData.createdAt && <Text style={[styles.subtitle, themeStyles.subtitle]}>Cadastrado em: {new Date(formData.createdAt).toLocaleDateString('pt-BR')} às {new Date(formData.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>}
             </View>
-            <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}><Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text></TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity 
+                style={[styles.dealToggleBtn, formData.dealClosed ? styles.dealToggleBtnClosed : styles.dealToggleBtnOpen]} 
+                onPress={toggleDealClosed}
+              >
+                <Text style={styles.dealToggleBtnText}>{formData.dealClosed ? '🤝 Negócio Fechado' : 'Fechou Negócio?'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}><Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text></TouchableOpacity>
+            </View>
           </View>
 
           <View style={[styles.body, themeStyles.body, isMobile && styles.bodyMobile]}>
@@ -341,10 +419,10 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <TabButton id="dados" label="Dados Pessoais" />
                   <TabButton id="consorcio" label="Interesse" />
                   <TabButton id="financeiro" label="Financeiro" />
-                  <TabButton id="docs" label="Documentos" />
                   <TabButton id="kpis" label="Inteligência" />
-                  <TabButton id="comentarios" label="Comentários" />
                   <TabButton id="agendamentos" label="Agendamentos" />
+                  {formData.dealClosed && <TabButton id="acompanhamento" label="📈 Acompanhamento" />}
+                  <TabButton id="comentarios" label="Comentários" />
                   {isAdmin && <TabButton id="transferir" label="🔄 Transferir Lead" />}
                 </ScrollView>
               </View>
@@ -354,9 +432,9 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 <TabButton id="dados" label="Dados Pessoais" />
                 <TabButton id="consorcio" label="Interesse" />
                 <TabButton id="financeiro" label="Financeiro" />
-                <TabButton id="docs" label="Documentos" />
                 <TabButton id="kpis" label="Inteligência" />
                 <TabButton id="agendamentos" label="Agendamentos" />
+                {formData.dealClosed && <TabButton id="acompanhamento" label="📈 Acompanhamento" />}
                 {isAdmin && <TabButton id="transferir" label="🔄 Transferir Lead" />}
               </View>
             )}
@@ -386,7 +464,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               {activeTab === 'agendamentos' && (
                 <View style={[styles.splitContainer, isMobile && styles.splitContainerMobile]}>
                   
-                  {/* Bloco da Esquerda: Criar Agendamento */}
                   <View style={[styles.splitLeft, isMobile && styles.splitLeftMobile]}>
                     <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Criar Novo Agendamento</Text>
                     
@@ -425,7 +502,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                     </TouchableOpacity>
                   </View>
 
-                  {/* Bloco da Direita: Agendamentos Ativos */}
                   <View style={[styles.splitRight, themeStyles.splitRight, isMobile && styles.splitRightMobile]}>
                     <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Agendamentos Ativos</Text>
                     
@@ -509,33 +585,52 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 </View>
               )}
 
-              {activeTab === 'docs' && (
+              {activeTab === 'acompanhamento' && formData.dealClosed && (
                 <View style={styles.formSection}>
-                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Documentos Anexos</Text>
-                  <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}>
-                      <Text style={[styles.label, themeStyles.label]}>Documento Pessoal (RG/CNH)</Text>
-                      {formData.docPessoalUrl && (
-                        <TouchableOpacity style={[styles.viewDocButton, themeStyles.viewDocButton]} onPress={() => Linking.openURL(formData.docPessoalUrl)}>
-                          <Text style={[styles.viewDocText, themeStyles.viewDocText]}>Visualizar Documento</Text>
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity style={[styles.uploadButton, themeStyles.uploadButton]} onPress={() => handleUpload('docPessoalUrl')} disabled={uploadingDoc}>
-                        {uploadingDoc ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={[styles.uploadButtonText, themeStyles.uploadButtonText]}>{formData.docPessoalUrl ? 'Substituir' : 'Fazer Upload'}</Text>}
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Sistema de Pós-Venda</Text>
+                  
+                  <View style={styles.statusBtnGroup}>
+                    {['Cliente Não Contemplado', 'Cliente Contemplado', 'Cliente Cancelado'].map(st => (
+                      <TouchableOpacity 
+                        key={st} 
+                        style={[styles.clientStatusBtn, formData.clientStatus === st ? styles.clientStatusBtnActive : themeStyles.clientStatusBtnInactive]}
+                        onPress={() => handleChange('clientStatus', st)}
+                      >
+                        <Text style={[styles.clientStatusBtnText, formData.clientStatus === st ? styles.clientStatusBtnTextActive : themeStyles.clientStatusBtnTextInactive]}>{st}</Text>
                       </TouchableOpacity>
-                    </View>
-                    <View style={styles.inputGroup}>
-                      <Text style={[styles.label, themeStyles.label]}>Comprovante de Residência</Text>
-                      {formData.docResidenciaUrl && (
-                        <TouchableOpacity style={[styles.viewDocButton, themeStyles.viewDocButton]} onPress={() => Linking.openURL(formData.docResidenciaUrl)}>
-                          <Text style={[styles.viewDocText, themeStyles.viewDocText]}>Visualizar Comprovante</Text>
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity style={[styles.uploadButton, themeStyles.uploadButton]} onPress={() => handleUpload('docResidenciaUrl')} disabled={uploadingDoc}>
-                        {uploadingDoc ? <ActivityIndicator size="small" color="#2563eb" /> : <Text style={[styles.uploadButtonText, themeStyles.uploadButtonText]}>{formData.docResidenciaUrl ? 'Substituir' : 'Fazer Upload'}</Text>}
-                      </TouchableOpacity>
-                    </View>
+                    ))}
                   </View>
+
+                  {(formData.contracts || []).map((contract, index) => (
+                    <View key={contract.id} style={[styles.contractContainer, themeStyles.contractContainer]}>
+                      <Text style={[styles.contractTitle, themeStyles.contractTitle]}>Contrato {index + 1}</Text>
+                      
+                      <View style={[styles.row, isMobile && styles.rowMobile]}>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Nome da Administradora</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.administradora} onChangeText={t => handleContractChange(contract.id, 'administradora', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Categoria do Contrato</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.categoria} onChangeText={t => handleContractChange(contract.id, 'categoria', t)} placeholder="Ex: Auto, Imóvel" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                      </View>
+                      <View style={[styles.row, isMobile && styles.rowMobile]}>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Número do Contrato</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.numeroContrato} onChangeText={t => handleContractChange(contract.id, 'numeroContrato', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Número do Grupo</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.grupo} onChangeText={t => handleContractChange(contract.id, 'grupo', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Número da Cota</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.cota} onChangeText={t => handleContractChange(contract.id, 'cota', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                      </View>
+                      <View style={[styles.row, isMobile && styles.rowMobile]}>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor do Contrato</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.valorContrato} onChangeText={t => handleContractChange(contract.id, 'valorContrato', t)} placeholder="Ex: R$ 100.000,00" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor da Parcela</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.valorParcela} onChangeText={t => handleContractChange(contract.id, 'valorParcela', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                      </View>
+                      <View style={[styles.row, isMobile && styles.rowMobile]}>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Prazo do Contrato (Meses)</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.prazo} onChangeText={t => handleContractChange(contract.id, 'prazo', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Dia do Vencimento (Boleto)</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.diaVencimento} onChangeText={t => handleContractChange(contract.id, 'diaVencimento', t)} keyboardType="numeric" placeholder="Ex: 15" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                      </View>
+
+                      <Text style={[styles.label, themeStyles.label, { marginTop: 12 }]}>Acompanhamento de Pagamento (Parcelas)</Text>
+                      {renderInstallments(contract)}
+                    </View>
+                  ))}
+
+                  <TouchableOpacity style={styles.addContractBtn} onPress={handleAddContract}>
+                    <Text style={styles.addContractBtnText}>+ Adicionar Outro Contrato</Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -617,6 +712,10 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, marginTop: 4 },
   closeButton: { padding: 8, borderRadius: 8 },
   closeButtonText: { fontSize: 16, fontWeight: 'bold' },
+  dealToggleBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, borderWidth: 2 },
+  dealToggleBtnOpen: { borderColor: '#cbd5e1', backgroundColor: 'transparent' },
+  dealToggleBtnClosed: { borderColor: '#10b981', backgroundColor: '#ecfdf5' },
+  dealToggleBtnText: { fontWeight: '700', fontSize: 14, color: '#10b981' },
   body: { flex: 1, flexDirection: 'row' },
   bodyMobile: { flexDirection: 'column' }, 
   sidebar: { width: 220, padding: 16, borderRightWidth: 1 },
@@ -658,11 +757,23 @@ const styles = StyleSheet.create({
   scheduledCardDate: { fontSize: 12, marginTop: 4, fontWeight: '500' },
   scheduledCardStatus: { fontSize: 10, color: '#10b981', marginTop: 8, fontWeight: 'bold' },
 
-  uploadButton: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 8, padding: 16, alignItems: 'center' },
-  uploadButtonText: { fontWeight: '600', fontSize: 14 },
-  viewDocButton: { padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1 },
-  viewDocText: { fontWeight: '600', fontSize: 13, textAlign: 'center' },
+  statusBtnGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  clientStatusBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1 },
+  clientStatusBtnActive: { backgroundColor: '#2563eb', borderColor: '#1d4ed8' },
+  clientStatusBtnTextActive: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
+  clientStatusBtnTextInactive: { fontWeight: '600', fontSize: 13 },
   
+  contractContainer: { padding: 16, borderRadius: 8, borderWidth: 1, marginBottom: 20 },
+  contractTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 16 },
+  addContractBtn: { paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: '#2563eb', alignItems: 'center' },
+  addContractBtnText: { color: '#2563eb', fontWeight: 'bold', fontSize: 14 },
+  
+  installmentsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  installmentBox: { width: 40, height: 40, borderRadius: 6, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  installmentBoxChecked: { backgroundColor: '#10b981', borderColor: '#059669' },
+  installmentText: { fontSize: 12, fontWeight: 'bold' },
+  installmentTextChecked: { color: '#ffffff' },
+
   commentsSidebarDesktop: { width: 340, borderLeftWidth: 1, padding: 16, paddingBottom: 0 },
   commentsContainer: { flex: 1 },
   commentsContainerMobile: { paddingBottom: 20 },
@@ -703,7 +814,6 @@ const styles = StyleSheet.create({
   checkboxLabel: { fontSize: 13, flex: 1, flexWrap: 'wrap' }
 });
 
-/* Estilos de Tema Claro */
 const lightStyles = StyleSheet.create({
   modalWrapper: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
   header: { borderBottomColor: '#f1f5f9' },
@@ -737,10 +847,11 @@ const lightStyles = StyleSheet.create({
   scheduledCardTitle: { color: '#1e293b' },
   scheduledCardReminder: { color: '#f59e0b', backgroundColor: '#fef3c7' },
   scheduledCardDate: { color: '#475569' },
-  uploadButton: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
-  uploadButtonText: { color: '#475569' },
-  viewDocButton: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
-  viewDocText: { color: '#2563eb' },
+  clientStatusBtnInactive: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  clientStatusBtnTextInactive: { color: '#64748b' },
+  contractContainer: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  contractTitle: { color: '#1e293b' },
+  installmentBox: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
   commentsSidebarDesktop: { backgroundColor: '#f8fafc', borderLeftColor: '#e2e8f0' },
   commentsTitle: { color: '#1e293b' },
   commentInputContainer: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
@@ -766,7 +877,6 @@ const lightStyles = StyleSheet.create({
   checkboxLabel: { color: '#475569' }
 });
 
-/* Estilos de Tema Escuro */
 const darkStyles = StyleSheet.create({
   modalWrapper: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
   header: { borderBottomColor: '#334155' },
@@ -800,10 +910,11 @@ const darkStyles = StyleSheet.create({
   scheduledCardTitle: { color: '#f8fafc' },
   scheduledCardReminder: { color: '#fbbf24', backgroundColor: '#451a03' },
   scheduledCardDate: { color: '#94a3b8' },
-  uploadButton: { backgroundColor: '#1e293b', borderColor: '#475569' },
-  uploadButtonText: { color: '#cbd5e1' },
-  viewDocButton: { backgroundColor: '#1e3a8a', borderColor: '#1d4ed8' },
-  viewDocText: { color: '#93c5fd' },
+  clientStatusBtnInactive: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  clientStatusBtnTextInactive: { color: '#94a3b8' },
+  contractContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  contractTitle: { color: '#f8fafc' },
+  installmentBox: { backgroundColor: '#0f172a', borderColor: '#475569' },
   commentsSidebarDesktop: { backgroundColor: '#1e293b', borderLeftColor: '#334155' },
   commentsTitle: { color: '#f8fafc' },
   commentInputContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },

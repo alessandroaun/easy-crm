@@ -334,6 +334,17 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
 
   const buildTags = () => {
     const tags = [];
+    
+    // Se fechou negócio, foca só nas tags dos contratos fechados
+    if (client.dealClosed && client.contracts && client.contracts.length > 0) {
+      const closedCategories = new Set(client.contracts.map(c => formatCategory(c.categoria)).filter(Boolean));
+      Array.from(closedCategories).forEach((cat, index) => {
+        tags.push({ id: `closed_cat_${index}`, text: cat, bg: isDarkMode ? '#064e3b' : '#dcfce7', color: isDarkMode ? '#86efac' : '#16a34a' });
+      });
+      return tags.slice(0, 4);
+    }
+
+    // Regras normais de tags caso não esteja fechado
     const cleanCategory = formatCategory(client.category);
     if (cleanCategory) tags.push({ id: 'cat', text: cleanCategory, bg: isDarkMode ? '#581c87' : '#f3e8ff', color: isDarkMode ? '#d8b4fe' : '#7e22ce' });
     if (client.leadTemp) {
@@ -352,6 +363,15 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     return tags.slice(0, 4);
   };
 
+  const calculateTotalCredit = () => {
+    if (!client.contracts) return 0;
+    return client.contracts.reduce((total, c) => {
+      const valStr = (c.valorContrato || '').replace(/\D/g, '');
+      const valNum = valStr ? parseInt(valStr, 10) / 100 : 0;
+      return total + valNum;
+    }, 0);
+  };
+
   const tagsToRender = buildTags();
   const themeStyles = isDarkMode ? darkStyles : lightStyles;
 
@@ -363,7 +383,8 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         style={[
           styles.card, 
           themeStyles.card,
-          pulseColor && { borderColor: pulseColor, borderWidth: 2 },
+          client.dealClosed && { borderLeftColor: '#10b981' }, // Verde para negócio fechado
+          pulseColor && !client.dealClosed && { borderColor: pulseColor, borderWidth: 2 },
           isBulkSelecting && isSelected && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#2563eb', borderWidth: 2 }
         ]}
       >
@@ -384,7 +405,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
           <View style={styles.headerTextContainer}>
             <View style={styles.nameRow}>
               
-              {pulseColor && (
+              {pulseColor && !client.dealClosed && (
                 <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
                   <Text style={styles.pulsingClock}>⏰</Text>
                 </Animated.View>
@@ -450,7 +471,25 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
             )}
           </View>
 
-          <Text style={[styles.info, themeStyles.info]} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
+          {/* Destaque de Pós-Venda */}
+          {client.dealClosed ? (
+            <View style={styles.dealClosedContainer}>
+              <Text style={styles.dealClosedDateText}>Contrato fechado no dia {client.dealClosedDate ? new Date(client.dealClosedDate).toLocaleDateString('pt-BR') : 'N/A'}</Text>
+              
+              <View style={styles.dealStatusWrapper}>
+                 <Text style={styles.dealStatusLabel}>Status:</Text>
+                 <Text style={[styles.dealStatusValue, client.clientStatus === 'Cliente Contemplado' ? styles.statusContemplado : (client.clientStatus === 'Cliente Cancelado' ? styles.statusCancelado : styles.statusDefault)]}>
+                   {client.clientStatus || 'Cliente Não Contemplado'}
+                 </Text>
+              </View>
+
+              <Text style={styles.dealCreditText}>
+                Crédito Total: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(calculateTotalCredit())}
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.info, themeStyles.info]} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
+          )}
           
           <View style={styles.tagsContainer}>
             {tagsToRender.map(tag => (
@@ -545,6 +584,17 @@ const styles = StyleSheet.create({
   btnActionTextWA: { fontSize: 10, fontWeight: 'bold' },
   btnActionCall: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   btnActionTextCall: { fontSize: 10, fontWeight: 'bold' },
+  
+  dealClosedContainer: { backgroundColor: '#ecfdf5', padding: 8, borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: '#a7f3d0' },
+  dealClosedDateText: { fontSize: 11, fontWeight: 'bold', color: '#047857', marginBottom: 4 },
+  dealStatusWrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  dealStatusLabel: { fontSize: 11, fontWeight: '600', color: '#065f46', marginRight: 4 },
+  dealStatusValue: { fontSize: 11, fontWeight: 'bold' },
+  statusContemplado: { color: '#2563eb' },
+  statusCancelado: { color: '#dc2626' },
+  statusDefault: { color: '#d97706' },
+  dealCreditText: { fontSize: 13, fontWeight: '800', color: '#064e3b' },
+
   info: { fontSize: 12, marginBottom: 6, lineHeight: 16 },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 }, 
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontSize: 10, fontWeight: '600' },
@@ -598,10 +648,10 @@ const lightStyles = StyleSheet.create({
   cancelBtnText: { color: '#475569' }
 });
 
-/* Estilos de Tema Escuro (Cards com leve escurecimento mantendo a base clara/chumbo suave) */
+/* Estilos de Tema Escuro */
 const darkStyles = StyleSheet.create({
   card: { 
-    backgroundColor: '#1e293b', // Chumbo suave levemente escurecido mantendo tom claro corporativo
+    backgroundColor: '#1e293b', 
     ...Platform.select({ 
       web: { 
         boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.3)', 

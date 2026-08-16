@@ -34,7 +34,6 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
 
-        // Se a senha for a padrão, aciona a função que força a troca no App.js
         if (password === 'Senha123!') {
           if (onRequirePasswordChange) onRequirePasswordChange();
         }
@@ -49,7 +48,6 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
     }
   };
 
-  // Cores dinâmicas com base no estado do modo escuro
   const currentTheme = isDarkMode ? darkStyles : lightStyles;
 
   return (
@@ -57,13 +55,27 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={[styles.card, currentTheme.card]}>
           
-          {/* Botão de Alternância do Modo Escuro / Claro */}
+          {/* Botão de Alternância do Modo Escuro / Claro (Vetorial) */}
           <TouchableOpacity 
-            style={[styles.themeToggleButton, currentTheme.themeToggleButton]} 
-           onPress={() => toggleDarkMode(!isDarkMode)}
-            activeOpacity={0.7}
+            style={[styles.themeToggleButtonFancy, currentTheme.themeToggleButtonFancy]} 
+            onPress={() => toggleDarkMode(!isDarkMode)}
+            activeOpacity={0.8}
           >
-            <Text style={styles.themeToggleIcon}>{isDarkMode ? '☀️' : '🌙'}</Text>
+            <View style={styles.themeToggleInner}>
+              {isDarkMode ? (
+                <View style={styles.sunContainer}>
+                  <View style={styles.sunCore} />
+                  <View style={[styles.sunRay, { transform: [{ rotate: '0deg' }] }]} />
+                  <View style={[styles.sunRay, { transform: [{ rotate: '45deg' }] }]} />
+                  <View style={[styles.sunRay, { transform: [{ rotate: '90deg' }] }]} />
+                  <View style={[styles.sunRay, { transform: [{ rotate: '135deg' }] }]} />
+                </View>
+              ) : (
+                <View style={styles.moonContainer}>
+                  <View style={styles.moonCrescent} />
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
 
           <View style={styles.headerContainer}>
@@ -96,7 +108,6 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
             />
           </View>
 
-          {/* BLOCO CONDICIONAL DE ALTURA FIXA: Evita qualquer deslocamento da logo ou do botão */}
           <View style={styles.dynamicSectionContainer}>
             {!isForgotPass ? (
               <View style={styles.passwordFullGroup}>
@@ -119,7 +130,7 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
             ) : (
               <View style={[styles.infoBalloon, currentTheme.infoBalloon]}>
                 <Text style={[styles.infoBalloonText, currentTheme.infoBalloonText]}>
-                  ℹ️ Para recuperar seu acesso, insira seu e-mail de usuário e clique em "Enviar Solicitação". A recuperação dependerá da aprovação de um administrador. A resposta e os procedimentos chegarão no e-mail informado.
+                  ℹ️ Para recuperar seu acesso, insira seu e-mail de usuário e clique em "Enviar Solicitação". A recuperação dependerá da aprovação de um administrador.
                 </Text>
               </View>
             )}
@@ -129,7 +140,6 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
             {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>{isForgotPass ? 'Enviar Solicitação' : 'Entrar no Sistema'}</Text>}
           </TouchableOpacity>
 
-          {/* RODAPÉ CONDICIONAL DE ALTURA FIXA PARA O LINK DE RETORNO */}
           <View style={styles.bottomToggleContainer}>
             {isForgotPass && (
               <TouchableOpacity onPress={() => { setIsForgotPass(false); setErrorMessage(''); setSuccessMessage(''); }}>
@@ -156,52 +166,47 @@ const styles = StyleSheet.create({
   successText: { color: '#16a34a', fontSize: 13, textAlign: 'center', fontWeight: '500' },
   inputGroup: { marginBottom: 16 },
   label: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '600', marginBottom: 6 },
-  
-  /* Seção dinâmica com altura fixa garantindo que o card e todos os elementos fiquem estáticos */
   dynamicSectionContainer: { height: 88, justifyContent: 'flex-start', marginBottom: 16 },
   passwordFullGroup: { width: '100%' },
   forgotPassContainer: { alignItems: 'flex-end', marginTop: 6 },
   forgotPassText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '600' },
-  
-  /* Balão de notificação explicativo preenchendo o espaço */
   infoBalloon: { borderRadius: 10, padding: 10, justifyContent: 'center', borderWidth: 1 },
   infoBalloonText: { fontFamily: MODERN_FONT, fontSize: 11.5, lineHeight: 16, textAlign: 'center' },
-
   input: { borderRadius: 12, padding: 12, fontSize: 15, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   primaryButton: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4, ...Platform.select({ web: { transition: 'background-color 0.2s ease' } }) },
   primaryButtonDisabled: { backgroundColor: '#93c5fd' },
   primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700', fontFamily: MODERN_FONT },
-  
   bottomToggleContainer: { height: 28, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
   toggleLink: { fontSize: 14, fontWeight: '700', fontFamily: MODERN_FONT },
 
-  themeToggleButton: {
+  // BOTÃO MODO ESCURO VETORIAL
+  themeToggleButtonFancy: {
     position: 'absolute',
     top: 16,
     right: 16,
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
     zIndex: 10,
+    ...Platform.select({
+      web: { transition: 'all 0.2s ease', cursor: 'pointer' }
+    })
   },
-  themeToggleIcon: {
-    fontSize: 16,
-  }
+  themeToggleInner: { width: 20, height: 20, justifyContent: 'center', alignItems: 'center' },
+  sunContainer: { width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
+  sunCore: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fbbf24' },
+  sunRay: { position: 'absolute', width: 2, height: 14, backgroundColor: '#fbbf24', borderRadius: 1 },
+  moonContainer: { width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
+  moonCrescent: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#64748b', borderRightColor: 'transparent', borderBottomColor: 'transparent', transform: [{ rotate: '-45deg' }] }
 });
 
-/* Estilos específicos para o Modo Claro */
 const lightStyles = StyleSheet.create({
   container: { backgroundColor: '#f1f5f9' },
-  card: { 
-    backgroundColor: '#ffffff', 
-    ...Platform.select({ 
-      web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.08)' }, 
-      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } 
-    }) 
-  },
-  themeToggleButton: { backgroundColor: '#f1f5f9' },
+  card: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.08)' }, default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 } }) },
+  themeToggleButtonFancy: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
   subtitle: { color: '#64748b' },
   label: { color: '#475569' },
   forgotPassText: { color: '#2563eb' },
@@ -212,17 +217,10 @@ const lightStyles = StyleSheet.create({
   toggleLink: { color: '#2563eb' }
 });
 
-/* Estilos específicos para o Modo Escuro */
 const darkStyles = StyleSheet.create({
   container: { backgroundColor: '#0f172a' },
-  card: { 
-    backgroundColor: '#1e293b', 
-    ...Platform.select({ 
-      web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.4)' }, 
-      default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12 } 
-    }) 
-  },
-  themeToggleButton: { backgroundColor: '#334155' },
+  card: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 40px rgba(0, 0, 0, 0.4)' }, default: { elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12 } }) },
+  themeToggleButtonFancy: { backgroundColor: '#1e293b', borderColor: '#334155' },
   subtitle: { color: '#94a3b8' },
   label: { color: '#cbd5e1' },
   forgotPassText: { color: '#60a5fa' },
