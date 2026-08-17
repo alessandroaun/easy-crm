@@ -257,7 +257,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     }
   }, [client, phaseId, onOpen, onDropClient, isBulkSelecting, isSelected, onToggleSelect]);
 
-
   const openDeleteModal = (e) => {
     if (Platform.OS === 'web' && e && e.stopPropagation) e.stopPropagation();
     setIsDeleting(true);
@@ -372,6 +371,12 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     }, 0);
   };
 
+  // Separa e garante que apenas 2 linhas cheguem ao componente Text
+  // Assim, as reticências "..." só aparecerão se O TEXTO DAQUELAS 2 LINHAS for muito largo
+  const displayInfoText = client.initialInfo 
+    ? client.initialInfo.split('\n').filter(l => l.trim().length > 0).slice(0, 2).join('\n')
+    : 'Clique para ver detalhes...';
+
   const tagsToRender = buildTags();
   const themeStyles = isDarkMode ? darkStyles : lightStyles;
 
@@ -383,12 +388,11 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         style={[
           styles.card, 
           themeStyles.card,
-          client.dealClosed && { borderLeftColor: '#10b981' }, // Verde para negócio fechado
+          client.dealClosed && { borderLeftColor: '#10b981' }, 
           pulseColor && !client.dealClosed && { borderColor: pulseColor, borderWidth: 2 },
           isBulkSelecting && isSelected && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#2563eb', borderWidth: 2 }
         ]}
       >
-        {/* CHECKBOX PARA SELEÇÃO EM MASSA */}
         {isBulkSelecting && (
           <TouchableOpacity 
             style={[styles.checkboxContainer, themeStyles.checkboxContainer]} 
@@ -471,7 +475,6 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
             )}
           </View>
 
-          {/* Destaque de Pós-Venda */}
           {client.dealClosed ? (
             <View style={styles.dealClosedContainer}>
               <Text style={styles.dealClosedDateText}>Contrato fechado no dia {client.dealClosedDate ? new Date(client.dealClosedDate).toLocaleDateString('pt-BR') : 'N/A'}</Text>
@@ -488,7 +491,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
               </Text>
             </View>
           ) : (
-            <Text style={[styles.info, themeStyles.info]} numberOfLines={2}>{client.initialInfo || 'Clique para ver detalhes...'}</Text>
+            <Text style={[styles.info, themeStyles.info]} numberOfLines={2}>{displayInfoText}</Text>
           )}
           
           <View style={styles.tagsContainer}>
@@ -610,7 +613,6 @@ const styles = StyleSheet.create({
   confirmBtnText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 14 }
 });
 
-/* Estilos de Tema Claro */
 const lightStyles = StyleSheet.create({
   card: { 
     backgroundColor: '#FFFFFF', 
@@ -648,7 +650,6 @@ const lightStyles = StyleSheet.create({
   cancelBtnText: { color: '#475569' }
 });
 
-/* Estilos de Tema Escuro */
 const darkStyles = StyleSheet.create({
   card: { 
     backgroundColor: '#1e293b', 

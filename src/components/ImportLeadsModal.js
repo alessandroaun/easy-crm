@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Modal, 
   View, 
@@ -8,139 +8,57 @@ import {
   StyleSheet, 
   Platform, 
   KeyboardAvoidingView, 
-  ScrollView,
-  ActivityIndicator,
-  Animated
+  ScrollView, 
+  ActivityIndicator, 
+  Animated, 
+  Image,
+  useWindowDimensions // Adicionado para responsividade
 } from 'react-native';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-// ============================================================================
-// DICIONÁRIO APRIMORADO DE SINÔNIMOS E PERGUNTAS DE FORMULÁRIOS
-// ============================================================================
 const DICTIONARY = {
-  name: [
-    'nome', 'cliente', 'lead', 'full name', 'nome completo', 'razao social', 
-    'primeiro nome', 'sobrenome', 'nome do contato', 'como se chama', 'qual o seu nome'
-  ],
-  phone: [
-    'telefone', 'whatsapp', 'celular', 'whats', 'wpp', 'zap', 'fone', 'contato', 
-    'numero', 'mobile', 'phone', 'ligar', 'telefone para contato', 'qual o seu telefone', 
-    'qual o seu whatsapp', 'numero de whatsapp'
-  ],
-  email: [
-    'email', 'e-mail', 'correio eletronico', 'endereço de email', 
-    'qual o seu email', 'qual o seu e-mail'
-  ],
-  cpf: [
-    'cpf', 'cnpj', 'documento', 'identidade', 'rg', 'doc'
-  ],
-  profession: [
-    'profissao', 'profissão', 'trabalho', 'cargo', 'ocupacao', 'ocupação', 'o que faz', 
-    'onde trabalha', 'ramo de atuaçao', 'area de atuacao', 'trabalha com o que', 'emprego', 
-    'qual a sua profissao', 'qual a sua profissão', 'sua profissão', 'sua profissao'
-  ],
-  monthlyIncome: [
-    'renda', 'salario', 'salário', 'faturamento', 'ganho', 'receita', 'ganhos', 
-    'quanto ganha', 'rendimento', 'renda mensal', 'renda familiar', 'rendimento mensal', 
-    'faturamento mensal', 'qual a sua renda', 'sua renda', 'renda aproximada'
-  ],
-  category: [
-    'categoria', 'qual bem', 'tipo de bem', 'o que deseja', 'interesse', 'tipo de consorcio', 
-    'tipo de consórcio', 'o que busca', 'automovel', 'automóvel', 'imovel', 'imóvel', 
-    'veiculo', 'veículo', 'serviço', 'servico', 'produto', 'qual o seu objetivo', 
-    'qual bem deseja', 'qual tipo de consorcio', 'qual tipo de consórcio', 
-    'procura fazer um consorcio para qual bem', 'qual o bem', 'consórcio para qual bem', 
-    'consorcio para qual bem', 'para qual bem', 'qual bem esta em busca'
-  ],
-  desiredCredit: [
-    'valor do bem', 'credito', 'crédito', 'carta', 'meta', 'qual valor', 'de quanto precisa', 
-    'capital', 'valor da carta', 'valor desejado', 'valor do credito', 'valor do crédito', 
-    'valor do imovel', 'valor do veiculo', 'montante', 'valor que esta em busca', 
-    'qual valor do bem', 'qual o valor pretendido', 'valor pretendido', 
-    'de quanto é a carta', 'qual o valor', 'valor do automovel'
-  ],
-  idealInstallment: [
-    'parcela', 'mensalidade', 'media de parcela', 'média de parcela', 'pagamento', 
-    'quanto pode pagar', 'parcela ideal', 'disponibilidade mensal', 'valor da parcela', 
-    'parcela maxima', 'parcela máxima', 'capadidade de pagamento', 'qual a parcela', 
-    'qual valor de parcela', 'qual o valor da parcela', 'parcela que cabe no bolso', 
-    'quanto pretende pagar', 'quanto pretende pagar por mes'
-  ],
-  urgency: [
-    'urgencia', 'urgência', 'prazo', 'quando', 'em qual momento', 'tempo', 'para quando', 
-    'expectativa', 'quando pretende', 'imediatismo', 'momento de compra', 
-    'qual o seu prazo', 'em quanto tempo', 'momento esta em relacao'
-  ],
-  bidAmount: [
-    'lance', 'valor para lance', 'ofertar lance', 'entrada', 'valor disponivel', 
-    'valor disponível', 'reserva financeira', 'tem valor para lance', 'valor de entrada', 
-    'montante para lance', 'possui valor para lance', 'possui lance', 'tem lance', 
-    'qual o valor do lance', 'quanto tem de lance', 'valor guardado', 'dinheiro guardado'
-  ],
-  bidType: [
-    'tipo de lance', 'recurso', 'fgts', 'embutido', 'livre', 'lance fixo', 'lance livre', 
-    'recurso proprio', 'como pretende ofertar o lance', 'qual tipo de lance', 'vai usar fgts'
-  ],
-  hasFinancing: [
-    'financiamento', 'financiado', 'possui financiamento', 'paga juros', 'tem financiamento', 
-    'ja tem proposta', 'já tem proposta', 'ja fez consorcio', 'já fez consórcio', 
-    'ja tem consorcio', 'já tem consorcio', 'tem proposta de consorcio ou financiamento'
-  ],
-  platform: [
-    'plataforma', 'origem', 'fonte', 'campanha', 'anuncio', 'anúncio', 'source', 'adset', 
-    'utm_source', 'veio de onde', 'form', 'formulario', 'formulário', 'publico', 'público', 'criativo'
-  ],
-  consorcioKnowledge: [
-    'voce conhece o consorcio', 'conhece o consorcio', 'ja teve consorcio', 'sabe como funciona'
-  ],
-  reason: [
-    'por que esta preenchendo', 'motivo', 'por que preencheu', 'por que preenchendo'
-  ]
+  name: ['nome', 'cliente', 'lead', 'full name', 'nome completo', 'razao social', 'primeiro nome', 'sobrenome', 'nome do contato', 'como se chama', 'qual o seu nome'],
+  phone: ['telefone', 'whatsapp', 'celular', 'whats', 'wpp', 'zap', 'fone', 'contato', 'numero', 'mobile', 'phone', 'ligar', 'telefone para contato', 'qual o seu telefone', 'qual o seu whatsapp', 'numero de whatsapp'],
+  email: ['email', 'e-mail', 'correio eletronico', 'endereço de email', 'qual o seu email', 'qual o seu e-mail'],
+  cpf: ['cpf', 'cnpj', 'documento', 'identidade', 'rg', 'doc'],
+  profession: ['profissao', 'profissão', 'trabalho', 'cargo', 'ocupacao', 'ocupação', 'o que faz', 'onde trabalha', 'ramo de atuaçao', 'area de atuacao', 'trabalha com o que', 'emprego', 'qual a sua profissao', 'qual a sua profissão', 'sua profissão', 'sua profissao'],
+  monthlyIncome: ['renda', 'salario', 'salário', 'faturamento', 'ganho', 'receita', 'ganhos', 'quanto ganha', 'rendimento', 'renda mensal', 'renda familiar', 'rendimento mensal', 'faturamento mensal', 'qual a sua renda', 'sua renda', 'renda aproximada'],
+  category: ['categoria', 'qual bem', 'tipo de bem', 'o que deseja', 'interesse', 'tipo de consorcio', 'tipo de consórcio', 'o que busca', 'automovel', 'automóvel', 'imovel', 'imóvel', 'veiculo', 'veículo', 'serviço', 'servico', 'produto', 'qual o seu objetivo', 'qual bem deseja', 'qual tipo de consorcio', 'qual tipo de consórcio', 'procura fazer um consorcio para qual bem', 'qual o bem', 'consórcio para qual bem', 'consorcio para qual bem', 'para qual bem', 'qual bem esta em busca'],
+  desiredCredit: ['valor do bem', 'credito', 'crédito', 'carta', 'meta', 'qual valor', 'de quanto precisa', 'capital', 'valor da carta', 'valor desejado', 'valor do credito', 'valor do crédito', 'valor do imovel', 'valor do veiculo', 'montante', 'valor que esta em busca', 'qual valor do bem', 'qual o valor pretendido', 'valor pretendido', 'de quanto é a carta', 'qual o valor', 'valor do automovel'],
+  idealInstallment: ['parcela', 'mensalidade', 'media de parcela', 'média de parcela', 'pagamento', 'quanto pode pagar', 'parcela ideal', 'disponibilidade mensal', 'valor da parcela', 'parcela maxima', 'parcela máxima', 'capadidade de pagamento', 'qual a parcela', 'qual valor de parcela', 'qual o valor da parcela', 'parcela que cabe no bolso', 'quanto pretende pagar', 'quanto pretende pagar por mes'],
+  urgency: ['urgencia', 'urgência', 'prazo', 'quando', 'em qual momento', 'tempo', 'para quando', 'expectativa', 'quando pretende', 'imediatismo', 'momento de compra', 'qual o seu prazo', 'em quanto tempo', 'momento esta em relacao'],
+  bidAmount: ['lance', 'valor para lance', 'ofertar lance', 'entrada', 'valor disponivel', 'valor disponível', 'reserva financeira', 'tem valor para lance', 'valor de entrada', 'montante para lance', 'possui valor para lance', 'possui lance', 'tem lance', 'qual o valor do lance', 'quanto tem de lance', 'valor guardado', 'dinheiro guardado'],
+  bidType: ['tipo de lance', 'recurso', 'fgts', 'embutido', 'livre', 'lance fixo', 'lance livre', 'recurso proprio', 'como pretende ofertar o lance', 'qual tipo de lance', 'vai usar fgts'],
+  hasFinancing: ['financiamento', 'financiado', 'possui financiamento', 'paga juros', 'tem financiamento', 'ja tem proposta', 'já tem proposta', 'ja fez consorcio', 'já fez consórcio', 'ja tem consorcio', 'já tem consorcio', 'tem proposta de consorcio ou financiamento'],
+  platform: ['plataforma', 'origem', 'fonte', 'campanha', 'anuncio', 'anúncio', 'source', 'adset', 'utm_source', 'veio de onde', 'form', 'formulario', 'formulário', 'publico', 'público', 'criativo'],
+  consorcioKnowledge: ['voce conhece o consorcio', 'conhece o consorcio', 'ja teve consorcio', 'sabe como funciona'],
+  reason: ['por que esta preenchendo', 'motivo', 'por que preencheu', 'por que preenchendo']
 };
 
-const sortedDictionaryEntries = Object.entries(DICTIONARY).map(([field, synonyms]) => {
-  return [field, [...synonyms].sort((a, b) => b.length - a.length)];
-});
+const sortedDictionaryEntries = Object.entries(DICTIONARY).map(([field, synonyms]) => [field, [...synonyms].sort((a, b) => b.length - a.length)]);
 
-// ============================================================================
-// FUNÇÕES UTILITÁRIAS DE TRATAMENTO
-// ============================================================================
 const normalizeString = (str) => {
   if (!str) return '';
-  return String(str)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[_]/g, " ") 
-    .replace(/[^a-z0-9 ]/g, "")
-    .trim();
+  return String(str).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[_]/g, " ").replace(/[^a-z0-9 ]/g, "").trim();
 };
 
 const identifyField = (line) => {
   if (!line) return null;
   const normLine = normalizeString(line);
   if (normLine.length < 2) return null;
-
-  // 1. Busca Exata
   for (const [field, synonyms] of sortedDictionaryEntries) {
     if (synonyms.some(s => normLine === normalizeString(s))) return field;
   }
-
-  // 2. Busca de Início (Label-like)
   for (const [field, synonyms] of sortedDictionaryEntries) {
     if (synonyms.some(s => normLine.startsWith(normalizeString(s)))) return field;
   }
-
-  // 3. Busca por Contenção (Somente para linhas curtas ou perguntas diretas para evitar falsos positivos)
   if (normLine.length < 60 || line.trim().endsWith('?')) {
     for (const [field, synonyms] of sortedDictionaryEntries) {
       if (synonyms.some(s => {
         const normSyn = normalizeString(s);
         return normSyn.length > 4 && normLine.includes(normSyn);
-      })) {
-        return field;
-      }
+      })) return field;
     }
   }
   return null;
@@ -148,11 +66,11 @@ const identifyField = (line) => {
 
 const parseCategoryValue = (rawValue, fullBlockText = '') => {
   const combinedText = normalizeString(`${rawValue || ''} ${fullBlockText}`);
-  if (combinedText.includes('auto') || combinedText.includes('carro') || combinedText.includes('veiculo') || combinedText.includes('automovel') || combinedText.includes('picape') || combinedText.includes('motocicleta') || combinedText.includes('moto')) return 'Auto';
-  if (combinedText.includes('imovel') || combinedText.includes('casa') || combinedText.includes('fazenda') || combinedText.includes('sitio') || combinedText.includes('apartamento') || combinedText.includes('terreno')) return 'Imóvel';
-  if (combinedText.includes('pesado') || combinedText.includes('caminhao') || combinedText.includes('maquina') || combinedText.includes('carreta') || combinedText.includes('trator')) return 'Pesados';
+  if (combinedText.includes('auto') || combinedText.includes('carro') || combinedText.includes('veiculo') || combinedText.includes('automovel') || combinedText.includes('picape') || combinedText.includes('moto')) return 'Auto';
+  if (combinedText.includes('imovel') || combinedText.includes('casa') || combinedText.includes('sitio') || combinedText.includes('apartamento') || combinedText.includes('terreno')) return 'Imóvel';
+  if (combinedText.includes('pesado') || combinedText.includes('caminhao') || combinedText.includes('maquina') || combinedText.includes('trator')) return 'Pesados';
   if (combinedText.includes('servico')) return 'Serviços';
-  if (combinedText.includes('invest') || combinedText.includes('investimento') || combinedText.includes('investir') || combinedText.includes('extruturado') || combinedText.includes('estruturado') || combinedText.includes('poupanca')) return 'Investimento';
+  if (combinedText.includes('invest') || combinedText.includes('poupanca')) return 'Investimento';
   return rawValue ? String(rawValue).trim() : '';
 };
 
@@ -175,14 +93,205 @@ const normalizePlatform = (rawPlatform) => {
   return String(rawPlatform).trim();
 };
 
-export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMode }) {
+// EXPORTAÇÃO NOMEADA DA INTELIGÊNCIA DE LEITURA
+export const processLeadsIntelligence = (text, removeFormatting = true) => {
+  let textToProcess = String(text);
+  if (removeFormatting) {
+    textToProcess = textToProcess.replace(/[*~`]/g, '');
+    textToProcess = textToProcess.replace(/_/g, ' ');
+  }
+
+  let blocks = [];
+  const leadSeparatorRegex = /(?=✅?\s*\*?NOVO LEAD|={3,}|-{3,})/gi;
+  if (leadSeparatorRegex.test(textToProcess)) blocks = textToProcess.split(leadSeparatorRegex);
+  else blocks = [textToProcess];
+
+  const extractedClients = [];
+
+  blocks.forEach(block => {
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) return;
+
+    const leadData = {};
+    const unmappedData = [];
+    let activeField = null; 
+
+    lines.forEach(line => {
+      if (/(respostas do.? lead|clique no n.mero|clique no numero)/i.test(line)) return;
+      if (/(novo lead gerado|novo lead|campanha:)/i.test(line) && !line.includes(':')) return;
+
+      let keyPart = null;
+      let valPart = null;
+
+      const colonMatch = line.match(/^([^:]+):(.*)$/);
+      if (colonMatch) {
+        keyPart = colonMatch[1].trim();
+        valPart = colonMatch[2].trim();
+      } else {
+        const hyphenMatch = line.match(/^([^-]+)\s+-\s+(.*)$/);
+        if (hyphenMatch) {
+          keyPart = hyphenMatch[1].trim();
+          valPart = hyphenMatch[2].trim();
+        }
+      }
+
+      if (keyPart !== null) {
+        const field = identifyField(keyPart);
+        if (field) {
+          if (valPart.length > 0) {
+            if (field === 'platform' && leadData[field]) leadData[field] += ` | ${valPart}`;
+            else leadData[field] = valPart;
+            activeField = null; 
+          } else {
+            activeField = field; 
+          }
+          return;
+        }
+      }
+
+      const field = identifyField(line);
+      if (field) {
+        activeField = field;
+        return;
+      }
+
+      if (activeField) {
+        if (leadData[activeField]) leadData[activeField] += ` ${line}`;
+        else leadData[activeField] = line;
+        return;
+      }
+
+      unmappedData.push(line);
+    });
+
+    const rawPhoneDigits = String(leadData.phone || '').replace(/\D/g, '');
+    const hasValidPhone = rawPhoneDigits.length >= 8;
+
+    if ((leadData.name || leadData.phone) && hasValidPhone) {
+      const initialInfoLines = [];
+      const resolvedCategory = parseCategoryValue(leadData.category, block);
+
+      if (leadData.desiredCredit) initialInfoLines.push(`Meta/Crédito: ${leadData.desiredCredit}`);
+      if (leadData.idealInstallment) initialInfoLines.push(`Parcela Ideal: ${leadData.idealInstallment}`);
+      if (leadData.urgency) initialInfoLines.push(`Urgência: ${leadData.urgency}`);
+      if (leadData.bidAmount) initialInfoLines.push(`Lance: ${leadData.bidAmount}`);
+      if (leadData.bidType) initialInfoLines.push(`Tipo de Lance: ${leadData.bidType}`);
+      if (leadData.hasFinancing) initialInfoLines.push(`Financiamento Ativo: ${leadData.hasFinancing}`);
+      if (leadData.consorcioKnowledge) initialInfoLines.push(`Conhece Consórcio: ${leadData.consorcioKnowledge}`);
+      if (leadData.reason) initialInfoLines.push(`Motivo de Preenchimento: ${leadData.reason}`);
+
+      if (unmappedData.length > 0) {
+        const cleanedUnmapped = unmappedData.filter(u => u.length > 2).join('\n');
+        if (cleanedUnmapped.trim()) initialInfoLines.push(`\nInformações:\n${cleanedUnmapped}`);
+      }
+
+      extractedClients.push({
+        id: `client_imp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        createdAt: new Date().toISOString(),
+        name: String(leadData.name || 'Lead Não Identificado').trim(),
+        phone: formatPhoneNumber(String(leadData.phone || '')),
+        email: String(leadData.email || '').trim(),
+        cpf: String(leadData.cpf || '').trim(),
+        profession: String(leadData.profession || '').trim(),
+        monthlyIncome: String(leadData.monthlyIncome || '').trim(),
+        category: String(resolvedCategory || '').trim(),
+        desiredCredit: String(leadData.desiredCredit || '').trim(),
+        idealInstallment: String(leadData.idealInstallment || '').trim(),
+        urgency: String(leadData.urgency || '').trim(),
+        bidAmount: String(leadData.bidAmount || '').trim(),
+        bidType: String(leadData.bidType || '').trim(),
+        hasFinancing: String(leadData.hasFinancing || '').trim(),
+        platform: normalizePlatform(String(leadData.platform || '')),
+        leadTemp: 'Morno',
+        winProbability: '',
+        initialInfo: String(initialInfoLines.join('\n')).trim(),
+        history: `DADOS BRUTOS ORIGINAIS:\n${block}`
+      });
+    }
+  });
+
+  return extractedClients;
+};
+
+// COMPONENTE PADRÃO
+export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMode, isElectron, isAutoImportActive, onToggleAutoImport }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768; // Definição de responsividade
+
   const [rawText, setRawText] = useState('');
   const [processing, setProcessing] = useState(false);
   const [removeFormatting, setRemoveFormatting] = useState(true);
 
+  // Estados do Modal de Conexão (QR)
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrCodeData, setQrCodeData] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('');
+
   const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
+
+  // Lógica de Persistência Inicial
+  useEffect(() => {
+    if (isElectron && Platform.OS === 'web') {
+      const savedSetting = localStorage.getItem('autoImportSetting') === 'true';
+      if (savedSetting && !isAutoImportActive) {
+        // Tenta reconectar e ativar automaticamente se estiver salvo
+        fetch('http://localhost:3001/status')
+          .then(res => res.json())
+          .then(data => {
+            if (data.connected) {
+              onToggleAutoImport(true);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [isElectron]);
+
+  // Lógica de Polling de Conexão do QR
+  useEffect(() => {
+    let interval;
+    if (showQrModal) {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch('http://localhost:3001/status');
+          const data = await response.json();
+          setConnectionStatus(data.status);
+          setQrCodeData(data.qrCode);
+
+          if (data.connected) {
+            setShowQrModal(false); // Fecha o modal de QR
+            onToggleAutoImport(true); // Mantém a caixa ativada
+            if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'true'); // Persiste a ativação
+          }
+        } catch (e) {
+          setConnectionStatus('ERROR');
+        }
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [showQrModal]);
+
+  const handleToggleAutoImportClick = async () => {
+    if (isAutoImportActive) {
+      onToggleAutoImport(false);
+      if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'false'); // Persiste a desativação
+    } else {
+      try {
+        const response = await fetch('http://localhost:3001/status');
+        const data = await response.json();
+        if (data.connected) {
+          onToggleAutoImport(true);
+          if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'true'); // Persiste a ativação
+        } else {
+          setShowQrModal(true); // Exibe o QR Code
+        }
+      } catch (e) {
+        showCustomAlert('error', 'Erro', 'Não foi possível conectar ao servidor local do WhatsApp (server.js rodando?).');
+      }
+    }
+  };
 
   const showCustomAlert = (type, title, message) => {
     setAlertConfig({ visible: true, type, title, message });
@@ -204,169 +313,26 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
     });
   };
 
-  // ============================================================================
-  // MOTOR DE LEITURA (MÁQUINA DE ESTADOS RECONSTRUÍDA)
-  // ============================================================================
-  const processLeadsIntelligence = (text) => {
-    let textToProcess = String(text);
-    
-    if (removeFormatting) {
-      textToProcess = textToProcess.replace(/[*~`]/g, '');
-      textToProcess = textToProcess.replace(/_/g, ' ');
-    }
-
-    let blocks = [];
-    const leadSeparatorRegex = /(?=✅?\s*\*?NOVO LEAD|={3,}|-{3,})/gi;
-    if (leadSeparatorRegex.test(textToProcess)) blocks = textToProcess.split(leadSeparatorRegex);
-    else blocks = [textToProcess];
-
-    const extractedClients = [];
-
-    blocks.forEach(block => {
-      const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length < 2) return;
-
-      const leadData = {};
-      const unmappedData = [];
-      let activeField = null; // A "Máquina de Estado" começa nula
-
-      lines.forEach(line => {
-        // Ignora blocos estruturais desnecessários
-        if (/(respostas do.? lead|clique no n.mero|clique no numero)/i.test(line)) return;
-        if (/(novo lead gerado|novo lead|campanha:)/i.test(line) && !line.includes(':')) return;
-
-        let keyPart = null;
-        let valPart = null;
-
-        // Tenta capturar "Chave: Valor" de forma segura (Preferência por 2 pontos)
-        const colonMatch = line.match(/^([^:]+):(.*)$/);
-        if (colonMatch) {
-          keyPart = colonMatch[1].trim();
-          valPart = colonMatch[2].trim();
-        } else {
-          // Fallback para separação com hífen e espaços (para não quebrar emails como joao-silva@mail.com)
-          const hyphenMatch = line.match(/^([^-]+)\s+-\s+(.*)$/);
-          if (hyphenMatch) {
-            keyPart = hyphenMatch[1].trim();
-            valPart = hyphenMatch[2].trim();
-          }
-        }
-
-        if (keyPart !== null) {
-          const field = identifyField(keyPart);
-          if (field) {
-            if (valPart.length > 0) {
-              if (field === 'platform' && leadData[field]) {
-                leadData[field] += ` | ${valPart}`;
-              } else {
-                leadData[field] = valPart;
-              }
-              activeField = null; // Valor já consumido
-            } else {
-              activeField = field; // Aguarda o valor na próxima linha
-            }
-            return;
-          }
-        }
-
-        // Não é "Chave: Valor". É uma Label ou Pergunta Conhecida?
-        const field = identifyField(line);
-        if (field) {
-          activeField = field;
-          return;
-        }
-
-        // É um valor puro, atribuímos ao Estado Atual Ativo!
-        if (activeField) {
-          if (leadData[activeField]) {
-            leadData[activeField] += ` ${line}`;
-          } else {
-            leadData[activeField] = line;
-          }
-          // Mantém activeField aberto, a próxima linha pode ser continuação da resposta.
-          return;
-        }
-
-        // Sem Estado Ativo? É dado não mapeado.
-        unmappedData.push(line);
-      });
-
-      // Validação do Lead
-      const rawPhoneDigits = String(leadData.phone || '').replace(/\D/g, '');
-      const hasValidPhone = rawPhoneDigits.length >= 8;
-
-      if ((leadData.name || leadData.phone) && hasValidPhone) {
-        const initialInfoLines = [];
-        const resolvedCategory = parseCategoryValue(leadData.category, block);
-
-        if (leadData.desiredCredit) initialInfoLines.push(`Meta/Crédito: ${leadData.desiredCredit}`);
-        if (leadData.idealInstallment) initialInfoLines.push(`Parcela Ideal: ${leadData.idealInstallment}`);
-        if (leadData.urgency) initialInfoLines.push(`Urgência: ${leadData.urgency}`);
-        if (leadData.bidAmount) initialInfoLines.push(`Lance: ${leadData.bidAmount}`);
-        if (leadData.bidType) initialInfoLines.push(`Tipo de Lance: ${leadData.bidType}`);
-        if (leadData.hasFinancing) initialInfoLines.push(`Financiamento Ativo: ${leadData.hasFinancing}`);
-        if (leadData.consorcioKnowledge) initialInfoLines.push(`Conhece Consórcio: ${leadData.consorcioKnowledge}`);
-        if (leadData.reason) initialInfoLines.push(`Motivo de Preenchimento: ${leadData.reason}`);
-
-        if (unmappedData.length > 0) {
-          const cleanedUnmapped = unmappedData.filter(u => u.length > 2).join('\n');
-          if (cleanedUnmapped.trim()) initialInfoLines.push(`\nInformações:\n${cleanedUnmapped}`);
-        }
-
-        extractedClients.push({
-          id: `client_imp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          createdAt: new Date().toISOString(),
-          name: String(leadData.name || 'Lead Não Identificado').trim(),
-          phone: formatPhoneNumber(String(leadData.phone || '')),
-          email: String(leadData.email || '').trim(),
-          cpf: String(leadData.cpf || '').trim(),
-          profession: String(leadData.profession || '').trim(),
-          monthlyIncome: String(leadData.monthlyIncome || '').trim(),
-          category: String(resolvedCategory || '').trim(),
-          desiredCredit: String(leadData.desiredCredit || '').trim(),
-          idealInstallment: String(leadData.idealInstallment || '').trim(),
-          urgency: String(leadData.urgency || '').trim(),
-          bidAmount: String(leadData.bidAmount || '').trim(),
-          bidType: String(leadData.bidType || '').trim(),
-          hasFinancing: String(leadData.hasFinancing || '').trim(),
-          platform: normalizePlatform(String(leadData.platform || '')),
-          leadTemp: 'Morno',
-          winProbability: '',
-          initialInfo: String(initialInfoLines.join('\n')).trim(),
-          history: `DADOS BRUTOS ORIGINAIS:\n${block}`
-        });
-      }
-    });
-
-    return extractedClients;
-  };
-
   const handleProcessText = () => {
     if (!rawText.trim()) {
       showCustomAlert('error', 'Atenção', 'Por favor, cole os dados dos leads na área de texto antes de prosseguir.');
       return;
     }
-    
     setProcessing(true);
-
     setTimeout(() => {
       try {
-        const newClients = processLeadsIntelligence(rawText);
-
+        const newClients = processLeadsIntelligence(rawText, removeFormatting);
         if (newClients.length === 0) {
-          showCustomAlert('error', 'Falha na Análise', 'Nenhum lead válido foi encontrado. Lembre-se de que todos os leads precisam obrigatoriamente possuir um número de telefone.');
+          showCustomAlert('error', 'Falha na Análise', 'Nenhum lead válido foi encontrado. Obrigatório possuir telefone.');
           setProcessing(false);
           return;
         }
-
         onImport(newClients);
         showCustomAlert('success', 'Importação Concluída', `${newClients.length} Lead(s) importado(s) e estruturado(s) com sucesso.`, () => {
           setRawText('');
           onClose();
         });
-
       } catch (error) {
-        console.error("Erro Crítico no Motor de Importação:", error);
         showCustomAlert('error', 'Erro Interno', 'Ocorreu um erro ao processar a estrutura do texto.');
       } finally {
         setProcessing(false);
@@ -380,36 +346,75 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         
+        {/* MODAL QR CODE INTERNO */}
+        {showQrModal && (
+          <View style={styles.qrOverlay}>
+            <View style={[styles.qrContainer, themeStyles.modalContainer, isMobile && { width: '90%' }]}>
+                <Text style={[styles.title, themeStyles.title, { textAlign: 'center', marginBottom: 16 }]}>Conectar WhatsApp</Text>
+                
+                {qrCodeData ? (
+                    <Image source={{ uri: qrCodeData }} style={{ width: 250, height: 250 }} />
+                ) : (
+                    <ActivityIndicator size="large" color="#2563eb" style={{ marginVertical: 40 }} />
+                )}
+                
+                <Text style={[styles.subtitle, themeStyles.subtitle, { textAlign: 'center', marginTop: 16, marginBottom: 24 }]}>
+                    {connectionStatus === 'LOADING' ? 'Baixando mensagens...' : 'Leia o QR Code com o aplicativo do WhatsApp para ativar a importação automática.'}
+                </Text>
+
+                <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton, {width: '100%'}]} onPress={() => setShowQrModal(false)}>
+                  <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
+                </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ALERTA CUSTOMIZADO */}
         {alertConfig.visible && (
           <View style={styles.successAlertOverlay}>
-            <Animated.View style={[styles.successAlertBox, themeStyles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
+            <Animated.View style={[styles.successAlertBox, themeStyles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }, isMobile && { width: '90%' }]}>
               <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
-              <Text style={[styles.successAlertTitle, themeStyles.successAlertTitle]}>{alertConfig.title}</Text>
+              <Text style={[styles.successAlertTitle, themeStyles.successAlertTitle, isMobile && { fontSize: 18 }]}>{alertConfig.title}</Text>
               <Text style={[styles.successAlertMessage, themeStyles.successAlertMessage]}>{alertConfig.message}</Text>
-              <TouchableOpacity 
-                style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
-                onPress={() => closeCustomAlert(alertConfig.type === 'success' ? alertConfig.onPress : null)}
-              >
+              <TouchableOpacity style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} onPress={() => closeCustomAlert(alertConfig.type === 'success' ? alertConfig.onPress : null)}>
                 <Text style={styles.successAlertBtnText}>{alertConfig.type === 'success' ? 'Continuar' : 'Entendi'}</Text>
               </TouchableOpacity>
             </Animated.View>
           </View>
         )}
 
-        <View style={[styles.modalContainer, themeStyles.modalContainer]}>
-          <View style={[styles.header, themeStyles.header]}>
-            <View>
-              <Text style={[styles.title, themeStyles.title]}>Importação de Leads em Massa</Text>
-              <Text style={[styles.subtitle, themeStyles.subtitle]}>O motor lerá perguntas e respostas ou formatos estruturados automaticamente.</Text>
+        <View style={[styles.modalContainer, themeStyles.modalContainer, isMobile && { width: '98%', maxHeight: '95%' }]}>
+          <View style={[styles.header, themeStyles.header, isMobile && { padding: 16 }]}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.title, themeStyles.title, isMobile && { fontSize: 18 }]}>Importação de Leads em Massa</Text>
+              <Text style={[styles.subtitle, themeStyles.subtitle, isMobile && { fontSize: 11 }]}>O motor lerá perguntas e respostas ou formatos estruturados automaticamente.</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}>
               <Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            <View style={styles.toolsRow}>
-              <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Dados Brutos da Campanha</Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, isMobile && { padding: 16 }]}>
+            
+            {/* CAIXA DE SELEÇÃO AUTOMÁTICA (Apenas Electron) */}
+            {isElectron && (
+                <View style={[styles.autoImportCard, themeStyles.autoImportCard, isMobile && { flexDirection: 'column', alignItems: 'flex-start' }]}>
+                    <View style={{flex: 1}}>
+                        <Text style={[styles.autoImportTitle, themeStyles.title]}>Importar Leads Automaticamente do WhatsApp</Text>
+                        <Text style={[styles.autoImportSubtitle, themeStyles.subtitle]}>Ao ativar, o sistema lerá conversas do WhatsApp Web conectado e puxará novos formulários de leads para a fase "Novo Cliente".</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={[styles.toggleSwitch, isAutoImportActive && styles.toggleSwitchActive, isMobile && { alignSelf: 'flex-end', marginTop: 10 }]} 
+                      onPress={handleToggleAutoImportClick} 
+                      activeOpacity={0.8}
+                    >
+                        <View style={[styles.toggleCircle, isAutoImportActive && styles.toggleCircleActive]} />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            <View style={[styles.toolsRow, isMobile && { flexDirection: 'column', alignItems: 'flex-start', gap: 12 }]}>
+              <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Dados Brutos da Campanha (Manual)</Text>
               <TouchableOpacity style={[styles.compactToggle, themeStyles.compactToggle]} activeOpacity={0.7} onPress={() => setRemoveFormatting(!removeFormatting)}>
                 <View style={[styles.compactCheckbox, themeStyles.compactCheckbox, removeFormatting && styles.compactCheckboxChecked]}>
                   {removeFormatting && <Text style={styles.compactCheckmark}>✓</Text>}
@@ -428,18 +433,18 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
             />
           </ScrollView>
 
-          <View style={[styles.footer, themeStyles.footer]}>
-            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton]} onPress={onClose} disabled={processing}>
+          <View style={[styles.footer, themeStyles.footer, isMobile && { padding: 16, flexDirection: 'column-reverse' }]}>
+            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton, isMobile && { width: '100%' }]} onPress={onClose} disabled={processing}>
               <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.saveButton} onPress={handleProcessText} disabled={processing}>
+            <TouchableOpacity style={[styles.saveButton, isMobile && { width: '100%', marginBottom: 8 }]} onPress={handleProcessText} disabled={processing}>
               {processing ? (
                 <View style={styles.processingBtnRow}>
                   <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
                   <Text style={styles.saveButtonText}>Processando Dados...</Text>
                 </View>
               ) : (
-                <Text style={styles.saveButtonText}>Processar e Importar</Text>
+                <Text style={styles.saveButtonText}>Processar Manual e Importar</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -451,6 +456,8 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  qrOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
+  qrContainer: { width: 350, padding: 24, borderRadius: 16, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 20px 40px rgba(0,0,0,0.3)' } }) },
   modalContainer: { width: '100%', maxWidth: 750, borderRadius: 16, maxHeight: '90%', overflow: 'hidden', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 20px 40px rgba(0,0,0,0.15)' } }) },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderBottomWidth: 1 },
   title: { fontFamily: MODERN_FONT, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
@@ -458,6 +465,15 @@ const styles = StyleSheet.create({
   closeButton: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
   closeButtonText: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: 'bold' },
   scrollContent: { padding: 24 },
+  
+  autoImportCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 24, gap: 16 },
+  autoImportTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 4, fontFamily: MODERN_FONT },
+  autoImportSubtitle: { fontSize: 12, lineHeight: 16, fontFamily: MODERN_FONT },
+  toggleSwitch: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#cbd5e1', padding: 2, justifyContent: 'center' },
+  toggleSwitchActive: { backgroundColor: '#10b981' },
+  toggleCircle: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#ffffff', ...Platform.select({ web: { transition: 'transform 0.2s' } }) },
+  toggleCircleActive: { transform: [{ translateX: 20 }] },
+
   toolsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 },
   inputLabel: { fontFamily: MODERN_FONT, fontSize: 14, fontWeight: '700' },
   compactToggle: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1 },
@@ -465,14 +481,14 @@ const styles = StyleSheet.create({
   compactCheckboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
   compactCheckmark: { color: '#ffffff', fontSize: 10, fontWeight: '900' },
   compactToggleText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '600' },
-  textArea: { height: 380, borderWidth: 1, borderRadius: 12, padding: 16, fontSize: 13, fontFamily: MODERN_FONT, textAlignVertical: 'top', lineHeight: 22, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  textArea: { height: 300, borderWidth: 1, borderRadius: 12, padding: 16, fontSize: 13, fontFamily: MODERN_FONT, textAlignVertical: 'top', lineHeight: 22, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   footer: { flexDirection: 'row', padding: 20, borderTopWidth: 1, justifyContent: 'flex-end', gap: 12 },
   cancelButton: { paddingVertical: 12, paddingHorizontal: 24, alignItems: 'center', borderRadius: 8 },
   cancelButtonText: { fontFamily: MODERN_FONT, fontWeight: '700', fontSize: 14 },
   saveButton: { paddingVertical: 12, paddingHorizontal: 28, alignItems: 'center', borderRadius: 8, backgroundColor: '#2563eb', ...Platform.select({ web: { boxShadow: '0px 4px 10px rgba(37, 99, 235, 0.2)' } }) },
-  processingBtnRow: { flexDirection: 'row', alignItems: 'center' },
+  processingBtnRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   saveButtonText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 14 },
-  successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
+  successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 99999 },
   successAlertBox: { padding: 24, borderRadius: 16, alignItems: 'center', width: 320, ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
   successAlertIcon: { fontSize: 48, marginBottom: 12 },
   successAlertTitle: { fontFamily: MODERN_FONT, fontSize: 20, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
@@ -488,6 +504,7 @@ const lightStyles = StyleSheet.create({
   subtitle: { color: '#64748b' },
   closeButton: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
   closeButtonText: { color: '#475569' },
+  autoImportCard: { backgroundColor: '#f0fdfa', borderColor: '#ccfbf1' },
   inputLabel: { color: '#1e293b' },
   compactToggle: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
   compactCheckbox: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
@@ -508,6 +525,7 @@ const darkStyles = StyleSheet.create({
   subtitle: { color: '#94a3b8' },
   closeButton: { backgroundColor: '#0f172a', borderColor: '#334155' },
   closeButtonText: { color: '#94a3b8' },
+  autoImportCard: { backgroundColor: '#022c22', borderColor: '#064e3b' },
   inputLabel: { color: '#f8fafc' },
   compactToggle: { backgroundColor: '#0f172a', borderColor: '#334155' },
   compactCheckbox: { borderColor: '#334155', backgroundColor: '#0f172a' },

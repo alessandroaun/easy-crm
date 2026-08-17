@@ -7,7 +7,7 @@ import AddPhaseModal from '../components/AddPhaseModal';
 import TrashModal from '../components/TrashModal';
 import ClientDetailsModal from '../components/ClientDetailsModal';
 import FilterModal from '../components/FilterModal';
-import ImportLeadsModal from '../components/ImportLeadsModal';
+import ImportLeadsModal, { processLeadsIntelligence } from '../components/ImportLeadsModal';
 import EditPhaseModal from '../components/EditPhaseModal';
 import { supabase } from '../services/supabaseClient';
 import NotificationModal from '../components/NotificationModal';
@@ -26,6 +26,8 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   
   // Estado para detectar se o app está rodando via Electron
   const [isElectron, setIsElectron] = useState(false);
+
+  const [isAutoImportActive, setIsAutoImportActive] = useState(false);
 
   // Hook de Responsividade
   const { width } = useWindowDimensions();
@@ -57,6 +59,26 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const slideAnim = useRef(new Animated.Value(-280)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const [isMenuRendered, setIsMenuRendered] = useState(false);
+
+  const [toastNotif, setToastNotif] = useState({ visible: false, text: '' });
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTranslateY = useRef(new Animated.Value(-20)).current;
+
+  const showToastNotification = (message) => {
+    setToastNotif({ visible: true, text: message });
+    Animated.parallel([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.spring(toastTranslateY, { toValue: 0, friction: 5, useNativeDriver: Platform.OS !== 'web' })
+    ]).start();
+
+    // Fade Out apos 4 segundos
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.spring(toastTranslateY, { toValue: -20, friction: 5, useNativeDriver: Platform.OS !== 'web' })
+      ]).start(() => setToastNotif({ visible: false, text: '' }));
+    }, 4000);
+  };
 
   const openSidebar = () => {
     setIsMenuRendered(true);
@@ -550,7 +572,7 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
     }
 
     if (updatedBoard.phases.length > 0) {
-      updatedBoard.phases[0].clients.push(newClient);
+      updatedBoard.phases[0].clients.unshift(newClient);
       setBoardData(updatedBoard); 
       syncBoardToDatabase(updatedBoard); 
     } else {
@@ -871,6 +893,73 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
     }
   };
 
+  // =========================================================================
+  // MOTOR DE BUSCA E AUTO-IMPORTAÇÃO (Novo Hook)
+  // =========================================================================
+  useEffect(() => {
+    let pollingInterval;
+
+    if (isAutoImportActive && isElectron && boardData && boardData.phases && boardData.phases.length > 0) {
+      pollingInterval = setInterval(async () => {
+        try {
+          const res = await fetch('http://localhost:3001/auto-leads');
+          const data = await res.json();
+          
+          if (data.leads && data.leads.length > 0) {
+            let leadsToClear = [];
+            let updatedBoard = JSON.parse(JSON.stringify(boardData));
+            let newImportsCount = 0;
+
+            // Extrair números de telefone existentes para evitar duplicidade
+            const existingPhones = new Set();
+            updatedBoard.phases.forEach(p => p.clients.forEach(c => {
+                if (c.phone) existingPhones.add(c.phone.replace(/\D/g, ''));
+            }));
+
+            data.leads.forEach(leadRecord => {
+              leadsToClear.push(leadRecord.id); // Sempre marcamos para apagar da fila do Node, sendo salvo ou duplicado
+
+              // Passar pelo motor inteligente de leitura (o mesmo do Modal manual)
+              const parsedClientsArray = processLeadsIntelligence(leadRecord.text, true);
+              
+              parsedClientsArray.forEach(newClient => {
+                const cleanPhone = (newClient.phone || '').replace(/\D/g, '');
+                
+                // Validação final de duplicata e obrigatoriedade de telefone
+                if (cleanPhone && !existingPhones.has(cleanPhone)) {
+                   existingPhones.add(cleanPhone); // Marca para não inserir no mesmo loop
+                   updatedBoard.phases[0].clients.unshift(newClient); // Joga no início da Coluna 1
+                   newImportsCount++;
+                }
+              });
+            });
+
+            // Se novos leads foram efetivamente salvos
+            if (newImportsCount > 0) {
+              setBoardData(updatedBoard);
+              syncBoardToDatabase(updatedBoard);
+              showToastNotification(`🤖 ${newImportsCount} novo(s) lead(s) importado(s) automaticamente!`);
+              addSystemNotification('Auto-Importação Concluída', `O sistema detectou e importou ${newImportsCount} lead(s) diretamente do WhatsApp de forma automática.`);
+            }
+
+            // Limpa os processados do server.js
+            if (leadsToClear.length > 0) {
+                await fetch('http://localhost:3001/auto-leads/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: leadsToClear })
+                });
+            }
+          }
+        } catch (e) {
+            // Ignora silenciosamente, o servidor pode estar temporariamente ocupado ou offline
+        }
+      }, 5000); // Roda a cada 5 segundos
+    }
+
+    return () => clearInterval(pollingInterval);
+  }, [isAutoImportActive, isElectron, boardData]);
+
   const getFilteredBoard = () => {
     if (!boardData) return null;
     const query = searchQuery.toLowerCase();
@@ -1107,6 +1196,14 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
 
   return (
     <View style={[styles.container, currentTheme.container]}>
+
+      {/* TOAST NOTIFICATION FLUTUANTE DE AUTO-IMPORT (Adicionado no Topo) */}
+      {toastNotif.visible && (
+        <Animated.View style={[styles.toastContainer, currentTheme.toastContainer, { opacity: toastOpacity, transform: [{ translateY: toastTranslateY }] }]}>
+           <Text style={styles.toastIcon}>✨</Text>
+           <Text style={[styles.toastText, currentTheme.toastText]}>{toastNotif.text}</Text>
+        </Animated.View>
+      )}
       
       {isMobile ? (
         <View style={[styles.topHeaderMobileContainer, currentTheme.topHeader]}>
@@ -1216,7 +1313,7 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
                           setIsBulkDropdownOpen(false);
                         }}
                       >
-                        <Text style={[styles.bulkDropdownItemText, currentTheme.bulkDropdownItemText]} numberOfLines={1}>{u.name || u.email}</Text>
+                        <Text style={[styles.bulkDropdownItemText, currentTheme.bulkDropdownItemText]}>{u.name || u.email}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1571,6 +1668,16 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
       <EditPhaseModal visible={!!editingPhase} onClose={() => setEditingPhase(null)} phase={editingPhase} allPhases={boardData.phases} onSave={handleUpdatePhase} onDelete={handleDeletePhase} isDarkMode={isDarkMode} />
       <ClientDetailsModal visible={isDetailsModalVisible} onClose={() => { setIsDetailsModalVisible(false); setSelectedClient(null); }} clientData={selectedClient} onSave={handleUpdateClientDetails} isAdmin={userProfile?.role === 'admin'} usersList={usersList} currentUserId={currentUserId} onTransferLead={handleTransferLead} isDarkMode={isDarkMode} />
       
+      <ImportLeadsModal 
+        visible={isImportModalVisible} 
+        onClose={() => setIsImportModalVisible(false)} 
+        onImport={handleImportLeads} 
+        isDarkMode={isDarkMode}
+        isElectron={isElectron}
+        isAutoImportActive={isAutoImportActive}
+        onToggleAutoImport={setIsAutoImportActive}
+      />
+
       <NotificationModal 
         visible={isNotifModalVisible} 
         onClose={() => setIsNotifModalVisible(false)} 
@@ -1708,6 +1815,23 @@ const styles = StyleSheet.create({
   bellTop: { width: 14, height: 10, borderTopLeftRadius: 7, borderTopRightRadius: 7, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
   bellBottom: { width: 4, height: 3, marginTop: 1, borderRadius: 2 },
 
+  toastContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 80 : 50,
+    right: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    zIndex: 9999,
+    ...Platform.select({ web: { boxShadow: '0px 8px 20px rgba(0,0,0,0.15)' } })
+  },
+
+  toastIcon: { fontSize: 18, marginRight: 8 },
+  toastText: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '700' },
+
   themeToggleButtonFancy: {
     width: 36,
     height: 36,
@@ -1820,7 +1944,7 @@ const styles = StyleSheet.create({
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
   successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
 
-  bulkDropdownMenu: { position: 'absolute', top: 40, left: 0, right: 0, borderWidth: 1, borderRadius: 8, padding: 6, zIndex: 1000 },
+  bulkDropdownMenu: { position: 'absolute', top: 40, left: 0, right: 0, borderWidth: 1, borderRadius: 8, minWidth: 140, padding: 6, zIndex: 1000 },
   bulkDropdownTitle: { fontSize: 11, fontWeight: 'bold', marginBottom: 4, paddingHorizontal: 4 },
   bulkDropdownItem: { paddingVertical: 8, paddingHorizontal: 6, borderRadius: 4 },
   bulkDropdownItemText: { fontSize: 12, fontWeight: '600' },
@@ -1837,6 +1961,8 @@ const lightStyles = StyleSheet.create({
   topHeader: { backgroundColor: '#ffffff', borderBottomColor: '#e2e8f0', ...Platform.select({ web: { boxShadow: '0px 1px 3px rgba(0,0,0,0.05)' } }) },
   menuIcon: { color: '#334155' },
   themeToggleButton: { backgroundColor: '#f1f5f9' },
+  toastContainer: { backgroundColor: '#10b981', borderColor: '#059669' },
+  toastText: { color: '#ffffff' },
   themeToggleButtonFancy: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
   searchContainer: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
   searchInput: { color: '#0f172a' },
@@ -1891,6 +2017,8 @@ const darkStyles = StyleSheet.create({
   themeToggleButton: { backgroundColor: '#334155' },
   searchContainer: { backgroundColor: '#0f172a', borderColor: '#334155' },
   searchInput: { color: '#f8fafc' },
+  toastContainer: { backgroundColor: '#064e3b', borderColor: '#047857' },
+  toastText: { color: '#a7f3d0' },
   filterBtn: { backgroundColor: '#1e293b', borderColor: '#334155' },
   filterBtnText: { color: '#94a3b8' },
   themeToggleButtonFancy: { backgroundColor: '#1e293b', borderColor: '#334155' },

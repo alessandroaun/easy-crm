@@ -28,6 +28,17 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
 
+  // Função para formatar valores financeiros no padrão 180.000,00
+  const formatCurrency = (value) => {
+    if (!value && value !== 0) return '';
+    let numbers = String(value).replace(/\D/g, '');
+    if (!numbers) return '';
+    let amount = (parseInt(numbers, 10) / 100).toFixed(2);
+    let parts = amount.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return parts.join(',');
+  };
+
   const showCustomAlert = (type, title, message) => {
     setAlertConfig({ visible: true, type, title, message });
     alertScale.setValue(0.8);
@@ -53,11 +64,26 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       if (clientData.history) {
         mergedInfo = mergedInfo ? `${mergedInfo}\n\n=== DADOS DA IMPORTAÇÃO ===\n${clientData.history}` : clientData.history;
       }
-      const dataToSet = { ...clientData, initialInfo: mergedInfo };
-      delete dataToSet.history; 
+      
+      // Formata campos de valor ao carregar os dados
+      const formattedClientData = { ...clientData, initialInfo: mergedInfo };
+      delete formattedClientData.history; 
 
-      setFormData(dataToSet);
-      setOriginalData(JSON.parse(JSON.stringify(dataToSet))); 
+      if (formattedClientData.desiredCredit) formattedClientData.desiredCredit = formatCurrency(formattedClientData.desiredCredit);
+      if (formattedClientData.idealInstallment) formattedClientData.idealInstallment = formatCurrency(formattedClientData.idealInstallment);
+      if (formattedClientData.monthlyIncome) formattedClientData.monthlyIncome = formatCurrency(formattedClientData.monthlyIncome);
+      if (formattedClientData.bidAmount) formattedClientData.bidAmount = formatCurrency(formattedClientData.bidAmount);
+
+      if (formattedClientData.contracts && Array.isArray(formattedClientData.contracts)) {
+        formattedClientData.contracts = formattedClientData.contracts.map(c => ({
+          ...c,
+          valorContrato: c.valorContrato ? formatCurrency(c.valorContrato) : '',
+          valorParcela: c.valorParcela ? formatCurrency(c.valorParcela) : ''
+        }));
+      }
+
+      setFormData(formattedClientData);
+      setOriginalData(JSON.parse(JSON.stringify(formattedClientData))); 
       setActiveTab('informacoes');
       setNewCommentText('');
       setSelectedTransferUserId('');
@@ -89,13 +115,23 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   }, [clientData]);
 
   const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let finalValue = value;
+    const currencyFields = ['desiredCredit', 'idealInstallment', 'monthlyIncome', 'bidAmount'];
+    if (currencyFields.includes(field)) {
+      finalValue = formatCurrency(value);
+    }
+    setFormData(prev => ({ ...prev, [field]: finalValue }));
   };
 
   const handleContractChange = (contractId, field, value) => {
+    let finalValue = value;
+    const currencyFields = ['valorContrato', 'valorParcela'];
+    if (currencyFields.includes(field)) {
+      finalValue = formatCurrency(value);
+    }
     setFormData(prev => {
       const updatedContracts = (prev.contracts || []).map(c => 
-        c.id === contractId ? { ...c, [field]: value } : c
+        c.id === contractId ? { ...c, [field]: finalValue } : c
       );
       return { ...prev, contracts: updatedContracts };
     });
@@ -404,7 +440,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 style={[styles.dealToggleBtn, formData.dealClosed ? styles.dealToggleBtnClosed : styles.dealToggleBtnOpen]} 
                 onPress={toggleDealClosed}
               >
-                <Text style={styles.dealToggleBtnText}>{formData.dealClosed ? '🤝 Negócio Fechado' : 'Fechou Negócio?'}</Text>
+                <Text style={styles.dealToggleBtnText}>{formData.dealClosed ? 'Negócio Fechado' : 'Fechou Negócio?'}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}><Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text></TouchableOpacity>
             </View>
@@ -421,9 +457,9 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <TabButton id="financeiro" label="Financeiro" />
                   <TabButton id="kpis" label="Inteligência" />
                   <TabButton id="agendamentos" label="Agendamentos" />
-                  {formData.dealClosed && <TabButton id="acompanhamento" label="📈 Acompanhamento" />}
+                  {formData.dealClosed && <TabButton id="acompanhamento" label="Acompanhamento" />}
                   <TabButton id="comentarios" label="Comentários" />
-                  {isAdmin && <TabButton id="transferir" label="🔄 Transferir Lead" />}
+                  {isAdmin && <TabButton id="transferir" label="Transferir Lead" />}
                 </ScrollView>
               </View>
             ) : (
@@ -434,8 +470,8 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 <TabButton id="financeiro" label="Financeiro" />
                 <TabButton id="kpis" label="Inteligência" />
                 <TabButton id="agendamentos" label="Agendamentos" />
-                {formData.dealClosed && <TabButton id="acompanhamento" label="📈 Acompanhamento" />}
-                {isAdmin && <TabButton id="transferir" label="🔄 Transferir Lead" />}
+                {formData.dealClosed && <TabButton id="acompanhamento" label="Acompanhamento" />}
+                {isAdmin && <TabButton id="transferir" label="Transferir Lead" />}
               </View>
             )}
 
@@ -447,11 +483,11 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
                     <View style={styles.inputGroup}>
                       <Text style={[styles.label, themeStyles.label]}>Valor Desejado (Crédito)</Text>
-                      <TextInput style={[styles.input, themeStyles.input]} value={formData.desiredCredit || ''} onChangeText={t => handleChange('desiredCredit', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                      <TextInput style={[styles.input, themeStyles.input]} value={formData.desiredCredit || ''} onChangeText={t => handleChange('desiredCredit', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                     </View>
                     <View style={styles.inputGroup}>
                       <Text style={[styles.label, themeStyles.label]}>Parcela Ideal / Possível</Text>
-                      <TextInput style={[styles.input, themeStyles.input]} value={formData.idealInstallment || ''} onChangeText={t => handleChange('idealInstallment', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
+                      <TextInput style={[styles.input, themeStyles.input]} value={formData.idealInstallment || ''} onChangeText={t => handleChange('idealInstallment', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                     </View>
                   </View>
                   <View style={styles.inputGroup}>
@@ -554,7 +590,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   </View>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
                     <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Profissão</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.profession || ''} onChangeText={t => handleChange('profession', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
-                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Renda Mensal</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.monthlyIncome || ''} onChangeText={t => handleChange('monthlyIncome', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Renda Mensal</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.monthlyIncome || ''} onChangeText={t => handleChange('monthlyIncome', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                 </View>
               )}
@@ -576,7 +612,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 <View style={styles.formSection}>
                   <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Perfil Financeiro e Lances</Text>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
-                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor Disponível p/ Lance</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.bidAmount || ''} onChangeText={t => handleChange('bidAmount', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                    <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor Disponível p/ Lance</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.bidAmount || ''} onChangeText={t => handleChange('bidAmount', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                     <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Tipo de Lance Preferido</Text><TextInput style={[styles.input, themeStyles.input]} placeholder="Livre, Embutido, FGTS..." placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={formData.bidType || ''} onChangeText={t => handleChange('bidType', t)} /></View>
                   </View>
                   <View style={[styles.row, isMobile && styles.rowMobile]}>
@@ -615,8 +651,8 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                         <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Número da Cota</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.cota} onChangeText={t => handleContractChange(contract.id, 'cota', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                       </View>
                       <View style={[styles.row, isMobile && styles.rowMobile]}>
-                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor do Contrato</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.valorContrato} onChangeText={t => handleContractChange(contract.id, 'valorContrato', t)} placeholder="Ex: R$ 100.000,00" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
-                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor da Parcela</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.valorParcela} onChangeText={t => handleContractChange(contract.id, 'valorParcela', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor do Contrato</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.valorContrato} onChangeText={t => handleContractChange(contract.id, 'valorContrato', t)} keyboardType="numeric" placeholder="Ex: 100.000,00" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
+                        <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Valor da Parcela</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.valorParcela} onChangeText={t => handleContractChange(contract.id, 'valorParcela', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                       </View>
                       <View style={[styles.row, isMobile && styles.rowMobile]}>
                         <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Prazo do Contrato (Meses)</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.prazo} onChangeText={t => handleContractChange(contract.id, 'prazo', t)} keyboardType="numeric" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>

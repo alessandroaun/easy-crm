@@ -19,22 +19,32 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 };
 
+// Obter a data e hora atual no fuso horário do Brasil (UTC-3)
+const getBrazilTime = () => {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  return new Date(utc + (3600000 * -3)); 
+};
+
 export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
 
   const [config, setConfig] = useState(null);
   const [userProfileName, setUserProfileName] = useState(null);
-  const [boardsPayloadMetrics, setBoardsPayloadMetrics] = useState({
+  
+  // Alterado nome do estado para evitar termos técnicos
+  const [boardsEngagementMetrics, setBoardsEngagementMetrics] = useState({
     disparazapCount: 0,
-    totalCommentsPayload: 0,
-    totalNotificationsPayload: 0,
+    totalCommentsCount: 0,
+    totalNotificationsCount: 0,
     activeCampaigns: 0
   });
+  
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'mentoria' | 'desempenho' | 'engajamento'
 
-  // Busca as configurações dinâmicas e o nome real em user_profiles > name, além dos payloads dos boards
+  // Busca as configurações dinâmicas e o nome real em user_profiles > name, além dos dados dos boards
   useEffect(() => {
     const fetchCentralData = async () => {
       try {
@@ -72,7 +82,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
             setConfig(fallbackData?.data_payload || { name: 'Usuário', monthlyGoal: '50000', dailyCalls: '15', dailySims: '3', dailyNeg: '5' });
           }
 
-          // 3. Consulta o data_payload dos "board_..." de cada usuário para sumarizar disparazap, notificações e comentários
+          // 3. Consulta o data_payload dos "board_..." de cada usuário para sumarizar engajamento
           const { data: allBoards } = await supabase
             .from('crm_boards')
             .select('id, data_payload')
@@ -123,10 +133,10 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
             });
           }
 
-          setBoardsPayloadMetrics({
+          setBoardsEngagementMetrics({
             disparazapCount: dCount,
-            totalCommentsPayload: cCount,
-            totalNotificationsPayload: nCount,
+            totalCommentsCount: cCount,
+            totalNotificationsCount: nCount,
             activeCampaigns: campCount
           });
 
@@ -163,7 +173,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
     let boletosProximos = [];
     let parcelasAtrasadas = [];
 
-    const now = new Date();
+    const now = getBrazilTime();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     const todayStr = now.toLocaleDateString();
@@ -320,16 +330,17 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
   const metaPercentage = metaMensalNumerica > 0 ? Math.min(Math.round((metrics.vendasMes / metaMensalNumerica) * 100), 100) : 0;
 
   const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Bom dia';
-    if (hour < 18) return 'Boa tarde';
+    const hour = getBrazilTime().getHours();
+    if (hour >= 6 && hour < 12) return 'Bom dia';
+    if (hour >= 12 && hour < 18) return 'Boa tarde';
     return 'Boa noite';
   };
 
-  const currentDate = new Date();
-  const weekDays = ['Domingo', 'Segunda-Feira', 'Terça-Feira', 'Quarta-Feira', 'Quinta-Feira', 'Sexta-Feira', 'Sábado'];
-  const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-  const dateFormatted = `Hoje é ${weekDays[currentDate.getDay()]}, ${currentDate.getDate()} de ${months[currentDate.getMonth()]} de ${currentDate.getFullYear()}.`;
+  const currentDate = getBrazilTime();
+  const weekDays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+  const months = ['agosto', 'setembro', 'outubro', 'novembro', 'dezembro', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho'];
+  const monthsCorrected = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const dateFormatted = `Hoje é ${weekDays[currentDate.getDay()]}, ${currentDate.getDate()} de ${monthsCorrected[currentDate.getMonth()]} de ${currentDate.getFullYear()}.`;
 
   const salesTips = useMemo(() => {
     let tips = [];
@@ -339,15 +350,15 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
         desc: `Você possui ${metrics.hot} cliente(s) marcado(s) como quente(s). O calor da negociação esfria rápido em 48h. Conecte-se agora via WhatsApp ou Ligação.`
       });
     }
-    if (boardsPayloadMetrics.disparazapCount > 0) {
+    if (boardsEngagementMetrics.disparazapCount > 0) {
       tips.push({
-        title: "🤖 O Poder do DisparazaP",
-        desc: `O sistema registrou ${boardsPayloadMetrics.disparazapCount} interações/disparos via DisparazaP na sua base. Monitore o retorno imediato desses leads para qualificar os interessados em consórcio.`
+        title: "🤖 O Poder do DisparaZap",
+        desc: `O sistema registrou ${boardsEngagementMetrics.disparazapCount} interações/disparos via DisparaZap na sua base. Monitore o retorno imediato desses leads para qualificar os interessados em consórcio.`
       });
     } else {
       tips.push({
         title: "🚀 Ative suas Campanhas em Massa",
-        desc: "Notamos que o uso do DisparazaP está baixo nos registros dos seus boards. Utilize disparos segmentados para reaquecer sua base antiga de clientes."
+        desc: "Notamos que o uso do DisparaZap está baixo nos registros dos seus boards. Utilize disparos segmentados para reaquecer sua base antiga de clientes."
       });
     }
     if (metrics.noContact > 0) {
@@ -369,7 +380,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
       });
     }
     return tips;
-  }, [metrics, boardsPayloadMetrics]);
+  }, [metrics, boardsEngagementMetrics]);
 
   if (loading) {
     return (
@@ -415,7 +426,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
               style={[styles.navTabBtn, activeTab === 'engajamento' && themeStyles.navTabActive]} 
               onPress={() => setActiveTab('engajamento')}
             >
-              <Text style={[styles.navTabText, themeStyles.navTabText, activeTab === 'engajamento' && themeStyles.navTabTextActive]}>Payload & DisparazaP</Text>
+              <Text style={[styles.navTabText, themeStyles.navTabText, activeTab === 'engajamento' && themeStyles.navTabTextActive]}>Engajamento & DisparaZap</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -659,11 +670,11 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
           </View>
         )}
 
-        {/* ABA: PAYLOAD & DISPARAZAP */}
+        {/* ABA: ENGAJAMENTO & DISPARAZAP */}
         {activeTab === 'engajamento' && (
           <View style={[styles.tabContentContainer, themeStyles.tabContentContainer]}>
             <View style={styles.funnelHeaderBox}>
-              <Text style={[styles.funnelHeaderTitle, themeStyles.funnelHeaderTitle]}>⚡ Análise Consolidada de Payload e DisparazaP</Text>
+              <Text style={[styles.funnelHeaderTitle, themeStyles.funnelHeaderTitle]}>⚡ Análise Consolidada de Engajamento e DisparaZap</Text>
               <Text style={[styles.funnelHeaderDesc, themeStyles.funnelHeaderDesc]}>
                 Métricas extraídas diretamente dos registros de dados salvos nos boards do sistema para apoiar e motivar sua rotina de vendas, {firstName}.
               </Text>
@@ -671,28 +682,28 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
 
             <View style={styles.funnelMetricsGrid}>
               <View style={[styles.funnelBox, themeStyles.funnelBox]}>
-                <Text style={[styles.funnelBoxLabel, themeStyles.funnelBoxLabel]}>Disparos / Uso DisparazaP</Text>
-                <Text style={[styles.funnelBoxVal, {color: '#9333ea'}]}>{boardsPayloadMetrics.disparazapCount} <Text style={{fontSize: 14, color: '#64748b'}}>envios</Text></Text>
+                <Text style={[styles.funnelBoxLabel, themeStyles.funnelBoxLabel]}>Disparos / Uso DisparaZap</Text>
+                <Text style={[styles.funnelBoxVal, {color: '#9333ea'}]}>{boardsEngagementMetrics.disparazapCount} <Text style={{fontSize: 14, color: '#64748b'}}>envios</Text></Text>
               </View>
               <View style={[styles.funnelBox, themeStyles.funnelBox]}>
                 <Text style={[styles.funnelBoxLabel, themeStyles.funnelBoxLabel]}>Comentários Registrados</Text>
-                <Text style={[styles.funnelBoxVal, {color: '#0284c7'}]}>{boardsPayloadMetrics.totalCommentsPayload} <Text style={{fontSize: 14, color: '#64748b'}}>notas</Text></Text>
+                <Text style={[styles.funnelBoxVal, {color: '#0284c7'}]}>{boardsEngagementMetrics.totalCommentsCount} <Text style={{fontSize: 14, color: '#64748b'}}>notas</Text></Text>
               </View>
               <View style={[styles.funnelBox, themeStyles.funnelBox]}>
                 <Text style={[styles.funnelBoxLabel, themeStyles.funnelBoxLabel]}>Notificações / Agendas</Text>
-                <Text style={[styles.funnelBoxVal, {color: '#ca8a04'}]}>{boardsPayloadMetrics.totalNotificationsPayload} <Text style={{fontSize: 14, color: '#64748b'}}>avisos</Text></Text>
+                <Text style={[styles.funnelBoxVal, {color: '#ca8a04'}]}>{boardsEngagementMetrics.totalNotificationsCount} <Text style={{fontSize: 14, color: '#64748b'}}>avisos</Text></Text>
               </View>
             </View>
 
             <View style={[styles.motivationPayloadBox, themeStyles.motivationPayloadBox]}>
-              <Text style={[styles.motivationPayloadTitle, themeStyles.motivationPayloadTitle]}>🎯 Avaliação de Produtividade Baseada em Payload</Text>
+              <Text style={[styles.motivationPayloadTitle, themeStyles.motivationPayloadTitle]}>🎯 Avaliação de Produtividade Baseada em Engajamento</Text>
               <Text style={[styles.motivationPayloadText, themeStyles.motivationPayloadText]}>
-                {boardsPayloadMetrics.disparazapCount > 5 
-                  ? `Parabéns, ${firstName}! Você está utilizando ativamente o DisparazaP para prospectar em massa. Continue alimentando o funil com novos contatos para manter suas colunas de negociação aquecidas.`
-                  : `Dica de Ouro: Identificamos que o uso do DisparazaP pode ser intensificado. Utilize as ferramentas de automação para disparar mensagens em massa e acelerar a captação de novos clientes.`}
+                {boardsEngagementMetrics.disparazapCount > 5 
+                  ? `Parabéns, ${firstName}! Você está utilizando ativamente o DisparaZap para prospectar em massa. Continue alimentando o funil com novos contatos para manter suas colunas de negociação aquecidas.`
+                  : `Dica de Ouro: Identificamos que o uso do DisparaZap pode ser intensificado. Utilize as ferramentas de automação para disparar mensagens em massa e acelerar a captação de novos clientes.`}
               </Text>
               <Text style={[styles.motivationPayloadText, themeStyles.motivationPayloadText, {marginTop: 12}]}>
-                Além disso, seus cards acumulam um total de <Text style={{fontWeight: '700', color: isDarkMode ? '#f8fafc' : '#1e293b'}}>{boardsPayloadMetrics.totalCommentsPayload} comentários</Text> de histórico. Histórico detalhado é sinônimo de fechamento certeiro!
+                Além disso, seus cards acumulam um total de <Text style={{fontWeight: '700', color: isDarkMode ? '#f8fafc' : '#1e293b'}}>{boardsEngagementMetrics.totalCommentsCount} comentários</Text> de histórico. Histórico detalhado é sinônimo de fechamento certeiro!
               </Text>
             </View>
           </View>
@@ -713,7 +724,7 @@ const styles = StyleSheet.create({
   heroSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, gap: 16, flexWrap: 'wrap' },
   heroSectionMobile: { flexDirection: 'column', alignItems: 'flex-start' },
   greeting: { fontFamily: MODERN_FONT, fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
-  dateText: { fontFamily: MODERN_FONT, fontSize: 14, marginTop: 4, textTransform: 'capitalize' },
+  dateText: { fontFamily: MODERN_FONT, fontSize: 14, marginTop: 4 }, // Removido capitalize para ficar tudo minúsculo conforme solicitado
   
   navTabsContainer: { flexDirection: 'row', padding: 4, borderRadius: 10, gap: 4, flexWrap: 'wrap' },
   navTabsContainerMobile: { width: '100%' },
