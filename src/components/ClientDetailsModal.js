@@ -23,12 +23,10 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const [selectedTransferUserId, setSelectedTransferUserId] = useState('');
   const [transferWithoutComment, setTransferWithoutComment] = useState(false);
   
-  // Motor Dinâmico de Alertas (Sucesso / Erro)
   const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
 
-  // Função para formatar valores financeiros no padrão 180.000,00
   const formatCurrency = (value) => {
     if (!value && value !== 0) return '';
     let numbers = String(value).replace(/\D/g, '');
@@ -38,6 +36,27 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     return parts.join(',');
   };
+
+  // Efeito para atualização em tempo real dos valores de crédito e parcela
+  useEffect(() => {
+    if (formData.dealClosed && formData.contracts && formData.contracts.length > 0) {
+      let totalValor = 0;
+      let totalParcela = 0;
+
+      formData.contracts.forEach(c => {
+        const valContrato = parseFloat(String(c.valorContrato || '0').replace(/\./g, '').replace(',', '.')) || 0;
+        const valParcela = parseFloat(String(c.valorParcela || '0').replace(/\./g, '').replace(',', '.')) || 0;
+        totalValor += valContrato;
+        totalParcela += valParcela;
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        desiredCredit: formatCurrency(Math.round(totalValor * 100)),
+        idealInstallment: formatCurrency(Math.round(totalParcela * 100))
+      }));
+    }
+  }, [formData.contracts, formData.dealClosed]);
 
   const showCustomAlert = (type, title, message) => {
     setAlertConfig({ visible: true, type, title, message });
@@ -65,7 +84,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
         mergedInfo = mergedInfo ? `${mergedInfo}\n\n=== DADOS DA IMPORTAÇÃO ===\n${clientData.history}` : clientData.history;
       }
       
-      // Formata campos de valor ao carregar os dados
       const formattedClientData = { ...clientData, initialInfo: mergedInfo };
       delete formattedClientData.history; 
 
@@ -371,11 +389,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     if (prazo <= 0) return <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Informe o prazo do contrato para exibir as parcelas.</Text>;
     
     const parcelasPagas = contract.parcelasPagas || [];
-    let highestPaid = -1;
-    for (let i = 0; i < prazo; i++) {
-        if (parcelasPagas[i]) highestPaid = i;
-    }
-    
     let visibleCount = 12;
     while (visibleCount <= prazo) {
         let allCheckedInBlock = true;
@@ -570,7 +583,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                       )}
                     </View>
                   </View>
-
                 </View>
               )}
 

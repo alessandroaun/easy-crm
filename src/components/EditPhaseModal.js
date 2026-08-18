@@ -107,7 +107,7 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                     placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
                   />
 
-                  <Text style={[styles.label, themeStyles.label]}>Cor de Destaque da Coluna</Text>
+                  <Text style={[styles.label, themeStyles.label]}>Cor da fase</Text>
                   <View style={styles.colorPicker}>
                     {currentColorsPalette.map((c) => (
                       <TouchableOpacity
@@ -119,7 +119,7 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                   </View>
 
                   <View style={styles.kanbanOrgHeader}>
-                    <Text style={[styles.label, themeStyles.label]}>Posição no Quadro (Esquerda p/ Direita)</Text>
+                    <Text style={[styles.label, themeStyles.label]}>Posicionamento no fluxo de vendas</Text>
                   </View>
                   
                   <View style={[styles.orderingContainer, themeStyles.orderingContainer]}>
@@ -164,13 +164,13 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                       })}
                     </ScrollView>
                   </View>
-                  <Text style={[styles.helpText, themeStyles.helpText]}>Use as setas para reposicionar esta coluna no seu funil de vendas.</Text>
+                  <Text style={[styles.helpText, themeStyles.helpText]}>Use as setas para reposicionar esta fase no seu funil de vendas.</Text>
                 </View>
               </ScrollView>
 
               <View style={[styles.footer, themeStyles.footer]}>
                 <TouchableOpacity style={styles.deletePhaseButton} onPress={() => setIsConfirmingDelete(true)}>
-                  <Text style={styles.deletePhaseText}>🗑️ Excluir Fase</Text>
+                  <Text style={styles.deletePhaseText}>Excluir Fase</Text>
                 </TouchableOpacity>
                 
                 <View style={styles.footerActionsRight}>
@@ -178,7 +178,7 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                     <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                    <Text style={styles.saveButtonText}>Salvar Organização</Text>
+                    <Text style={styles.saveButtonText}>Salvar</Text>
                   </TouchableOpacity>
                 </View>
               </View>

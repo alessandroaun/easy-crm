@@ -182,14 +182,14 @@ export default function KanbanColumn({ phase, onDropClient, onDeleteClient, onOp
           </View>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <TouchableOpacity style={[styles.iconActionButton, themeStyles.iconActionButton]} onPress={() => setShowSortMenu(!showSortMenu)}>
-            <Text style={[styles.actionSymbol, themeStyles.actionSymbol]}>⇄</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>          
+          <TouchableOpacity style={[styles.iconActionButton, themeStyles.iconActionButton]} onPress={() => setShowSortMenu(!showSortMenu)} title="Ordenar Fase">
+            <Text style={[styles.actionSymbol, themeStyles.actionSymbol]} suppressHighlighting={true}>⇅</Text>
           </TouchableOpacity>
 
           {isAdmin && (
-            <TouchableOpacity style={[styles.iconActionButton, themeStyles.iconActionButton]} onPress={() => onEditPhase(phase)}>
-              <Text style={[styles.actionSymbol, themeStyles.actionSymbol]}>⚙️</Text>
+            <TouchableOpacity style={[styles.iconActionButton, themeStyles.iconActionButton]} onPress={() => onEditPhase(phase)} title="Configurar Fase">
+              <Text style={[styles.actionSymbol, themeStyles.actionSymbol]} suppressHighlighting={true}>⚙</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -269,13 +269,13 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
   badgeText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
   iconActionButton: { 
-    width: 28, 
-    height: 28, 
+    width: 26, 
+    height: 26, 
     borderRadius: 6, 
     justifyContent: 'center', 
     alignItems: 'center'
   },
-  actionSymbol: { fontSize: 14, fontWeight: '700' },
+  actionSymbol: { fontSize: 15, fontWeight: '600', lineHeight: 18, textAlign: 'center' },
   selectAllContainer: {
     flexDirection: 'row',
     alignItems: 'center',

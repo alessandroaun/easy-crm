@@ -12,10 +12,32 @@ import {
   ActivityIndicator, 
   Animated, 
   Image,
-  useWindowDimensions // Adicionado para responsividade
+  useWindowDimensions 
 } from 'react-native';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
+
+// FUNÇÃO AUXILIAR DE FORMATAÇÃO FINANCEIRA
+const formatToFinancial = (value) => {
+  if (!value) return '';
+  let strVal = String(value).trim();
+  
+  // Se o valor já contém vírgula ou ponto separando centavos (ex: 750.00 ou 750,00)
+  if (/[.,]\d{1,2}$/.test(strVal)) {
+    let normalized = strVal.replace('.', ',');
+    let parts = normalized.split(',');
+    let integerPart = parts[0].replace(/\D/g, '');
+    let decimalPart = (parts[1] || '').padEnd(2, '0').slice(0, 2);
+    let formattedInteger = parseInt(integerPart || '0', 10).toLocaleString('pt-BR');
+    return `${formattedInteger},${decimalPart}`;
+  }
+
+  // Se for um número inteiro puro (ex: 800 ou 180000)
+  let cleaned = strVal.replace(/\D/g, '');
+  if (cleaned === '') return '';
+  let num = parseInt(cleaned, 10);
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 const DICTIONARY = {
   name: ['nome', 'cliente', 'lead', 'full name', 'nome completo', 'razao social', 'primeiro nome', 'sobrenome', 'nome do contato', 'como se chama', 'qual o seu nome'],
@@ -93,7 +115,6 @@ const normalizePlatform = (rawPlatform) => {
   return String(rawPlatform).trim();
 };
 
-// EXPORTAÇÃO NOMEADA DA INTELIGÊNCIA DE LEITURA
 export const processLeadsIntelligence = (text, removeFormatting = true) => {
   let textToProcess = String(text);
   if (removeFormatting) {
@@ -156,34 +177,67 @@ export const processLeadsIntelligence = (text, removeFormatting = true) => {
       }
 
       if (activeField) {
-        if (leadData[activeField]) leadData[activeField] += ` ${line}`;
-        else leadData[activeField] = line;
-        return;
+        if (activeField === 'email') {
+          const cleanLine = line.replace(/\s+/g, '');
+          if (cleanLine.includes('@') && !cleanLine.includes('?') && cleanLine.length < 60) {
+            leadData[activeField] = cleanLine;
+          }
+          activeField = null;
+        } else {
+          if (leadData[activeField]) leadData[activeField] += ` ${line}`;
+          else leadData[activeField] = line;
+          return;
+        }
       }
 
       unmappedData.push(line);
     });
 
+    if (leadData.email) {
+      const emailMatch = String(leadData.email).match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      leadData.email = emailMatch ? emailMatch[0] : '';
+    }
+
     const rawPhoneDigits = String(leadData.phone || '').replace(/\D/g, '');
     const hasValidPhone = rawPhoneDigits.length >= 8;
 
     if ((leadData.name || leadData.phone) && hasValidPhone) {
-      const initialInfoLines = [];
       const resolvedCategory = parseCategoryValue(leadData.category, block);
 
-      if (leadData.desiredCredit) initialInfoLines.push(`Meta/Crédito: ${leadData.desiredCredit}`);
-      if (leadData.idealInstallment) initialInfoLines.push(`Parcela Ideal: ${leadData.idealInstallment}`);
-      if (leadData.urgency) initialInfoLines.push(`Urgência: ${leadData.urgency}`);
-      if (leadData.bidAmount) initialInfoLines.push(`Lance: ${leadData.bidAmount}`);
-      if (leadData.bidType) initialInfoLines.push(`Tipo de Lance: ${leadData.bidType}`);
-      if (leadData.hasFinancing) initialInfoLines.push(`Financiamento Ativo: ${leadData.hasFinancing}`);
-      if (leadData.consorcioKnowledge) initialInfoLines.push(`Conhece Consórcio: ${leadData.consorcioKnowledge}`);
-      if (leadData.reason) initialInfoLines.push(`Motivo de Preenchimento: ${leadData.reason}`);
+      const allDetails = [];
+      if (leadData.desiredCredit) allDetails.push({ key: 'Meta/Crédito', val: leadData.desiredCredit, priority: 1 });
+      if (leadData.idealInstallment) allDetails.push({ key: 'Parcela Ideal', val: leadData.idealInstallment, priority: 2 });
+      if (resolvedCategory) allDetails.push({ key: 'Bem', val: resolvedCategory, priority: 3 });
+      if (leadData.bidAmount) allDetails.push({ key: 'Lance', val: leadData.bidAmount, priority: 4 });
+      if (leadData.consorcioKnowledge) allDetails.push({ key: 'Conhece Consórcio', val: leadData.consorcioKnowledge, priority: 5 });
+      if (leadData.urgency) allDetails.push({ key: 'Urgência', val: leadData.urgency, priority: 6 });
 
-      if (unmappedData.length > 0) {
-        const cleanedUnmapped = unmappedData.filter(u => u.length > 2).join('\n');
-        if (cleanedUnmapped.trim()) initialInfoLines.push(`\nInformações:\n${cleanedUnmapped}`);
+      const extraInfo = [];
+      for (let i = 0; i < unmappedData.length; i++) {
+        const line = unmappedData[i].trim();
+        if (!line) continue;
+        
+        const isQuestion = line.endsWith('?') || (line === line.toUpperCase() && line.length > 5 && !line.includes('R$'));
+        
+        if (isQuestion) {
+          const nextLine = unmappedData[i + 1] ? unmappedData[i + 1].trim() : '';
+          if (nextLine && !nextLine.endsWith('?') && nextLine !== nextLine.toUpperCase()) {
+             extraInfo.push({ key: '', val: nextLine, priority: 7 });
+             i++; 
+          }
+        } else {
+          if (!line.includes('NOVO LEAD') && !line.includes('CAMPANHA') && !line.includes('@')) {
+            extraInfo.push({ key: '', val: line, priority: 8 });
+          }
+        }
       }
+
+      const sortedDetails = [...allDetails, ...extraInfo].sort((a, b) => a.priority - b.priority);
+      const initialInfoLines = sortedDetails
+        .map(d => `${d.key ? d.key + ': ' : ''}${d.val}`.trim())
+        .filter(line => line.length > 0 && !line.includes('?') && !line.includes('COMERCIAL'));
+
+      const finalCardSummary = initialInfoLines.slice(0, 2).join('\n');
 
       extractedClients.push({
         id: `client_imp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -195,16 +249,16 @@ export const processLeadsIntelligence = (text, removeFormatting = true) => {
         profession: String(leadData.profession || '').trim(),
         monthlyIncome: String(leadData.monthlyIncome || '').trim(),
         category: String(resolvedCategory || '').trim(),
-        desiredCredit: String(leadData.desiredCredit || '').trim(),
-        idealInstallment: String(leadData.idealInstallment || '').trim(),
+        desiredCredit: formatToFinancial(leadData.desiredCredit || ''),
+        idealInstallment: formatToFinancial(leadData.idealInstallment || ''),
         urgency: String(leadData.urgency || '').trim(),
-        bidAmount: String(leadData.bidAmount || '').trim(),
+        bidAmount: formatToFinancial(leadData.bidAmount || ''),
         bidType: String(leadData.bidType || '').trim(),
         hasFinancing: String(leadData.hasFinancing || '').trim(),
         platform: normalizePlatform(String(leadData.platform || '')),
         leadTemp: 'Morno',
         winProbability: '',
-        initialInfo: String(initialInfoLines.join('\n')).trim(),
+        initialInfo: String(finalCardSummary).trim(),
         history: `DADOS BRUTOS ORIGINAIS:\n${block}`
       });
     }
@@ -213,16 +267,16 @@ export const processLeadsIntelligence = (text, removeFormatting = true) => {
   return extractedClients;
 };
 
-// COMPONENTE PADRÃO
 export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMode, isElectron, isAutoImportActive, onToggleAutoImport }) {
   const { width } = useWindowDimensions();
-  const isMobile = width < 768; // Definição de responsividade
+  const isMobile = width < 768;
 
   const [rawText, setRawText] = useState('');
   const [processing, setProcessing] = useState(false);
   const [removeFormatting, setRemoveFormatting] = useState(true);
 
-  // Estados do Modal de Conexão (QR)
+  const [isServerConnected, setIsServerConnected] = useState(true);
+
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrCodeData, setQrCodeData] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('');
@@ -231,25 +285,39 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
 
-  // Lógica de Persistência Inicial
   useEffect(() => {
     if (isElectron && Platform.OS === 'web') {
-      const savedSetting = localStorage.getItem('autoImportSetting') === 'true';
-      if (savedSetting && !isAutoImportActive) {
-        // Tenta reconectar e ativar automaticamente se estiver salvo
-        fetch('http://localhost:3001/status')
-          .then(res => res.json())
-          .then(data => {
-            if (data.connected) {
-              onToggleAutoImport(true);
-            }
-          })
-          .catch(() => {});
+      const savedSetting = localStorage.getItem('autoImportSetting');
+      if (savedSetting !== null) {
+        const shouldBeActive = savedSetting === 'true';
+        onToggleAutoImport(shouldBeActive);
+        
+        if (shouldBeActive) {
+          fetch('http://localhost:3001/status')
+            .then(res => res.json())
+            .then(data => setIsServerConnected(data.connected))
+            .catch(() => setIsServerConnected(false));
+        }
       }
     }
   }, [isElectron]);
 
-  // Lógica de Polling de Conexão do QR
+  useEffect(() => {
+    let statusInterval;
+    if (isAutoImportActive && isElectron) {
+      statusInterval = setInterval(async () => {
+        try {
+          const response = await fetch('http://localhost:3001/status');
+          const data = await response.json();
+          setIsServerConnected(data.connected);
+        } catch (e) {
+          setIsServerConnected(false);
+        }
+      }, 5000);
+    }
+    return () => clearInterval(statusInterval);
+  }, [isAutoImportActive, isElectron]);
+
   useEffect(() => {
     let interval;
     if (showQrModal) {
@@ -261,9 +329,9 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
           setQrCodeData(data.qrCode);
 
           if (data.connected) {
-            setShowQrModal(false); // Fecha o modal de QR
-            onToggleAutoImport(true); // Mantém a caixa ativada
-            if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'true'); // Persiste a ativação
+            setShowQrModal(false);
+            onToggleAutoImport(true);
+            if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'true');
           }
         } catch (e) {
           setConnectionStatus('ERROR');
@@ -274,21 +342,23 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
   }, [showQrModal]);
 
   const handleToggleAutoImportClick = async () => {
-    if (isAutoImportActive) {
-      onToggleAutoImport(false);
-      if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'false'); // Persiste a desativação
-    } else {
+    const newState = !isAutoImportActive;
+    onToggleAutoImport(newState);
+    if (Platform.OS === 'web') {
+      localStorage.setItem('autoImportSetting', String(newState));
+    }
+
+    if (newState) {
       try {
         const response = await fetch('http://localhost:3001/status');
         const data = await response.json();
-        if (data.connected) {
-          onToggleAutoImport(true);
-          if (Platform.OS === 'web') localStorage.setItem('autoImportSetting', 'true'); // Persiste a ativação
-        } else {
-          setShowQrModal(true); // Exibe o QR Code
+        setIsServerConnected(data.connected);
+        if (!data.connected) {
+          setShowQrModal(true);
         }
       } catch (e) {
-        showCustomAlert('error', 'Erro', 'Não foi possível conectar ao servidor local do WhatsApp (server.js rodando?).');
+        setIsServerConnected(false);
+        setShowQrModal(true);
       }
     }
   };
@@ -346,7 +416,6 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         
-        {/* MODAL QR CODE INTERNO */}
         {showQrModal && (
           <View style={styles.qrOverlay}>
             <View style={[styles.qrContainer, themeStyles.modalContainer, isMobile && { width: '90%' }]}>
@@ -369,7 +438,6 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
           </View>
         )}
 
-        {/* ALERTA CUSTOMIZADO */}
         {alertConfig.visible && (
           <View style={styles.successAlertOverlay}>
             <Animated.View style={[styles.successAlertBox, themeStyles.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }, isMobile && { width: '90%' }]}>
@@ -396,21 +464,34 @@ export default function ImportLeadsModal({ visible, onClose, onImport, isDarkMod
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, isMobile && { padding: 16 }]}>
             
-            {/* CAIXA DE SELEÇÃO AUTOMÁTICA (Apenas Electron) */}
             {isElectron && (
-                <View style={[styles.autoImportCard, themeStyles.autoImportCard, isMobile && { flexDirection: 'column', alignItems: 'flex-start' }]}>
-                    <View style={{flex: 1}}>
-                        <Text style={[styles.autoImportTitle, themeStyles.title]}>Importar Leads Automaticamente do WhatsApp</Text>
-                        <Text style={[styles.autoImportSubtitle, themeStyles.subtitle]}>Ao ativar, o sistema lerá conversas do WhatsApp Web conectado e puxará novos formulários de leads para a fase "Novo Cliente".</Text>
-                    </View>
-                    <TouchableOpacity 
-                      style={[styles.toggleSwitch, isAutoImportActive && styles.toggleSwitchActive, isMobile && { alignSelf: 'flex-end', marginTop: 10 }]} 
-                      onPress={handleToggleAutoImportClick} 
-                      activeOpacity={0.8}
-                    >
-                        <View style={[styles.toggleCircle, isAutoImportActive && styles.toggleCircleActive]} />
-                    </TouchableOpacity>
-                </View>
+              <View style={[styles.autoImportCard, themeStyles.autoImportCard, isMobile && { flexDirection: 'column', alignItems: 'flex-start' }]}>
+                  <View style={{flex: 1}}>
+                      <Text style={[styles.autoImportTitle, themeStyles.title]}>Importar Leads Automaticamente do WhatsApp</Text>
+                      <Text style={[styles.autoImportSubtitle, themeStyles.subtitle]}>Ao ativar, o sistema lerá conversas do WhatsApp Web conectado e puxará novos formulários de leads para a fase "Novo Cliente".</Text>
+                      
+                      {isAutoImportActive && !isServerConnected && (
+                      <View style={styles.disconnectContainer}>
+                        <Text style={styles.disconnectWarningText}>
+                          ⚠️ WhatsApp desconectado. Reconecte para continuar recebendo novos leads automaticamente.
+                        </Text>
+                      <TouchableOpacity 
+                      style={styles.connectButton} 
+                      onPress={() => setShowQrModal(true)}
+                        >
+                      <Text style={styles.connectButtonText}>CONECTAR</Text>
+                      </TouchableOpacity>
+                      </View>
+                        )}
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.toggleSwitch, isAutoImportActive && styles.toggleSwitchActive, isMobile && { alignSelf: 'flex-end', marginTop: 10 }]} 
+                    onPress={handleToggleAutoImportClick} 
+                    activeOpacity={0.8}
+                  >
+                      <View style={[styles.toggleCircle, isAutoImportActive && styles.toggleCircleActive]} />
+                  </TouchableOpacity>
+              </View>
             )}
 
             <View style={[styles.toolsRow, isMobile && { flexDirection: 'column', alignItems: 'flex-start', gap: 12 }]}>
@@ -494,7 +575,34 @@ const styles = StyleSheet.create({
   successAlertTitle: { fontFamily: MODERN_FONT, fontSize: 20, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
   successAlertMessage: { fontFamily: MODERN_FONT, fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
-  successAlertBtnText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 14 }
+  successAlertBtnText: { fontFamily: MODERN_FONT, color: '#ffffff', fontWeight: '700', fontSize: 14 },
+  disconnectWarningText: { 
+    fontSize: 11, 
+    color: '#059b93', 
+    fontWeight: '500', 
+    marginTop: 6, 
+    fontFamily: MODERN_FONT,
+    lineHeight: 15
+    },
+    disconnectContainer: { 
+  flexDirection: 'row', 
+  alignItems: 'center', 
+  marginTop: 6, 
+  flexWrap: 'wrap' 
+},
+connectButton: { 
+  backgroundColor: '#f87171', 
+  paddingVertical: 2, 
+  paddingHorizontal: 8, 
+  borderRadius: 4, 
+  marginLeft: 8 
+},
+connectButtonText: { 
+  color: '#ffffff', 
+  fontSize: 10, 
+  fontWeight: 'bold', 
+  fontFamily: MODERN_FONT 
+}
 });
 
 const lightStyles = StyleSheet.create({

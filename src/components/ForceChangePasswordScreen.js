@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, KeyboardAvoidingView, ScrollView, Modal, Image } from 'react-native';
 import { supabase } from '../services/supabaseClient';
 
@@ -19,6 +19,23 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
   const [isAlertModalVisible, setIsAlertModalVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Ref para controlar se a senha já foi alterada com sucesso antes de atualizar a página
+  const passwordChangedRef = useRef(false);
+
+  // Efeito para interceptar o F5/Refresh e deslogar o usuário caso ele tente pular essa tela
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const handleBeforeUnload = () => {
+        if (!passwordChangedRef.current) {
+          // Desloga o usuário limpando a sessão antes da página recarregar
+          supabase.auth.signOut();
+        }
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }
+  }, []);
 
   const showAlert = (title, message) => {
     setAlertTitle(title);
@@ -52,7 +69,14 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
     if (error) {
       setErrorMessage('Erro ao atualizar senha: ' + error.message);
     } else {
+      passwordChangedRef.current = true; // Marca como sucesso para não ser deslogado ao recarregar a página no futuro
       showAlert('Sucesso', 'Senha atualizada com sucesso! Bem-vindo ao CRM.');
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter') {
+      handleSubmit();
     }
   };
 
@@ -90,6 +114,8 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
               secureTextEntry
               value={newPassword}
               onChangeText={setNewPassword}
+              onSubmitEditing={handleSubmit}
+              onKeyPress={handleKeyPress}
             />
           </View>
 
@@ -102,6 +128,8 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
               secureTextEntry
               value={confirmPassword}
               onChangeText={setConfirmPassword}
+              onSubmitEditing={handleSubmit}
+              onKeyPress={handleKeyPress}
             />
           </View>
 

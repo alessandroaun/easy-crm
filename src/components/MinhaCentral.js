@@ -4,14 +4,25 @@ import { supabase } from '../services/supabaseClient';
 
 const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif' : 'System';
 
-// Extrai números puros de campos financeiros (ignora centavos após a vírgula)
+// Extrai números puros de campos financeiros considerando o padrão brasileiro (R$)
 const parseMoney = (val) => {
+  if (typeof val === 'number') return val;
   if (!val) return 0;
-  const s = String(val);
+  
+  // Converte para string e remove espaços
+  let s = String(val).trim();
+  
+  // Se contiver vírgula, tratamos como padrão brasileiro (ex: 649.961.007,38)
+  // Removemos pontos (milhar) e trocamos a vírgula pelo ponto decimal
   if (s.includes(',')) {
-    return parseInt(s.split(',')[0].replace(/\D/g, ''), 10) || 0;
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Se não tiver vírgula, removemos apenas pontos caso existam (ex: 180.000)
+    s = s.replace(/\./g, '');
   }
-  return parseInt(s.replace(/\D/g, ''), 10) || 0;
+  
+  const parsed = parseFloat(s);
+  return isNaN(parsed) ? 0 : parsed;
 };
 
 // Formatação Padrão de Moeda Brasileira
@@ -435,7 +446,7 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
         {activeTab === 'overview' && (
           <View style={[styles.grid, isMobile && styles.gridMobile]}>
             
-            <View style={styles.mainColumn}>
+            <View style={[styles.mainColumn, isMobile && styles.columnMobile]}>
               
               {/* PAINEL DE METAS */}
               <View style={[styles.goalCardHero, themeStyles.goalCardHero]}>
@@ -507,103 +518,188 @@ export default function MinhaCentral({ boardData, onOpenClient, isDarkMode }) {
                 </View>
               </View>
 
-              {/* CAIXA DE VALOR EM NEGOCIAÇÃO */}
-              <View style={[styles.executiveSummary, themeStyles.executiveSummary]}>
+              {/* ÚLTIMAS INTERAÇÕES (Exibido apenas no celular) */}
+              {isMobile && (
+                <>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle, { marginTop: 28 }]}>Últimas Interações</Text>
+                  <View style={[styles.recentCard, themeStyles.recentCard]}>
+                    {metrics.allClients.slice(0, 4).map((client, idx) => (
+                      <TouchableOpacity 
+                        key={client.id || idx} 
+                        style={[styles.recentItem, idx !== 3 && themeStyles.recentBorder]} 
+                        onPress={() => onOpenClient && onOpenClient(client, client.originalPhaseId)}
+                      >
+                        <View style={{flex: 1, paddingRight: 8}}>
+                          <Text style={[styles.recentName, themeStyles.recentName]} numberOfLines={1}>{client.name}</Text>
+                          <Text style={styles.recentCredit}>{formatCurrency(parseMoney(client.desiredCredit || client.valor || 0))}</Text>
+                        </View>
+                        <Text style={[styles.recentPhase, themeStyles.recentPhase]} numberOfLines={1}>{client.phaseTitle}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {metrics.allClients.length === 0 && (
+                      <Text style={[styles.emptyRecentText, themeStyles.emptyRecentText]}>Nenhuma movimentação registrada no CRM ainda.</Text>
+                    )}
+                  </View>
+                </>
+              )}
+
+              {/* RAIO-X DO PIPELINE */}
+              <View style={[styles.executiveSummary, themeStyles.executiveSummary, { marginTop: 28 }]}>
                 <Text style={[styles.executiveSummaryText, themeStyles.executiveSummaryText]}>
                   💡 <Text style={{fontWeight: '700', color: isDarkMode ? '#f8fafc' : '#1e293b'}}>Raio-X do Pipeline:</Text> Você possui <Text style={styles.highlightText}>{formatCurrency(metrics.negMesAtual)}</Text> em negociações ativas geradas neste mês e <Text style={styles.highlightText}>{formatCurrency(metrics.negMesesAnteriores)}</Text> em oportunidades herdadas de meses anteriores que podem ser convertidas rapidamente.
                 </Text>
               </View>
 
+              {/* ALERTAS E OPORTUNIDADES (Exibido apenas no celular na base) */}
+              {isMobile && (
+                <>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle, { marginTop: 28 }]}>Alertas e Oportunidades</Text>
+
+                  {metrics.boletosProximos.length > 0 && (
+                    metrics.boletosProximos.slice(0, 2).map((alert, idx) => (
+                      <TouchableOpacity 
+                        key={`bol_${idx}`} 
+                        style={[styles.alertCardBoleto, themeStyles.alertCardBoleto]} 
+                        onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
+                      >
+                        <Text style={[styles.alertTitleBoleto, themeStyles.alertTitleBoleto]}>🗓️ Vencimento Próximo</Text>
+                        <Text style={[styles.alertTextBoleto, themeStyles.alertTextBoleto]}>
+                          O boleto de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> ({alert.contractCat}) vence {alert.diffDays === 0 ? 'hoje' : `em ${alert.diffDays} dia(s)`}.
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+
+                  {metrics.parcelasAtrasadas.length > 0 && (
+                    metrics.parcelasAtrasadas.slice(0, 2).map((alert, idx) => (
+                      <TouchableOpacity 
+                        key={`atr_${idx}`} 
+                        style={[styles.alertCardDanger, themeStyles.alertCardDanger]} 
+                        onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
+                      >
+                        <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atualize o Pós-Venda</Text>
+                        <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
+                          O contrato de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> fechou há {alert.monthsPassed} meses, mas só {alert.parcelasPagasCount} parcela(s) constam como paga(s).
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+
+                  {metrics.estagnadosNovoCliente.length > 0 && (
+                    <View style={[styles.alertCardDanger, themeStyles.alertCardDanger]}>
+                      <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atenção Crítica de Base</Text>
+                      <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
+                        {firstName}, existem {metrics.estagnadosNovoCliente.length} leads parados há mais de 7 dias na coluna inicial. O risco de perda de interesse é alto.
+                      </Text>
+                    </View>
+                  )}
+
+                  {metrics.standByAlerts.length > 0 && (
+                    metrics.standByAlerts.slice(0, 2).map((client) => (
+                      <TouchableOpacity 
+                        key={client.id} 
+                        style={[styles.alertCardInfo, themeStyles.alertCardInfo]} 
+                        onPress={() => onOpenClient && onOpenClient(client, client.originalPhaseId)}
+                      >
+                        <Text style={[styles.alertTitleInfo, themeStyles.alertTitleInfo]}>🔄 Reengajamento StandBy</Text>
+                        <Text style={[styles.alertTextInfo, themeStyles.alertTextInfo]}>
+                          O cliente <Text style={{fontWeight: '700'}}>{client.name}</Text> está há {client.daysInPhase} dias em StandBy. Que tal enviar uma nova condição de consórcio?
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+
+                  {metrics.estagnadosNovoCliente.length === 0 && metrics.standByAlerts.length === 0 && metrics.boletosProximos.length === 0 && metrics.parcelasAtrasadas.length === 0 && (
+                    <View style={[styles.emptyStateCard, themeStyles.emptyStateCard]}>
+                      <Text style={[styles.emptyStateText, themeStyles.emptyStateText]}>✨ Pipeline saudável! Sem gargalos críticos no momento.</Text>
+                    </View>
+                  )}
+                </>
+              )}
+
             </View>
 
-            {/* COLUNA LATERAL */}
-            <View style={styles.sideColumn}>
-              
-              <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Últimas Interações</Text>
-              <View style={[styles.recentCard, themeStyles.recentCard]}>
-                {metrics.allClients.slice(0, 4).map((client, idx) => (
-                  <TouchableOpacity 
-                    key={client.id || idx} 
-                    style={[styles.recentItem, idx !== 3 && themeStyles.recentBorder]} 
-                    onPress={() => onOpenClient && onOpenClient(client, client.originalPhaseId)}
-                  >
-                    <View style={{flex: 1, paddingRight: 8}}>
-                      <Text style={[styles.recentName, themeStyles.recentName]} numberOfLines={1}>{client.name}</Text>
-                      <Text style={styles.recentCredit}>{formatCurrency(client.desiredCredit || client.valor || 0)}</Text>
-                    </View>
-                    <Text style={[styles.recentPhase, themeStyles.recentPhase]} numberOfLines={1}>{client.phaseTitle}</Text>
-                  </TouchableOpacity>
-                ))}
-                {metrics.allClients.length === 0 && (
-                  <Text style={[styles.emptyRecentText, themeStyles.emptyRecentText]}>Nenhuma movimentação registrada no CRM ainda.</Text>
+            {/* Coluna Lateral (Exibida apenas no PC) */}
+            {!isMobile && (
+              <View style={styles.sideColumn}>
+                <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Últimas Interações</Text>
+                <View style={[styles.recentCard, themeStyles.recentCard]}>
+                  {metrics.allClients.slice(0, 4).map((client, idx) => (
+                    <TouchableOpacity 
+                      key={client.id || idx} 
+                      style={[styles.recentItem, idx !== 3 && themeStyles.recentBorder]} 
+                      onPress={() => onOpenClient && onOpenClient(client, client.originalPhaseId)}
+                    >
+                      <View style={{flex: 1, paddingRight: 8}}>
+                        <Text style={[styles.recentName, themeStyles.recentName]} numberOfLines={1}>{client.name}</Text>
+                        <Text style={styles.recentCredit}>{formatCurrency(parseMoney(client.desiredCredit || client.valor || 0))}</Text>
+                      </View>
+                      <Text style={[styles.recentPhase, themeStyles.recentPhase]} numberOfLines={1}>{client.phaseTitle}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {metrics.allClients.length === 0 && (
+                    <Text style={[styles.emptyRecentText, themeStyles.emptyRecentText]}>Nenhuma movimentação registrada no CRM ainda.</Text>
+                  )}
+                </View>
+
+                <Text style={[styles.sectionTitle, themeStyles.sectionTitle, { marginTop: 28 }]}>Alertas e Oportunidades</Text>
+                {metrics.boletosProximos.length > 0 && (
+                  metrics.boletosProximos.slice(0, 2).map((alert, idx) => (
+                    <TouchableOpacity 
+                      key={`bol_${idx}`} 
+                      style={[styles.alertCardBoleto, themeStyles.alertCardBoleto]} 
+                      onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
+                    >
+                      <Text style={[styles.alertTitleBoleto, themeStyles.alertTitleBoleto]}>🗓️ Vencimento Próximo</Text>
+                      <Text style={[styles.alertTextBoleto, themeStyles.alertTextBoleto]}>
+                        O boleto de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> ({alert.contractCat}) vence {alert.diffDays === 0 ? 'hoje' : `em ${alert.diffDays} dia(s)`}.
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+                {metrics.parcelasAtrasadas.length > 0 && (
+                  metrics.parcelasAtrasadas.slice(0, 2).map((alert, idx) => (
+                    <TouchableOpacity 
+                      key={`atr_${idx}`} 
+                      style={[styles.alertCardDanger, themeStyles.alertCardDanger]} 
+                      onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
+                    >
+                      <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atualize o Pós-Venda</Text>
+                      <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
+                        O contrato de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> fechou há {alert.monthsPassed} meses, mas só {alert.parcelasPagasCount} parcela(s) constam como paga(s).
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+                {metrics.estagnadosNovoCliente.length > 0 && (
+                  <View style={[styles.alertCardDanger, themeStyles.alertCardDanger]}>
+                    <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atenção Crítica de Base</Text>
+                    <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
+                      {firstName}, existem {metrics.estagnadosNovoCliente.length} leads parados há mais de 7 dias na coluna inicial. O risco de perda de interesse é alto.
+                    </Text>
+                  </View>
+                )}
+                {metrics.standByAlerts.length > 0 && (
+                  metrics.standByAlerts.slice(0, 2).map((client) => (
+                    <TouchableOpacity 
+                      key={client.id} 
+                      style={[styles.alertCardInfo, themeStyles.alertCardInfo]} 
+                      onPress={() => onOpenClient && onOpenClient(client, client.originalPhaseId)}
+                    >
+                      <Text style={[styles.alertTitleInfo, themeStyles.alertTitleInfo]}>🔄 Reengajamento StandBy</Text>
+                      <Text style={[styles.alertTextInfo, themeStyles.alertTextInfo]}>
+                        O cliente <Text style={{fontWeight: '700'}}>{client.name}</Text> está há {client.daysInPhase} dias em StandBy. Que tal enviar uma nova condição de consórcio?
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+                {metrics.estagnadosNovoCliente.length === 0 && metrics.standByAlerts.length === 0 && metrics.boletosProximos.length === 0 && metrics.parcelasAtrasadas.length === 0 && (
+                  <View style={[styles.emptyStateCard, themeStyles.emptyStateCard]}>
+                    <Text style={[styles.emptyStateText, themeStyles.emptyStateText]}>✨ Pipeline saudável! Sem gargalos críticos no momento.</Text>
+                  </View>
                 )}
               </View>
-
-              <Text style={[styles.sectionTitle, themeStyles.sectionTitle, { marginTop: 28 }]}>Alertas e Oportunidades</Text>
-
-              {/* PÓS-VENDA: BOLETOS E ACOMPANHAMENTO */}
-              {metrics.boletosProximos.length > 0 && (
-                metrics.boletosProximos.slice(0, 2).map((alert, idx) => (
-                  <TouchableOpacity 
-                    key={`bol_${idx}`} 
-                    style={[styles.alertCardBoleto, themeStyles.alertCardBoleto]} 
-                    onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
-                  >
-                    <Text style={[styles.alertTitleBoleto, themeStyles.alertTitleBoleto]}>🗓️ Vencimento Próximo</Text>
-                    <Text style={[styles.alertTextBoleto, themeStyles.alertTextBoleto]}>
-                      O boleto de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> ({alert.contractCat}) vence {alert.diffDays === 0 ? 'hoje' : `em ${alert.diffDays} dia(s)`}.
-                    </Text>
-                  </TouchableOpacity>
-                ))
-              )}
-
-              {metrics.parcelasAtrasadas.length > 0 && (
-                metrics.parcelasAtrasadas.slice(0, 2).map((alert, idx) => (
-                  <TouchableOpacity 
-                    key={`atr_${idx}`} 
-                    style={[styles.alertCardDanger, themeStyles.alertCardDanger]} 
-                    onPress={() => onOpenClient && onOpenClient(alert.client, alert.originalPhaseId)}
-                  >
-                    <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atualize o Pós-Venda</Text>
-                    <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
-                      O contrato de <Text style={{fontWeight: '700'}}>{alert.clientName}</Text> fechou há {alert.monthsPassed} meses, mas só {alert.parcelasPagasCount} parcela(s) constam como paga(s).
-                    </Text>
-                  </TouchableOpacity>
-                ))
-              )}
-
-              {/* ALERTAS TRADICIONAIS */}
-              {metrics.estagnadosNovoCliente.length > 0 && (
-                <View style={[styles.alertCardDanger, themeStyles.alertCardDanger]}>
-                  <Text style={[styles.alertTitleDanger, themeStyles.alertTitleDanger]}>⚠️ Atenção Crítica de Base</Text>
-                  <Text style={[styles.alertTextDanger, themeStyles.alertTextDanger]}>
-                    {firstName}, existem {metrics.estagnadosNovoCliente.length} leads parados há mais de 7 dias na coluna inicial. O risco de perda de interesse é alto.
-                  </Text>
-                </View>
-              )}
-
-              {metrics.standByAlerts.length > 0 && (
-                metrics.standByAlerts.slice(0, 2).map((client) => (
-                  <TouchableOpacity 
-                    key={client.id} 
-                    style={[styles.alertCardInfo, themeStyles.alertCardInfo]} 
-                    onPress={() => onOpenClient && onOpenClient(client, client.originalPhaseId)}
-                  >
-                    <Text style={[styles.alertTitleInfo, themeStyles.alertTitleInfo]}>🔄 Reengajamento StandBy</Text>
-                    <Text style={[styles.alertTextInfo, themeStyles.alertTextInfo]}>
-                      O cliente <Text style={{fontWeight: '700'}}>{client.name}</Text> está há {client.daysInPhase} dias em StandBy. Que tal enviar uma nova condição de consórcio?
-                    </Text>
-                  </TouchableOpacity>
-                ))
-              )}
-
-              {metrics.estagnadosNovoCliente.length === 0 && metrics.standByAlerts.length === 0 && metrics.boletosProximos.length === 0 && metrics.parcelasAtrasadas.length === 0 && (
-                <View style={[styles.emptyStateCard, themeStyles.emptyStateCard]}>
-                  <Text style={[styles.emptyStateText, themeStyles.emptyStateText]}>✨ Pipeline saudável! Sem gargalos críticos no momento.</Text>
-                </View>
-              )}
-
-            </View>
+            )}
 
           </View>
         )}
@@ -732,9 +828,10 @@ const styles = StyleSheet.create({
   navTabText: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '600' },
 
   grid: { flexDirection: 'row', gap: 24 },
-  gridMobile: { flexDirection: 'column', gap: 20 },
+  gridMobile: { flexDirection: 'column', gap: 0 },
   mainColumn: { flex: 1.8 },
   sideColumn: { flex: 1.2 },
+  columnMobile: { width: '100%', flex: undefined },
   
   sectionTitle: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '800', marginBottom: 12 },
   

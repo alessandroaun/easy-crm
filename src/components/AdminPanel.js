@@ -354,27 +354,27 @@ export default function AdminPanel({ isDarkMode }) {
       <View style={styles.actions}>
         {item.status === 'pendente' && (
           <TouchableOpacity style={[styles.btn, styles.btnApprove]} onPress={() => updateUserStatus(item.id, 'ativo')}>
-            <Text style={styles.btnText}>✅ Aprovar</Text>
+            <Text style={styles.btnText}>Aprovar</Text>
           </TouchableOpacity>
         )}
         {item.status === 'ativo' && (
           <TouchableOpacity style={[styles.btn, styles.btnDeactivate]} onPress={() => updateUserStatus(item.id, 'inativo')}>
-            <Text style={styles.btnText}>❌ Desativar</Text>
+            <Text style={styles.btnText}>Desativar</Text>
           </TouchableOpacity>
         )}
         {item.status === 'inativo' && (
           <TouchableOpacity style={[styles.btn, styles.btnApprove]} onPress={() => updateUserStatus(item.id, 'ativo')}>
-            <Text style={styles.btnText}>♻️ Reativar</Text>
+            <Text style={styles.btnText}>Reativar</Text>
           </TouchableOpacity>
         )}
         
         <TouchableOpacity style={[styles.btn, themeStyles.btnReset]} onPress={() => handleOpenConfigModal(item)}>
-          <Text style={[styles.btnTextReset, themeStyles.btnTextReset]}>⚙️ Configuração</Text>
+          <Text style={[styles.btnTextReset, themeStyles.btnTextReset]}>Configuração</Text>
         </TouchableOpacity>
 
         {item.hasPendingRequest && (
           <TouchableOpacity style={[styles.btn, { backgroundColor: '#f59e0b' }]} onPress={() => handleClearPending(item)}>
-            <Text style={styles.btnText}>✅ Concluir Pendência</Text>
+            <Text style={styles.btnText}>Concluir Pendência</Text>
           </TouchableOpacity>
         )}
 
@@ -382,7 +382,7 @@ export default function AdminPanel({ isDarkMode }) {
           style={[styles.btn, themeStyles.btnDelete]} 
           onPress={() => { setUserToDelete(item); setIsDeleteModalVisible(true); }}
         >
-          <Text style={[styles.btnTextDelete, themeStyles.btnTextDelete]}>🗑️ Excluir</Text>
+          <Text style={[styles.btnTextDelete, themeStyles.btnTextDelete]}>Excluir</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -399,7 +399,7 @@ export default function AdminPanel({ isDarkMode }) {
             <Text style={[styles.subtitle, themeStyles.subtitle]}>Administre a gestão de usuários do sistema</Text>
           </View>
           <TouchableOpacity style={styles.createBtn} onPress={() => setIsCreateModalVisible(true)}>
-            <Text style={styles.createBtnText}>+ Novo Usuário</Text>
+            <Text style={styles.createBtnText}>Novo Usuário</Text>
           </TouchableOpacity>
         </View>
         
@@ -446,11 +446,14 @@ export default function AdminPanel({ isDarkMode }) {
 
       <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsAlertModalVisible(false)}>
-          <Pressable style={[styles.modalContent, themeStyles.modalContent]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[styles.modalTitle, themeStyles.modalTitle]}>{alertTitle}</Text>
-            <Text style={[styles.modalSubtitle, themeStyles.modalSubtitle]}>{alertMessage}</Text>
-            <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn, { width: '100%', marginTop: 8 }]} onPress={() => setIsAlertModalVisible(false)}>
-              <Text style={styles.confirmBtnText}>OK</Text>
+          <Pressable style={[styles.alertModalBox, themeStyles.alertModalBox]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.alertIconBadge}>
+              <Text style={{ fontSize: 20 }}>💬</Text>
+            </View>
+            <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle]}>{alertTitle}</Text>
+            <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage]}>{alertMessage}</Text>
+            <TouchableOpacity style={styles.alertModalBtn} onPress={() => setIsAlertModalVisible(false)}>
+              <Text style={styles.alertModalBtnText}>OK</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -458,65 +461,83 @@ export default function AdminPanel({ isDarkMode }) {
 
       <Modal animationType="fade" transparent={true} visible={isConfigModalVisible} onRequestClose={() => setIsConfigModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsConfigModalVisible(false)}>
-          <Pressable style={[styles.modalContent, themeStyles.modalContent, { maxWidth: 800, padding: 0, overflow: 'hidden' }]} onPress={(e) => e.stopPropagation()}>
-            <ScrollView style={{ width: '100%', maxHeight: '85vh' }} contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false}>
+          <Pressable style={[styles.modalContent, themeStyles.modalContent, { maxWidth: 900, padding: 0, overflow: 'visible' }]} onPress={(e) => e.stopPropagation()}>
+            
+            {/* Header Fixo do Modal */}
+            <View style={[styles.configModalHeader, themeStyles.configModalHeader]}>
+              <View>
+                <Text style={[styles.configModalTitle, themeStyles.configModalTitle]}>Configurações Avançadas</Text>
+                <Text style={[styles.configModalSubtitle, themeStyles.configModalSubtitle]}>Gerenciando perfil de <Text style={{fontWeight: '700'}}>{selectedUser?.name}</Text></Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsConfigModalVisible(false)} style={styles.configModalCloseBtn}>
+                <Text style={[styles.configModalCloseText, themeStyles.configModalCloseText]}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ width: '100%', padding: 16 }}>
               
-              <Text style={[styles.modalTitle, themeStyles.modalTitle, { fontSize: 20 }]}>Configurações de {selectedUser?.name}</Text>
-              
-              <View style={{ flexDirection: 'row', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+              <View style={styles.configGridRow}>
                 
-                {/* SESSÃO DE CREDENCIAIS & NÍVEL DE ACESSO */}
-                <View style={[styles.configSection, themeStyles.configSection, { flex: 1, minWidth: 280, marginBottom: 0 }]}>
-                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Credenciais e Permissões</Text>
-                  
+                {/* COLUNA ESQUERDA: CREDENCIAIS E PERMISSÕES */}
+                <View style={[styles.configCardCol, themeStyles.configCardCol]}>
+                  <View style={styles.configCardHeader}>
+                    <Text style={[styles.configCardTitle, themeStyles.configCardTitle]}> Acesso & Segurança</Text>
+                  </View>
+
                   <Text style={[styles.inputLabel, themeStyles.inputLabel]}>E-mail do Usuário</Text>
                   <TextInput style={[styles.textInput, themeStyles.textInput]} value={newEmailInput} onChangeText={setNewEmailInput} autoCapitalize="none" keyboardType="email-address" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} />
                   
                   <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Nível de Acesso (Role)</Text>
                   <View style={styles.roleSelector}>
-                    <TouchableOpacity style={[styles.roleBtn, themeStyles.roleBtn, editRole === 'vendedor' && themeStyles.roleBtnActive, { paddingVertical: 10 }]} onPress={() => setEditRole('vendedor')}>
+                    <TouchableOpacity style={[styles.roleBtn, themeStyles.roleBtn, editRole === 'vendedor' && themeStyles.roleBtnActive]} onPress={() => setEditRole('vendedor')}>
                       <Text style={[styles.roleBtnText, themeStyles.roleBtnText, editRole === 'vendedor' && themeStyles.roleBtnTextActive]}>Vendedor</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.roleBtn, themeStyles.roleBtn, editRole === 'admin' && themeStyles.roleBtnActive, { paddingVertical: 10 }]} onPress={() => setEditRole('admin')}>
-                      <Text style={[styles.roleBtnText, themeStyles.roleBtnText, editRole === 'admin' && themeStyles.roleBtnTextActive]}>Administrador</Text>
+                    <TouchableOpacity style={[styles.roleBtn, themeStyles.roleBtn, editRole === 'admin' && themeStyles.roleBtnActive]} onPress={() => setEditRole('admin')}>
+                      <Text style={[styles.roleBtnText, themeStyles.roleBtnText, editRole === 'admin' && themeStyles.roleBtnTextActive]}>Admin</Text>
                     </TouchableOpacity>
                   </View>
 
-                  <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn, { backgroundColor: '#ef4444', marginTop: 16, width: 220, alignSelf: 'flex-start' }]} onPress={handleResetCredentials}>
-                    <Text style={styles.confirmBtnText}>Resetar Senha (Senha123!)</Text>
-                  </TouchableOpacity>
+                  <View style={{ alignItems: 'center', width: '100%', marginTop: 2 }}>
+                    <TouchableOpacity style={styles.resetPasswordBtn} onPress={handleResetCredentials}>
+                      <Text style={styles.resetPasswordBtnText}>Resetar Senha (Senha123!)</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
-                {/* SESSÃO DE IMPORTAÇÃO DE DADOS */}
-                <View style={[styles.configSection, themeStyles.configSection, { flex: 1, minWidth: 280, marginBottom: 0 }]}>
-                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Importar Configurações e Dados</Text>
+                {/* COLUNA DIREITA: IMPORTAÇÃO REFINADA COM Z-INDEX GLOBAL */}
+                <View style={[styles.configCardCol, themeStyles.configCardCol, { overflow: 'visible' }]}>
+                  <View style={styles.configCardHeader}>
+                    <Text style={[styles.configCardTitle, themeStyles.configCardTitle]}>Importação de Dados</Text>
+                  </View>
 
                   {/* Fases */}
                   <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Importar Fases de:</Text>
-                  <View style={{ zIndex: 2, marginBottom: 12 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ zIndex: 9999, marginBottom: 10, position: 'relative' }}>
+                    <View style={styles.dropdownRowBox}>
                       <TouchableOpacity 
-                        style={[styles.textInput, themeStyles.textInput, { flex: 1, marginBottom: 0, justifyContent: 'center', paddingVertical: 10 }]} 
+                        style={styles.dropdownTriggerBox} 
                         onPress={() => { setIsPhaseDropdownOpen(!isPhaseDropdownOpen); setIsLeadDropdownOpen(false); }}
                       >
-                        <Text style={{ color: selectedImportPhaseUser ? (isDarkMode ? '#f8fafc' : '#0f172a') : (isDarkMode ? '#64748b' : '#94a3b8') }}>
-                          {selectedImportPhaseUser ? users.find(u => u.id === selectedImportPhaseUser)?.name || users.find(u => u.id === selectedImportPhaseUser)?.email : 'Selecione um usuário...'}
+                        <Text style={[styles.dropdownTriggerText, { color: selectedImportPhaseUser ? (isDarkMode ? '#f8fafc' : '#0f172a') : (isDarkMode ? '#64748b' : '#94a3b8') }]} numberOfLines={1}>
+                          {selectedImportPhaseUser ? users.find(u => u.id === selectedImportPhaseUser)?.name || users.find(u => u.id === selectedImportPhaseUser)?.email : 'Selecionar usuário origem...'}
                         </Text>
+                        <Text style={{ fontSize: 10, color: isDarkMode ? '#94a3b8' : '#64748b' }}>▼</Text>
                       </TouchableOpacity>
                       <TouchableOpacity 
-                        style={[styles.modalBtn, { backgroundColor: '#3b82f6', paddingHorizontal: 12, justifyContent: 'center', borderRadius: 8 }]}
+                        style={styles.actionImportBtnBlue}
                         onPress={() => handleImport('phases', selectedImportPhaseUser)}
                         disabled={isImporting}
                       >
-                        {isImporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>Importar</Text>}
+                        {isImporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.actionImportBtnText}>Importar</Text>}
                       </TouchableOpacity>
                     </View>
+
                     {isPhaseDropdownOpen && (
-                      <View style={{ maxHeight: 120, borderWidth: 1, borderColor: isDarkMode ? '#334155' : '#cbd5e1', borderRadius: 8, backgroundColor: isDarkMode ? '#1e293b' : '#ffffff', marginTop: 4 }}>
-                        <ScrollView nestedScrollEnabled>
+                      <View style={[styles.dropdownListPopup, themeStyles.dropdownListPopup]}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 110 }}>
                           {users.filter(u => u.id !== selectedUser?.id).map(u => (
-                            <TouchableOpacity key={`p_${u.id}`} style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: isDarkMode ? '#334155' : '#f1f5f9' }} onPress={() => { setSelectedImportPhaseUser(u.id); setIsPhaseDropdownOpen(false); }}>
-                              <Text style={{ color: isDarkMode ? '#f8fafc' : '#0f172a', fontSize: 13 }}>{u.name || u.email}</Text>
+                            <TouchableOpacity key={`p_${u.id}`} style={[styles.dropdownItemRow, themeStyles.dropdownItemRow]} onPress={() => { setSelectedImportPhaseUser(u.id); setIsPhaseDropdownOpen(false); }}>
+                              <Text style={[styles.dropdownItemText, themeStyles.dropdownItemText]} numberOfLines={1}>{u.name || u.email}</Text>
                             </TouchableOpacity>
                           ))}
                         </ScrollView>
@@ -526,116 +547,118 @@ export default function AdminPanel({ isDarkMode }) {
 
                   {/* Leads */}
                   <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Importar Leads de:</Text>
-                  <View style={{ zIndex: 1 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ zIndex: 8888, position: 'relative' }}>
+                    <View style={styles.dropdownRowBox}>
                       <TouchableOpacity 
-                        style={[styles.textInput, themeStyles.textInput, { flex: 1, marginBottom: 0, justifyContent: 'center', paddingVertical: 10 }]} 
+                        style={styles.dropdownTriggerBox} 
                         onPress={() => { setIsLeadDropdownOpen(!isLeadDropdownOpen); setIsPhaseDropdownOpen(false); }}
                       >
-                        <Text style={{ color: selectedImportLeadUser ? (isDarkMode ? '#f8fafc' : '#0f172a') : (isDarkMode ? '#64748b' : '#94a3b8') }}>
-                          {selectedImportLeadUser ? users.find(u => u.id === selectedImportLeadUser)?.name || users.find(u => u.id === selectedImportLeadUser)?.email : 'Selecione um usuário...'}
+                        <Text style={[styles.dropdownTriggerText, { color: selectedImportLeadUser ? (isDarkMode ? '#f8fafc' : '#0f172a') : (isDarkMode ? '#64748b' : '#94a3b8') }]} numberOfLines={1}>
+                          {selectedImportLeadUser ? users.find(u => u.id === selectedImportLeadUser)?.name || users.find(u => u.id === selectedImportLeadUser)?.email : 'Selecionar usuário origem...'}
                         </Text>
+                        <Text style={{ fontSize: 10, color: isDarkMode ? '#94a3b8' : '#64748b' }}>▼</Text>
                       </TouchableOpacity>
                       <TouchableOpacity 
-                        style={[styles.modalBtn, { backgroundColor: '#10b981', paddingHorizontal: 12, justifyContent: 'center', borderRadius: 8 }]}
+                        style={styles.actionImportBtnGreen}
                         onPress={() => handleImport('leads', selectedImportLeadUser)}
                         disabled={isImporting}
                       >
-                        {isImporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>Importar</Text>}
+                        {isImporting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.actionImportBtnText}>Importar</Text>}
                       </TouchableOpacity>
                     </View>
+
                     {isLeadDropdownOpen && (
-                      <View style={{ maxHeight: 120, borderWidth: 1, borderColor: isDarkMode ? '#334155' : '#cbd5e1', borderRadius: 8, backgroundColor: isDarkMode ? '#1e293b' : '#ffffff', marginTop: 4 }}>
-                        <ScrollView nestedScrollEnabled>
+                      <View style={[styles.dropdownListPopup, themeStyles.dropdownListPopup]}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 110 }}>
                           {users.filter(u => u.id !== selectedUser?.id).map(u => (
-                            <TouchableOpacity key={`l_${u.id}`} style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: isDarkMode ? '#334155' : '#f1f5f9' }} onPress={() => { setSelectedImportLeadUser(u.id); setIsLeadDropdownOpen(false); }}>
-                              <Text style={{ color: isDarkMode ? '#f8fafc' : '#0f172a', fontSize: 13 }}>{u.name || u.email}</Text>
+                            <TouchableOpacity key={`l_${u.id}`} style={[styles.dropdownItemRow, themeStyles.dropdownItemRow]} onPress={() => { setSelectedImportLeadUser(u.id); setIsLeadDropdownOpen(false); }}>
+                              <Text style={[styles.dropdownItemText, themeStyles.dropdownItemText]} numberOfLines={1}>{u.name || u.email}</Text>
                             </TouchableOpacity>
                           ))}
                         </ScrollView>
                       </View>
                     )}
                   </View>
+
                 </View>
 
               </View>
 
-              {/* SESSÃO DE PENDÊNCIAS */}
+              {/* SESSÃO DE PENDÊNCIAS (SE HOUVER) */}
               {selectedUser?.hasPendingRequest && selectedUser.config.pendingRequest && (
-                <View style={[styles.configSection, { backgroundColor: isDarkMode ? '#451a03' : '#fef3c7', borderColor: '#f59e0b', borderWidth: 1 }]}>
-                  <Text style={[styles.sectionTitle, { color: '#d97706' }]}>⚠️ Solicitação Pendente</Text>
-                  <Text style={{ fontSize: 12, marginBottom: 8, color: isDarkMode ? '#fde68a' : '#92400e', fontFamily: MODERN_FONT }}>
-                    O usuário solicitou as seguintes alterações:
-                  </Text>
-                  <Text style={styles.pendingText}>Meta: R$ {selectedUser.config.pendingRequest.goal}</Text>
-                  <Text style={styles.pendingText}>Ligações: {selectedUser.config.pendingRequest.calls} | Sims: {selectedUser.config.pendingRequest.sims} | Negs: {selectedUser.config.pendingRequest.negs}</Text>
-                  <Text style={styles.pendingText}>Ticket: R$ {selectedUser.config.pendingRequest.ticket} | Conv: {selectedUser.config.pendingRequest.conv}%</Text>
-                  <Text style={[styles.pendingText, { marginTop: 8, fontStyle: 'italic' }]}>Justificativa: "{selectedUser.config.pendingRequest.justification}"</Text>
+                <View style={[styles.configCardCol, { backgroundColor: isDarkMode ? '#451a03' : '#fef3c7', borderColor: '#f59e0b', borderWidth: 1, marginBottom: 10, padding: 10 }]}>
+                  <Text style={[styles.sectionTitle, { color: '#d97706', marginBottom: 2 }]}>⚠️ Solicitação Pendente de Metas</Text>
+                  <Text style={styles.pendingText}>Meta: R$ {selectedUser.config.pendingRequest.goal} | Ticket: R$ {selectedUser.config.pendingRequest.ticket} | Ligações: {selectedUser.config.pendingRequest.calls} | Sims: {selectedUser.config.pendingRequest.sims} | Negs: {selectedUser.config.pendingRequest.negs} | Conv: {selectedUser.config.pendingRequest.conv}%</Text>
                 </View>
               )}
 
-              {/* SESSÃO DE PARÂMETROS - Reorganizada Horizontalmente */}
-              <View style={[styles.configSection, themeStyles.configSection]}>
-                <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Metas e Parâmetros (CRM)</Text>
-                
-                <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-                  <View style={{ flex: 1, minWidth: 150 }}>
+              {/* SESSÃO DE PARÂMETROS / METAS */}
+              <View style={[styles.configCardCol, themeStyles.configCardCol, { marginBottom: 0 }]}>
+                <View style={styles.configCardHeader}>
+                  <Text style={[styles.configCardTitle, themeStyles.configCardTitle]}>Metas e Parâmetros Operacionais Individuais</Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <View style={{ flex: 1, minWidth: 180 }}>
                     <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Meta do Mês (R$)</Text>
-                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0 }]} value={goalInput} onChangeText={(t) => handleCurrencyChange(t, setGoalInput)} keyboardType="numeric" />
+                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0, paddingVertical: 7 }]} value={goalInput} onChangeText={(t) => handleCurrencyChange(t, setGoalInput)} keyboardType="numeric" />
                   </View>
-                  <View style={{ flex: 1, minWidth: 150 }}>
+                  <View style={{ flex: 1, minWidth: 180 }}>
                     <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Ticket Médio (R$)</Text>
-                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0 }]} value={ticketInput} onChangeText={(t) => handleCurrencyChange(t, setTicketInput)} keyboardType="numeric" />
+                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0, paddingVertical: 7 }]} value={ticketInput} onChangeText={(t) => handleCurrencyChange(t, setTicketInput)} keyboardType="numeric" />
                   </View>
                 </View>
 
-                <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-                  <View style={{ flex: 1, minWidth: 100 }}>
-                    <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Ligações</Text>
-                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0 }]} value={callsInput} onChangeText={setCallsInput} keyboardType="numeric" />
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  <View style={{ flex: 1, minWidth: 90 }}>
+                    <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Ligações Diárias</Text>
+                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0, paddingVertical: 7 }]} value={callsInput} onChangeText={setCallsInput} keyboardType="numeric" />
                   </View>
-                  <View style={{ flex: 1, minWidth: 100 }}>
+                  <View style={{ flex: 1, minWidth: 90 }}>
                     <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Simulações</Text>
-                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0 }]} value={simsInput} onChangeText={setSimsInput} keyboardType="numeric" />
+                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0, paddingVertical: 7 }]} value={simsInput} onChangeText={setSimsInput} keyboardType="numeric" />
                   </View>
-                  <View style={{ flex: 1, minWidth: 100 }}>
+                  <View style={{ flex: 1, minWidth: 90 }}>
                     <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Negociações</Text>
-                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0 }]} value={negsInput} onChangeText={setNegsInput} keyboardType="numeric" />
+                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0, paddingVertical: 7 }]} value={negsInput} onChangeText={setNegsInput} keyboardType="numeric" />
                   </View>
-                  <View style={{ flex: 1, minWidth: 100 }}>
+                  <View style={{ flex: 1, minWidth: 90 }}>
                     <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Conversão (%)</Text>
-                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0 }]} value={convInput} onChangeText={setConvInput} keyboardType="numeric" />
+                    <TextInput style={[styles.textInput, themeStyles.textInput, { marginBottom: 0, paddingVertical: 7 }]} value={convInput} onChangeText={setConvInput} keyboardType="numeric" />
                   </View>
                 </View>
               </View>
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtn]} onPress={() => setIsConfigModalVisible(false)}>
-                  <Text style={[styles.cancelBtnText, themeStyles.cancelBtnText]}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn, { backgroundColor: '#10b981' }]} onPress={handleSaveParameters}>
-                  <Text style={styles.confirmBtnText}>Salvar Alterações</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
+            </View>
+
+            {/* Footer Fixo do Modal com Botão Cancelar Estilizado */}
+            <View style={[styles.configModalFooter, themeStyles.configModalFooter]}>
+              <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtnStyle]} onPress={() => setIsConfigModalVisible(false)}>
+                <Text style={[styles.cancelBtnTextStyle, themeStyles.cancelBtnTextStyle]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn, { backgroundColor: '#10b981', paddingVertical: 11 }]} onPress={handleSaveParameters}>
+                <Text style={styles.confirmBtnText}>Salvar Alterações</Text>
+              </TouchableOpacity>
+            </View>
+
           </Pressable>
         </Pressable>
       </Modal>
 
       <Modal animationType="fade" transparent={true} visible={isCreateModalVisible} onRequestClose={() => setIsCreateModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsCreateModalVisible(false)}>
-          <Pressable style={[styles.modalContent, themeStyles.modalContent]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[styles.modalTitle, themeStyles.modalTitle]}>Criar Novo Usuário</Text>
-            <Text style={[styles.modalSubtitle, themeStyles.modalSubtitle]}>Preencha os dados. A senha padrão inicial será <Text style={{fontWeight: 'bold'}}>Senha123!</Text>.</Text>
+          <Pressable style={[styles.alertModalBox, themeStyles.alertModalBox]} onPress={(e) => e.stopPropagation()}>
+            <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle, { textAlign: 'left', width: '100%' }]}>Criar Novo Usuário</Text>
+            <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage, { textAlign: 'left', width: '100%', marginBottom: 14 }]}>Preencha os dados. A senha padrão inicial será <Text style={{fontWeight: 'bold'}}>Senha123!</Text>.</Text>
 
-            <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Nome Completo</Text>
-            <TextInput style={[styles.textInput, themeStyles.textInput]} placeholder="Ex: João Silva" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={createName} onChangeText={setCreateName} />
+            <Text style={[styles.inputLabel, themeStyles.inputLabel, { alignSelf: 'flex-start' }]}>Nome Completo</Text>
+            <TextInput style={[styles.textInput, themeStyles.textInput, { width: '100%', marginBottom: 10 }]} placeholder="Ex: João Silva" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={createName} onChangeText={setCreateName} />
 
-            <Text style={[styles.inputLabel, themeStyles.inputLabel]}>E-mail</Text>
-            <TextInput style={[styles.textInput, themeStyles.textInput]} placeholder="joao@email.com" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={createEmail} onChangeText={setCreateEmail} autoCapitalize="none" keyboardType="email-address" />
+            <Text style={[styles.inputLabel, themeStyles.inputLabel, { alignSelf: 'flex-start' }]}>E-mail</Text>
+            <TextInput style={[styles.textInput, themeStyles.textInput, { width: '100%', marginBottom: 10 }]} placeholder="joao@email.com" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={createEmail} onChangeText={setCreateEmail} autoCapitalize="none" keyboardType="email-address" />
 
-            <Text style={[styles.inputLabel, themeStyles.inputLabel]}>Nível de Acesso</Text>
-            <View style={styles.roleSelector}>
+            <Text style={[styles.inputLabel, themeStyles.inputLabel, { alignSelf: 'flex-start' }]}>Nível de Acesso</Text>
+            <View style={[styles.roleSelector, { width: '100%', marginBottom: 16 }]}>
               <TouchableOpacity style={[styles.roleBtn, themeStyles.roleBtn, createRole === 'vendedor' && themeStyles.roleBtnActive]} onPress={() => setCreateRole('vendedor')}>
                 <Text style={[styles.roleBtnText, themeStyles.roleBtnText, createRole === 'vendedor' && themeStyles.roleBtnTextActive]}>Vendedor</Text>
               </TouchableOpacity>
@@ -645,8 +668,8 @@ export default function AdminPanel({ isDarkMode }) {
             </View>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtn]} onPress={() => setIsCreateModalVisible(false)}>
-                <Text style={[styles.cancelBtnText, themeStyles.cancelBtnText]}>Cancelar</Text>
+              <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtnStyle]} onPress={() => setIsCreateModalVisible(false)}>
+                <Text style={[styles.cancelBtnTextStyle, themeStyles.cancelBtnTextStyle]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn, { backgroundColor: '#10b981' }]} onPress={handleCreateUser} disabled={isCreating}>
                 {isCreating ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmBtnText}>Criar Conta</Text>}
@@ -658,17 +681,20 @@ export default function AdminPanel({ isDarkMode }) {
 
       <Modal animationType="fade" transparent={true} visible={isDeleteModalVisible} onRequestClose={() => setIsDeleteModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsDeleteModalVisible(false)}>
-          <Pressable style={[styles.modalContent, themeStyles.modalContent]} onPress={(e) => e.stopPropagation()}>
-            <Text style={[styles.modalTitle, themeStyles.modalTitle]}>Aviso Crítico ⚠️</Text>
-            <Text style={[styles.modalSubtitle, themeStyles.modalSubtitle]}>
+          <Pressable style={[styles.alertModalBox, themeStyles.alertModalBox]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.alertIconBadge, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
+              <Text style={{ fontSize: 20 }}>⚠️</Text>
+            </View>
+            <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle]}>Aviso Crítico</Text>
+            <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage]}>
               Tem certeza que deseja apagar permanentemente a conta de <Text style={{fontWeight: 'bold', color: '#ef4444'}}>{userToDelete?.name}</Text>? Esta ação <Text style={{fontWeight: 'bold'}}>NÃO PODE</Text> ser desfeita e todos os dados vinculados serão perdidos.
             </Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtn]} onPress={() => setIsDeleteModalVisible(false)}>
-                <Text style={[styles.cancelBtnText, themeStyles.cancelBtnText]}>Cancelar</Text>
+              <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtnStyle]} onPress={() => setIsDeleteModalVisible(false)}>
+                <Text style={[styles.cancelBtnTextStyle, themeStyles.cancelBtnTextStyle]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, styles.confirmBtn, { backgroundColor: '#ef4444' }]} onPress={confirmDeleteUser}>
-                <Text style={styles.confirmBtnText}>Sim, Excluir Conta</Text>
+                <Text style={styles.confirmBtnText}>Sim, Excluir</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -722,27 +748,74 @@ const styles = StyleSheet.create({
   btnTextReset: { fontWeight: 'bold', fontSize: 11, fontFamily: MODERN_FONT },
   btnTextDelete: { fontWeight: 'bold', fontSize: 11, fontFamily: MODERN_FONT },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  
+  // Estilo refinado e moderno para modais de aviso centrais
+  alertModalBox: { width: '100%', maxWidth: 380, borderRadius: 16, padding: 24, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 15px 35px rgba(0,0,0,0.25)' } }) },
+  alertIconBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(37, 99, 235, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  alertModalTitle: { fontSize: 17, fontWeight: '700', marginBottom: 8, fontFamily: MODERN_FONT, textAlign: 'center' },
+  alertModalMessage: { fontSize: 13, lineHeight: 18, marginBottom: 20, fontFamily: MODERN_FONT, textAlign: 'center' },
+  alertModalBtn: { width: '100%', backgroundColor: '#2563eb', paddingVertical: 11, borderRadius: 8, alignItems: 'center' },
+  alertModalBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT },
+
   modalContent: { borderRadius: 16, padding: 24, width: '100%', maxWidth: 400, ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8, fontFamily: MODERN_FONT },
   modalSubtitle: { fontSize: 13, marginBottom: 20, lineHeight: 18, fontFamily: MODERN_FONT },
   
-  configSection: { padding: 16, borderRadius: 10, marginBottom: 16, borderWidth: 1 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12, fontFamily: MODERN_FONT },
-  pendingText: { fontSize: 12, fontFamily: MODERN_FONT, color: '#92400e', fontWeight: '600' },
+  configModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  configModalTitle: { fontSize: 16, fontWeight: '700', fontFamily: MODERN_FONT },
+  configModalSubtitle: { fontSize: 12, marginTop: 1, fontFamily: MODERN_FONT },
+  configModalCloseBtn: { padding: 4 },
+  configModalCloseText: { fontSize: 18, fontWeight: 'bold' },
+  configModalFooter: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 1 },
 
-  inputLabel: { fontSize: 12, fontWeight: '600', marginBottom: 6, fontFamily: MODERN_FONT },
-  textInput: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 14, marginBottom: 16, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  configGridRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginBottom: 10, zIndex: 10 },
+  configCardCol: { flex: 1, minWidth: 320, padding: 14, borderRadius: 12, borderWidth: 1, position: 'relative' },
+  configCardHeader: { marginBottom: 10, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(100,116,139,0.15)' },
+  configCardTitle: { fontSize: 13, fontWeight: '700', fontFamily: MODERN_FONT },
+
+  dropdownRowBox: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  dropdownTriggerBox: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dropdownTriggerText: { fontSize: 13, fontFamily: MODERN_FONT },
+  dropdownListPopup: { 
+    position: 'absolute', 
+    top: 38, 
+    left: 0, 
+    right: 74, 
+    borderWidth: 1, 
+    borderRadius: 8, 
+    zIndex: 9999999, 
+    elevation: 99,
+    ...Platform.select({ web: { boxShadow: '0px 12px 30px rgba(0,0,0,0.4)' } })
+  },
+  dropdownItemRow: { paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1 },
+  dropdownItemText: { fontSize: 13, fontFamily: MODERN_FONT },
+
+  actionImportBtnBlue: { backgroundColor: '#3b82f6', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  actionImportBtnGreen: { backgroundColor: '#10b981', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  actionImportBtnText: { color: '#fff', fontWeight: '700', fontSize: 12, fontFamily: MODERN_FONT },
+
+  resetPasswordBtn: { backgroundColor: '#ef4444', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  resetPasswordBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12, fontFamily: MODERN_FONT },
+
+  sectionTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8, fontFamily: MODERN_FONT },
+  pendingText: { fontSize: 12, fontFamily: MODERN_FONT, fontWeight: '600' },
+
+  inputLabel: { fontSize: 11, fontWeight: '600', marginBottom: 4, fontFamily: MODERN_FONT },
+  textInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, marginBottom: 10, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   
-  roleSelector: { flexDirection: 'row', gap: 8, marginBottom: 24 },
-  roleBtn: { flex: 1, paddingVertical: 12, borderWidth: 1, borderRadius: 8, alignItems: 'center' },
-  roleBtnText: { fontSize: 13, fontWeight: '600', fontFamily: MODERN_FONT },
+  roleSelector: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  roleBtn: { flex: 1, paddingVertical: 7, borderWidth: 1, borderRadius: 8, alignItems: 'center' },
+  roleBtnText: { fontSize: 12, fontWeight: '600', fontFamily: MODERN_FONT },
 
-  modalButtons: { flexDirection: 'row', gap: 12 },
-  modalBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  modalButtons: { flexDirection: 'row', gap: 12, width: '100%', marginTop: 8 },
+  modalBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   confirmBtn: { backgroundColor: '#2563eb' },
   confirmBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13, fontFamily: MODERN_FONT },
-  cancelBtnText: { fontWeight: 'bold', fontSize: 13, fontFamily: MODERN_FONT }
+  
+  // Estilo de Botão Cancelar Profissional (Coeso com o padrão dos modais)
+  cancelBtnStyle: { borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  cancelBtnTextStyle: { fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT }
 });
 
 const lightStyles = StyleSheet.create({
@@ -765,18 +838,31 @@ const lightStyles = StyleSheet.create({
   btnDelete: { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
   btnTextDelete: { color: '#ef4444' },
   modalContent: { backgroundColor: '#ffffff' },
+  alertModalBox: { backgroundColor: '#ffffff' },
+  alertModalTitle: { color: '#1e293b' },
+  alertModalMessage: { color: '#475569' },
   modalTitle: { color: '#1e293b' },
   modalSubtitle: { color: '#64748b' },
-  configSection: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  configModalHeader: { backgroundColor: '#f8fafc', borderBottomColor: '#e2e8f0' },
+  configModalTitle: { color: '#1e293b' },
+  configModalSubtitle: { color: '#64748b' },
+  configModalCloseText: { color: '#64748b' },
+  configModalFooter: { backgroundColor: '#f8fafc', borderTopColor: '#e2e8f0' },
+  configCardCol: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  configCardTitle: { color: '#1e293b' },
+  dropdownTriggerBox: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  dropdownListPopup: { backgroundColor: '#ffffff', borderColor: '#cbd5e1' },
+  dropdownItemRow: { borderBottomColor: '#f1f5f9' },
+  dropdownItemText: { color: '#1e293b' },
   sectionTitle: { color: '#334155' },
   inputLabel: { color: '#475569' },
   textInput: { backgroundColor: '#ffffff', borderColor: '#cbd5e1', color: '#0f172a' },
   roleBtn: { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' },
-  roleBtnActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
+  roleBtnActive: { borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
   roleBtnText: { color: '#64748b' },
   roleBtnTextActive: { color: '#2563eb' },
-  cancelBtn: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
-  cancelBtnText: { color: '#475569' }
+  cancelBtnStyle: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  cancelBtnTextStyle: { color: '#475569' }
 });
 
 const darkStyles = StyleSheet.create({
@@ -799,9 +885,22 @@ const darkStyles = StyleSheet.create({
   btnDelete: { backgroundColor: '#450a0a', borderColor: '#7f1d1d' },
   btnTextDelete: { color: '#fca5a5' },
   modalContent: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  alertModalBox: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  alertModalTitle: { color: '#f8fafc' },
+  alertModalMessage: { color: '#94a3b8' },
   modalTitle: { color: '#f8fafc' },
   modalSubtitle: { color: '#94a3b8' },
-  configSection: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  configModalHeader: { backgroundColor: '#0f172a', borderBottomColor: '#334155' },
+  configModalTitle: { color: '#f8fafc' },
+  configModalSubtitle: { color: '#94a3b8' },
+  configModalCloseText: { color: '#94a3b8' },
+  configModalFooter: { backgroundColor: '#0f172a', borderTopColor: '#334155' },
+  configCardCol: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  configCardTitle: { color: '#f8fafc' },
+  dropdownTriggerBox: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  dropdownListPopup: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  dropdownItemRow: { borderBottomColor: '#334155' },
+  dropdownItemText: { color: '#f8fafc' },
   sectionTitle: { color: '#cbd5e1' },
   inputLabel: { color: '#cbd5e1' },
   textInput: { backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' },
@@ -809,6 +908,6 @@ const darkStyles = StyleSheet.create({
   roleBtnActive: { borderColor: '#3b82f6', backgroundColor: '#1e3a8a' },
   roleBtnText: { color: '#94a3b8' },
   roleBtnTextActive: { color: '#93c5fd' },
-  cancelBtn: { backgroundColor: '#0f172a', borderColor: '#334155' },
-  cancelBtnText: { color: '#cbd5e1' }
+  cancelBtnStyle: { backgroundColor: '#334155', borderColor: '#475569' },
+  cancelBtnTextStyle: { color: '#cbd5e1' }
 });

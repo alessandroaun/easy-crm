@@ -527,7 +527,7 @@ export default function InformacoesGerais({ isDarkMode }) {
               value={selectedTargetUser} 
               onChange={(e) => setSelectedTargetUser(e.target.value)}
             >
-              <option value="ALL">🌐 Todos os Usuários (Consolidado)</option>
+              <option value="ALL">🌐 Todos os Usuários (Números Gerais)</option>
               {usersList.map((u) => (
                 <option key={u.id} value={u.id}>
                   👤 {u.name ? u.name : u.email} ({u.role || 'vendedor'})
