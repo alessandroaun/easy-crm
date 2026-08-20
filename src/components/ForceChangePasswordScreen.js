@@ -1,3 +1,4 @@
+// ForceChangePasswordScreen
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, KeyboardAvoidingView, ScrollView, Modal, Image } from 'react-native';
 import { supabase } from '../services/supabaseClient';
@@ -12,6 +13,8 @@ const validatePassword = (pwd) => {
 export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMode }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -81,6 +84,7 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
   };
 
   const currentTheme = isDarkMode ? darkStyles : lightStyles;
+  const iconColor = isDarkMode ? '#94a3b8' : '#64748b';
 
   return (
     <KeyboardAvoidingView style={[styles.container, currentTheme.container]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -107,30 +111,88 @@ export default function ForceChangePasswordScreen({ onPasswordChanged, isDarkMod
 
           <View style={styles.inputGroup}>
             <Text style={[styles.label, currentTheme.label]}>Nova Senha</Text>
-            <TextInput
-              style={[styles.input, currentTheme.input]}
-              placeholder="Ex: Senha@123"
-              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-              secureTextEntry
-              value={newPassword}
-              onChangeText={setNewPassword}
-              onSubmitEditing={handleSubmit}
-              onKeyPress={handleKeyPress}
-            />
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                style={[styles.input, currentTheme.input, styles.passwordInputWithIcon]}
+                placeholder="Ex: Senha@123"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                secureTextEntry={!showNewPassword}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                onSubmitEditing={handleSubmit}
+                onKeyPress={handleKeyPress}
+                textContentType="password"
+                autoComplete="off"
+                {...Platform.select({
+                  web: {
+                    style: {
+                      ...styles.input,
+                      ...currentTheme.input,
+                      ...styles.passwordInputWithIcon,
+                      outlineStyle: 'none',
+                      WebkitTextSecurity: showNewPassword ? 'none' : 'disc'
+                    }
+                  }
+                })}
+              />
+              <TouchableOpacity 
+                style={styles.eyeIconContainer} 
+                onPress={() => setShowNewPassword(!showNewPassword)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.vectorEyeWrapper}>
+                  <View style={[styles.eyeOuterFrame, { borderColor: iconColor }]}>
+                    <View style={[styles.eyeInnerPupil, { backgroundColor: iconColor }]} />
+                  </View>
+                  {!showNewPassword && (
+                    <View style={[styles.eyeSlashLine, { backgroundColor: iconColor }]} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={[styles.label, currentTheme.label]}>Confirmar Nova Senha</Text>
-            <TextInput
-              style={[styles.input, currentTheme.input]}
-              placeholder="Confirme a nova senha"
-              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              onSubmitEditing={handleSubmit}
-              onKeyPress={handleKeyPress}
-            />
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                style={[styles.input, currentTheme.input, styles.passwordInputWithIcon]}
+                placeholder="Confirme a nova senha"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                secureTextEntry={!showConfirmPassword}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                onSubmitEditing={handleSubmit}
+                onKeyPress={handleKeyPress}
+                textContentType="password"
+                autoComplete="off"
+                {...Platform.select({
+                  web: {
+                    style: {
+                      ...styles.input,
+                      ...currentTheme.input,
+                      ...styles.passwordInputWithIcon,
+                      outlineStyle: 'none',
+                      WebkitTextSecurity: showConfirmPassword ? 'none' : 'disc'
+                    }
+                  }
+                })}
+              />
+              <TouchableOpacity 
+                style={styles.eyeIconContainer} 
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.vectorEyeWrapper}>
+                  <View style={[styles.eyeOuterFrame, { borderColor: iconColor }]}>
+                    <View style={[styles.eyeInnerPupil, { backgroundColor: iconColor }]} />
+                  </View>
+                  {!showConfirmPassword && (
+                    <View style={[styles.eyeSlashLine, { backgroundColor: iconColor }]} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity style={[styles.primaryButton, currentTheme.primaryButton, loading && styles.primaryButtonDisabled]} onPress={handleSubmit} disabled={loading}>
@@ -167,7 +229,17 @@ const styles = StyleSheet.create({
   errorText: { color: '#ef4444', fontSize: 13, textAlign: 'center', fontWeight: '500' },
   inputGroup: { marginBottom: 20 },
   label: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '600', marginBottom: 8 },
-  input: { borderRadius: 12, padding: 14, fontSize: 15, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  
+  // Estilização do Campo com Ícone Vetorial de Senha
+  passwordInputContainer: { position: 'relative', justifyContent: 'center' },
+  passwordInputWithIcon: { paddingRight: 45 },
+  eyeIconContainer: { position: 'absolute', right: 12, height: '100%', justifyContent: 'center', alignItems: 'center', width: 30 },
+  vectorEyeWrapper: { width: 18, height: 14, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  eyeOuterFrame: { width: 18, height: 12, borderWidth: 1.5, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  eyeInnerPupil: { width: 5, height: 5, borderRadius: 2.5 },
+  eyeSlashLine: { position: 'absolute', width: 20, height: 1.5, transform: [{ rotate: '-45deg' }] },
+
+  input: { borderRadius: 12, padding: 14, fontSize: 15, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none', WebkitTextSecurity: 'none' } }) },
   primaryButton: { borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8, ...Platform.select({ web: { transition: 'background-color 0.2s ease' } }) },
   primaryButtonDisabled: { backgroundColor: '#93c5fd' },
   primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700', fontFamily: MODERN_FONT },

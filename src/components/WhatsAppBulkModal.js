@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 import ReportModal from './ReportModal';
-import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Image } from 'react-native';
+import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, ActivityIndicator, Image, Animated } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 
 let globalIsSending = false;
@@ -52,6 +52,13 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   const [alertMessage, setAlertMessage] = useState('');
   const [alertActionType, setAlertActionType] = useState(null);
 
+  // Estados de Timeout / Auto-Recovery UI
+  const [showReconnectBtn, setShowReconnectBtn] = useState(false);
+
+  // Animação do Modal
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
   const showAlert = (title, message, actionType = 'info') => {
     setAlertTitle(title);
     setAlertMessage(message);
@@ -76,11 +83,16 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   useEffect(() => {
     let interval;
     if (visible) {
+      // Ativa animação Zoom In
+      Animated.parallel([
+        Animated.spring(scaleAnim, { toValue: 1, friction: 6, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: Platform.OS !== 'web' })
+      ]).start();
+
       setConnectionStage('connecting');
       hasTransitioned.current = false; 
       checkBotStatus();
       fetchHistorico();
-      // Polling Acelerado: A cada 1.5 segundos para resposta muito mais rápida do servidor
       interval = setInterval(checkBotStatus, 1500);
       
       setIsSending(globalIsSending);
@@ -88,10 +100,27 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       setLogs(globalLogs);
       setProgressText(globalProgressText);
     } else {
+      // Reseta estado da animação
+      scaleAnim.setValue(0.8);
+      fadeAnim.setValue(0);
       setQrCodeImage(null);
     }
     return () => clearInterval(interval);
   }, [visible]);
+
+  // Lógica do Temporizador de 60s para mostrar botão "Reconectar"
+  useEffect(() => {
+    let timeoutId;
+    setShowReconnectBtn(false);
+
+    if (visible && ['connecting', 'authenticating', 'loading'].includes(connectionStage)) {
+      timeoutId = setTimeout(() => {
+        setShowReconnectBtn(true);
+      }, 60000); // 60 segundos
+    }
+
+    return () => clearTimeout(timeoutId);
+  }, [connectionStage, visible]);
 
   const prevBoardId = useRef(boardData?.id);
 
@@ -111,14 +140,21 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     prevBoardId.current = boardData?.id;
   }, [boardData?.id]);
 
-  const handleCloseModal = () => {
+  const handleAnimatedClose = () => {
     if (!globalIsSending && globalLogs.length > 0) {
       globalLogs = [];
       globalProgressText = '';
       setLogs([]);
       setProgressText('');
     }
-    onClose();
+    
+    // Ativa animação Zoom Out antes de fechar
+    Animated.parallel([
+      Animated.timing(scaleAnim, { toValue: 0.8, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      onClose();
+    });
   };
 
   const checkBotStatus = async () => {
@@ -126,7 +162,6 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       const response = await fetch('http://localhost:3001/status');
       const data = await response.json();
 
-      // Checa se já está pronto para uso
       if (data.connected && data.status === 'READY') {
         setIsBotConnected(true);
         if (data.number) setBotNumber(data.number);
@@ -138,7 +173,6 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       } else {
         setIsBotConnected(false);
         
-        // Interpreta os novos estados em tempo real
         if (data.status === 'AUTHENTICATING') {
           hasTransitioned.current = false;
           setConnectionStage('authenticating');
@@ -245,9 +279,13 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         if (!item.content.trim()) continue;
         const formattedItem = { type: 'text', text: item.content };
         item.isVariation ? varItems.push(formattedItem) : fixedItems.push(formattedItem);
-      } else if (item.type === 'image' || item.type === 'video') {
+      } else if (item.type === 'image') {
         if (!item.file) continue;
-        const formattedItem = { type: 'media', file: item.file, caption: item.caption };
+        const formattedItem = { type: 'image', file: item.file, caption: item.caption };
+        item.isVariation ? varItems.push(formattedItem) : fixedItems.push(formattedItem);
+      } else if (item.type === 'video') {
+        if (!item.file) continue;
+        const formattedItem = { type: 'video', file: item.file, caption: item.caption };
         item.isVariation ? varItems.push(formattedItem) : fixedItems.push(formattedItem);
       } else if (item.type === 'audio') {
         if (!item.file) continue;
@@ -296,6 +334,39 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       return;
     }
 
+    // ==========================================
+    // LÓGICA DE GERAÇÃO DO RESUMO DE INFORMAÇÕES
+    // ==========================================
+    const allItemsToSend = [...fixedItems, ...varItems];
+    const uniqueTypes = [...new Set(allItemsToSend.map(i => i.type))];
+    
+    let typeLabels = [];
+    if (uniqueTypes.includes('image')) typeLabels.push('Imagem');
+    if (uniqueTypes.includes('video')) typeLabels.push('Vídeo');
+    if (uniqueTypes.includes('text')) typeLabels.push('Texto');
+    if (uniqueTypes.includes('audio')) typeLabels.push('Áudio');
+    
+    let summaryPrefix = typeLabels.join(' + ');
+    let textSnippet = '';
+    
+    const firstTextItem = allItemsToSend.find(i => i.type === 'text');
+    if (firstTextItem) {
+      let cleanText = firstTextItem.text.replace(/\n/g, ' ').trim();
+      textSnippet = cleanText.length > 60 ? cleanText.substring(0, 60) + '...' : cleanText;
+    } else {
+      const firstMedia = allItemsToSend.find(i => (i.type === 'image' || i.type === 'video') && i.caption);
+      if (firstMedia) {
+        let cleanCap = firstMedia.caption.replace(/\n/g, ' ').trim();
+        textSnippet = cleanCap.length > 60 ? cleanCap.substring(0, 60) + '...' : cleanCap;
+      }
+    }
+    
+    let finalMessageSummary = summaryPrefix;
+    if (textSnippet) {
+      finalMessageSummary += ` (${textSnippet})`;
+    }
+    if (!finalMessageSummary) finalMessageSummary = 'Disparo configurado';
+
     globalIsSending = true;
     globalIsPaused = false;
     globalCancelRequested = false;
@@ -310,7 +381,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       error: 0,
       total: validLeads.length,
       startTime: new Date(),
-      messageSummary: `Itens na fila: Fixos (${fixedItems.length}) / Variações (${varItems.length})`
+      messageSummary: finalMessageSummary
     };
 
     let dbBoardId = null;
@@ -367,7 +438,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
         if (item.type === 'text') {
           formData.append('messageTemplate', item.text);
-        } else if (item.type === 'media') {
+        } else if (item.type === 'image' || item.type === 'video') {
           formData.append('messageTemplate', item.caption || '');
           const responseBlob = await fetch(item.file.uri);
           const blobData = await responseBlob.blob();
@@ -387,7 +458,12 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           const result = await response.json();
 
           if (result.success) {
-            sentDescriptions.push(item.type === 'text' ? 'Texto' : item.type === 'media' ? 'Mídia' : 'Áudio');
+            let desc = 'Desconhecido';
+            if (item.type === 'text') desc = 'Texto';
+            else if (item.type === 'image') desc = 'Imagem';
+            else if (item.type === 'video') desc = 'Vídeo';
+            else if (item.type === 'audio') desc = 'Áudio';
+            sentDescriptions.push(desc);
           } else {
             leadSuccess = false;
             leadErrorMsg = result.reason;
@@ -536,7 +612,9 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
     const historicoDetalhado = {
       fase: selectedPhaseId === 'all' ? 'Todas as Fases' : (boardData.phases.find(p => p.id === selectedPhaseId)?.title || selectedPhaseId),
       tag: selectedTag === 'all' ? 'Todas as Tags / Origens' : selectedTag,
-      leads: leadsComStatus
+      leads: leadsComStatus,
+      hasVariations: varItems.length > 0,
+      items: allItemsToSend // Itens detalhados bloco a bloco para o relatório
     };
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -550,7 +628,8 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       enviados: parseInt(globalStats.success + globalStats.error) || 0,
       sucesso: parseInt(globalStats.success) || 0,
       falha: parseInt(globalStats.error) || 0,
-      mensagem: `${globalStats.messageSummary} [DADOS_EXTRA:${JSON.stringify(historicoDetalhado)}]`,
+      mensagem: globalStats.messageSummary, // Agora fica limpo apenas com o resumo de 2 linhas!
+      detalhes_json: historicoDetalhado, // Dados completos salvos na nova coluna dedicada
       whatsapp_numero: botNumber || 'Desconhecido'
     };
 
@@ -625,6 +704,16 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color="#2563eb" />
           <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Inicializando servidor interno (Aguarde)...</Text>
+          {showReconnectBtn && (
+            <View style={styles.reconnectContainer}>
+              <TouchableOpacity style={styles.reconnectBtn} onPress={executeDisconnect}>
+                <Text style={styles.reconnectBtnText}>Reconectar</Text>
+              </TouchableOpacity>
+              <Text style={[styles.reconnectHint, isDarkMode && darkStyles.reconnectHint]}>
+                Parece que o servidor apresenta instabilidade e necessita de uma reconexão
+              </Text>
+            </View>
+          )}
         </View>
       );
     }
@@ -634,6 +723,16 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color="#10b981" />
           <Text style={[styles.infoText, isDarkMode && darkStyles.infoText, {color: '#10b981', fontWeight: 'bold'}]}>Leitura concluída! Autenticando sua conta...</Text>
+          {showReconnectBtn && (
+            <View style={styles.reconnectContainer}>
+              <TouchableOpacity style={styles.reconnectBtn} onPress={executeDisconnect}>
+                <Text style={styles.reconnectBtnText}>Reconectar</Text>
+              </TouchableOpacity>
+              <Text style={[styles.reconnectHint, isDarkMode && darkStyles.reconnectHint]}>
+                Parece que o servidor apresenta instabilidade e necessita de uma reconexão
+              </Text>
+            </View>
+          )}
         </View>
       );
     }
@@ -643,6 +742,16 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color="#f59e0b" />
           <Text style={[styles.infoText, isDarkMode && darkStyles.infoText, {color: '#f59e0b', fontWeight: 'bold'}]}>Baixando mensagens e sincronizando (Pode demorar)...</Text>
+          {showReconnectBtn && (
+            <View style={styles.reconnectContainer}>
+              <TouchableOpacity style={styles.reconnectBtn} onPress={executeDisconnect}>
+                <Text style={styles.reconnectBtnText}>Reconectar</Text>
+              </TouchableOpacity>
+              <Text style={[styles.reconnectHint, isDarkMode && darkStyles.reconnectHint]}>
+                Parece que o servidor apresenta instabilidade e necessita de uma reconexão
+              </Text>
+            </View>
+          )}
         </View>
       );
     }
@@ -660,12 +769,21 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
       return (
         <View style={styles.centerBox}>
           <Text style={styles.statusError}>🔴 WhatsApp Desconectado</Text>
-          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText]}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
-          {qrCodeImage ? (
-            <Image source={{ uri: qrCodeImage }} style={styles.qrCode} />
-          ) : (
-            <ActivityIndicator color="#64748b" />
-          )}
+          <Text style={[styles.infoText, isDarkMode && darkStyles.infoText, {marginBottom: 30}]}>Abra o WhatsApp no seu celular e leia o QR Code abaixo:</Text>
+          
+          <View style={styles.qrCodeWrapper}>
+            <Image 
+              source={{ uri: 'https://omgkvkooitmdqulasdmx.supabase.co/storage/v1/object/public/images/whatsapp1.png' }} 
+              style={styles.floatingWaIcon} 
+            />
+            <View style={styles.qrCodeFrame}>
+              {qrCodeImage ? (
+                <Image source={{ uri: qrCodeImage }} style={styles.qrCodeImage} />
+              ) : (
+                <ActivityIndicator color="#16a34a" size="large" />
+              )}
+            </View>
+          </View>
         </View>
       );
     }
@@ -686,6 +804,17 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                 return fullText;
               };
 
+              let hasVariations = false;
+              if (item.mensagem && item.mensagem.includes('[DADOS_EXTRA:')) {
+                try {
+                  const extraStart = item.mensagem.indexOf('[DADOS_EXTRA:');
+                  const extraEnd = item.mensagem.lastIndexOf(']');
+                  const jsonStr = item.mensagem.substring(extraStart + 13, extraEnd);
+                  const parsed = JSON.parse(jsonStr);
+                  hasVariations = parsed.hasVariations || false;
+                } catch(e) {}
+              }
+
               return (
                 <TouchableOpacity key={item.id} onPress={() => setSelectedReport(item)} style={[styles.historyCard, isDarkMode && darkStyles.historyCard]}>
                   <View style={styles.historyHeader}>
@@ -701,9 +830,16 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                       {getCleanMessage(item.mensagem)}
                     </Text>
                   </View>
-                  <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.historyDate}><Text style={{fontWeight:'bold'}}>Fim:</Text> {item.fim}</Text>
+                    {hasVariations && (
+                      <Text style={{fontSize: 10, color: '#64748b', fontStyle: 'italic', textAlign: 'right', flex: 1}}>
+                        (mensagens disparadas alternadamente)
+                      </Text>
+                    )}
+                  </View>
                   <View style={[styles.historyStatsRow, isDarkMode && darkStyles.historyStatsRow]}>
-                    <Text style={[styles.historyStatItem, isDarkMode && darkStyles.historyStatItem]}>👥 Alvos: {item.total_alvos}</Text>
+                    <Text style={[styles.historyStatItem, isDarkMode && darkStyles.historyStatItem]}>👥 Leads: {item.total_alvos}</Text>
                     <Text style={[styles.historyStatItem, {color: '#16a34a'}]}>✅ Sucesso: {item.sucesso}</Text>
                     <Text style={[styles.historyStatItem, {color: '#ef4444'}]}>❌ Falha: {item.falha}</Text>
                   </View>
@@ -897,9 +1033,16 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
   };
 
   return (
-    <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
+    <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={handleAnimatedClose}>
       <View style={styles.overlay}>
-        <View style={[styles.modalContainer, isDarkMode && darkStyles.modalContainer]}>
+        <Animated.View style={[
+          styles.modalContainer, 
+          isDarkMode && darkStyles.modalContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ scale: scaleAnim }]
+          }
+        ]}>
           
           <View style={styles.header}>
             <Text style={[styles.title, isDarkMode && darkStyles.title]}>Disparo de Mensagens</Text>
@@ -916,7 +1059,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
                   </TouchableOpacity>
                 </View>
               )}
-              <TouchableOpacity onPress={handleCloseModal} style={styles.closeButton}>
+              <TouchableOpacity onPress={handleAnimatedClose} style={styles.closeButton}>
                 <Text style={[styles.closeButtonText, isDarkMode && darkStyles.closeButtonText]}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -936,7 +1079,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
           <View style={styles.fixedContentBox}>
             {renderContentBox()}
           </View>
-        </View>
+        </Animated.View>
       </View>
 
       <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
@@ -971,7 +1114,7 @@ export default function WhatsAppBulkModal({ visible, onClose, boardData, onCompl
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { width: '100%', maxWidth: 620, backgroundColor: '#ffffff', borderRadius: 16, padding: 24, height: 680 },
+  modalContainer: { width: '100%', maxWidth: 620, backgroundColor: '#ffffff', borderRadius: 16, padding: 24, height: 680, ...Platform.select({ web: { boxShadow: '0px 20px 40px rgba(0,0,0,0.3)' } }) },
   fixedContentBox: { height: 500, overflow: 'hidden' },
   scrollContentContainer: { alignItems: 'stretch' },
   
@@ -1021,8 +1164,19 @@ const styles = StyleSheet.create({
 
   infoText: { fontSize: 15, color: '#475569', textAlign: 'center', marginTop: 12, marginBottom: 12 },
   statusError: { fontSize: 18, fontWeight: 'bold', color: '#ef4444' },
-  qrCode: { width: 220, height: 220, marginTop: 10 },
   
+  // Estilos da Moldura e QR Code Elegante
+  qrCodeWrapper: { position: 'relative', alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+  floatingWaIcon: { width: 60, height: 60, position: 'absolute', top: -30, zIndex: 10 },
+  qrCodeFrame: { backgroundColor: '#ffffff', padding: 16, borderRadius: 16, borderWidth: 3, borderColor: '#16a34a', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(22, 163, 74, 0.2)' } }) },
+  qrCodeImage: { width: 220, height: 220 },
+  
+  // Estilos do Botão Reconectar Auto-Recovery
+  reconnectContainer: { alignItems: 'center', marginTop: 20 },
+  reconnectBtn: { backgroundColor: '#dc2626', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
+  reconnectBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
+  reconnectHint: { fontSize: 12, color: '#64748b', fontStyle: 'italic', marginTop: 8, textAlign: 'center', maxWidth: 280 },
+
   topActionRow: { 
     width: '100%',
     display: 'flex',
@@ -1078,9 +1232,7 @@ const styles = StyleSheet.create({
   historyStatsRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 6 },
   historyStatItem: { fontSize: 12, fontWeight: '600', color: '#475569' },
   connectedAccountInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  connectedNumberText: { fontSize: 13, fontWeight: '600', color: '#475569' },
   historyMsgClean: { fontSize: 13, color: '#475569', backgroundColor: '#ffffff', padding: 6, borderRadius: 4, borderWidth: 1, borderColor: '#e2e8f0', fontStyle: 'italic', marginTop: 2 },
-  statusSuccess: { color: '#16a34a', fontWeight: '800', textAlign: 'center' },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
 
   alertOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
@@ -1088,7 +1240,7 @@ const styles = StyleSheet.create({
   alertTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8, textAlign: 'center' },
   alertSubtitle: { fontSize: 13, color: '#64748b', marginBottom: 20, textAlign: 'center', lineHeight: 18 },
   alertButtonsRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  alertBtn: { flex: 1, paddingVertical: 12, borderRadius: '8px', alignItems: 'center' },
+  alertBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
   alertCancelBtn: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#cbd5e1' },
   alertCancelBtnText: { color: '#475569', fontWeight: 'bold', fontSize: 13 },
   alertConfirmBtn: { backgroundColor: '#2563eb' },
@@ -1127,5 +1279,6 @@ const darkStyles = StyleSheet.create({
   alertTitle: { color: '#f8fafc' },
   alertSubtitle: { color: '#cbd5e1' },
   alertCancelBtn: { backgroundColor: '#334155', borderColor: '#475569' },
-  alertCancelBtnText: { color: '#cbd5e1' }
+  alertCancelBtnText: { color: '#cbd5e1' },
+  reconnectHint: { color: '#94a3b8' }
 });

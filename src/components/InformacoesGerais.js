@@ -1,3 +1,4 @@
+// InformacoesGerais (Visão Geral)
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   View, 
@@ -195,7 +196,13 @@ export default function InformacoesGerais({ isDarkMode }) {
             .from('user_profiles')
             .select('id, email, role, name');
           if (!profErr && profiles) {
-            setUsersList(profiles);
+            // Ordenar para posicionar o usuário atual logo abaixo de 'Todos'
+            const sortedProfiles = [...profiles].sort((a, b) => {
+              if (a.id === user.id) return -1;
+              if (b.id === user.id) return 1;
+              return 0;
+            });
+            setUsersList(sortedProfiles);
           }
         }
 
@@ -325,13 +332,11 @@ export default function InformacoesGerais({ isDarkMode }) {
     targetPhasesTitles.forEach(phaseTitle => {
       financialSums[phaseTitle] = 0;
     });
-    // Incluir explicitamente o acumulador para Perdido se houver leads perdidos ou se desejar padronizar
     financialSums['Perdido'] = 0;
 
     const originsMap = new Set();
     const categoriesMap = new Set();
     
-    // Processamento otimizado para os gráficos com escalas reais baseadas nos dados
     let maxTouches = 1;
     const rawEffortPoints = filteredLeads.map(l => {
         const touches = (l.comments?.length || 0) + (l.appointments?.length || 0);
@@ -347,7 +352,6 @@ export default function InformacoesGerais({ isDarkMode }) {
         return { touches, statusCategory };
     });
 
-    // Agrupamento temporal para o gráfico de evolução de ticket por data
     const timelineMap = {};
     filteredLeads.forEach(l => {
         const dateKey = l.createdAt ? new Date(l.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : 'S/Data';
@@ -457,13 +461,13 @@ export default function InformacoesGerais({ isDarkMode }) {
   };
 
   const executeExport = () => {
+    if (!isAdmin) return; // Segurança extra para impedir exportação de não-admins
     const targetLabel = isAdmin && selectedTargetUser !== 'ALL' 
       ? (usersList.find(u => u.id === selectedTargetUser)?.email || 'Usuario') 
       : (isAdmin ? 'Todos_Usuarios' : 'Meus_Leads');
     exportLeadsToCSV(filteredLeads, `Leads_${targetLabel}_${filterType}`);
   };
 
-  // Lógica para título dinâmico com base no usuário alvo
   const dynamicPageTitle = useMemo(() => {
     if (isAdmin && selectedTargetUser === 'ALL') {
       return "Visão Geral de Todos";
@@ -536,9 +540,11 @@ export default function InformacoesGerais({ isDarkMode }) {
             </select>
           )}
 
-          <TouchableOpacity style={styles.exportBtnHeader} onPress={executeExport}>
-            <Text style={styles.exportBtnText}>Exportar CSV</Text>
-          </TouchableOpacity>
+          {isAdmin && (
+            <TouchableOpacity style={styles.exportBtnHeader} onPress={executeExport}>
+              <Text style={styles.exportBtnText}>Exportar CSV</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -849,7 +855,6 @@ const styles = StyleSheet.create({
   emptyGraphText: { position: 'absolute', top: '45%', left: '35%', fontFamily: MODERN_FONT, fontSize: 11, fontStyle: 'italic' }
 });
 
-/* Estilos de Tema Claro */
 const lightStyles = StyleSheet.create({
   container: { backgroundColor: '#f1f5f9' },
   loadingText: { color: '#475569' },
@@ -891,7 +896,6 @@ const lightStyles = StyleSheet.create({
   emptyGraphText: { color: '#94a3b8' }
 });
 
-/* Estilos de Tema Escuro */
 const darkStyles = StyleSheet.create({
   container: { backgroundColor: '#0f172a' },
   loadingText: { color: '#94a3b8' },
@@ -900,8 +904,8 @@ const darkStyles = StyleSheet.create({
   adminUserSelect: { borderColor: '#334155', backgroundColor: '#1e293b', color: '#f8fafc' },
   toolsContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },
   filterGroupLabel: { color: '#cbd5e1' },
-  filterButtonGroup: { backgroundColor: '#0f172a' }, // Fundo agrupado escuro idêntico ao padrão desejado
-  filterBtnActive: { backgroundColor: '#334155' }, // Destaque suave para o botão ativo no escuro
+  filterButtonGroup: { backgroundColor: '#0f172a' },
+  filterBtnActive: { backgroundColor: '#334155' },
   filterText: { color: '#94a3b8' },
   filterTextActive: { color: '#ffffff' },
   pickerLabel: { color: '#94a3b8' },

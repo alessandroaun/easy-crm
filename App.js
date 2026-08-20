@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, StatusBar, View, ActivityIndicator } from 'react-native';
+import { SafeAreaView, StatusBar, View, ActivityIndicator, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './src/services/supabaseClient';
 
@@ -14,6 +14,28 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
+    // Injeta dinamicamente a fonte personalizada via CSS na versão Web
+    if (Platform.OS === 'web') {
+      const styleId = 'supabase-global-font';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.innerHTML = `
+          @font-face {
+            font-family: 'FriendsCustom';
+            src: url('https://omgkvkooitmdqulasdmx.supabase.co/storage/v1/object/public/fonts/Friends-SemiBold.ttf') format('truetype');
+            font-weight: 600;
+            font-style: normal;
+            font-display: swap;
+          }
+          *, body, input, select, textarea, button {
+            font-family: 'FriendsCustom', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+
     // 1. Carrega a preferência de tema salva localmente ao abrir o app
     AsyncStorage.getItem('@a11_dark_mode').then((val) => {
       if (val !== null) {

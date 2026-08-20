@@ -1,6 +1,6 @@
 // DashboardScreen
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions, Animated, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, useWindowDimensions, Animated, Image, Modal } from 'react-native';
 import KanbanColumn from '../components/KanbanColumn';
 import AddClientModal from '../components/AddClientModal';
 import AddPhaseModal from '../components/AddPhaseModal';
@@ -50,11 +50,43 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [isBulkDropdownOpen, setIsBulkDropdownOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
 
+  // Estados da Exclusão em Massa para a Lixeira (Admin)
+  const [isBulkDeleteActive, setIsBulkDeleteActive] = useState(false);
+
   // Estados da Troca de Senha Própria
   const [isChangePassModalVisible, setIsChangePassModalVisible] = useState(false);
   const [newPass, setNewPass] = useState('');
   const [newPassConfirm, setNewPassConfirm] = useState('');
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showNewPassConfirm, setShowNewPassConfirm] = useState(false);
   const [isChangingPass, setIsChangingPass] = useState(false);
+
+  // Animação de Zoom In/Out para a Troca de Senha
+  const changePassScale = useRef(new Animated.Value(0.8)).current;
+  const changePassOpacity = useRef(new Animated.Value(0)).current;
+
+  const openChangePassModal = () => {
+    setIsChangePassModalVisible(true);
+    changePassScale.setValue(0.8);
+    changePassOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(changePassScale, { toValue: 1, friction: 6, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(changePassOpacity, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+    ]).start();
+  };
+
+  const closeChangePassModal = () => {
+    Animated.parallel([
+      Animated.timing(changePassScale, { toValue: 0.8, duration: 150, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(changePassOpacity, { toValue: 0, duration: 150, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      setIsChangePassModalVisible(false);
+      setNewPass('');
+      setNewPassConfirm('');
+      setShowNewPass(false);
+      setShowNewPassConfirm(false);
+    });
+  };
 
   const slideAnim = useRef(new Animated.Value(-280)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -71,7 +103,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
       Animated.spring(toastTranslateY, { toValue: 0, friction: 5, useNativeDriver: Platform.OS !== 'web' })
     ]).start();
 
-    // Fade Out apos 4 segundos
     setTimeout(() => {
       Animated.parallel([
         Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: Platform.OS !== 'web' }),
@@ -115,7 +146,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
     });
   };
 
-  // Motor Dinâmico de Alertas (Sucesso / Erro)
   const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
@@ -165,7 +195,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
         table: 'user_profiles',
         filter: `id=eq.${loggedUserId}` 
       }, (payload) => {
-        console.log("[DEBUG] Perfil alterado, recarregando dados...");
         fetchInitialData(); 
       })
       .subscribe();
@@ -180,6 +209,27 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
       const userAgent = navigator.userAgent.toLowerCase();
       const isElectronEnv = userAgent.includes('electron') || window.electron || (window.process && window.process.versions && window.process.versions.electron);
       setIsElectron(!!isElectronEnv);
+
+      // Injeta estilos globais para corrigir o comportamento do cursor nos cards e botões de ação
+      const styleId = 'dashboard-cursor-fixes';
+if (!document.getElementById(styleId)) {
+  const styleEl = document.createElement('style');
+  styleEl.id = styleId;
+  styleEl.innerHTML = `
+    /* Define cursor padrão para o container do card e todo o seu conteúdo */
+    [data-card-container] {
+      cursor: default !important;
+    }
+    
+    /* Garante que elementos de interação específicos recuperem o cursor pointer */
+    [data-card-container] button, 
+    [data-card-container] [data-card-action-btn],
+    [data-card-container] .action-icon-button {
+      cursor: pointer !important;
+    }
+  `;
+  document.head.appendChild(styleEl);
+}
     }
   }, []);
 
@@ -204,7 +254,15 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
             .from('user_profiles')
             .select('id, name, email')
             .eq('status', 'ativo');
-          setUsersList(users || []);
+          
+          if (users) {
+            const sortedUsers = [...users].sort((a, b) => {
+              if (a.id === user.id) return -1;
+              if (b.id === user.id) return 1;
+              return 0;
+            });
+            setUsersList(sortedUsers);
+          }
         }
         
         setCurrentUserId(user.id); 
@@ -267,8 +325,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
 
   useEffect(() => {
     const checkNotifications = async () => {
-      
-      // 1. Notificações do Kanban (Leads) e Pós-Venda (Boletos)
       if (boardData && boardData.phases && Array.isArray(boardData.phases)) {
         const now = new Date();
         const notifs = [];
@@ -276,8 +332,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
 
         boardData.phases.forEach(phase => {
           phase.clients.forEach(client => {
-            
-            // Checagem de Agendamentos
             if (client.appointments) {
               client.appointments.forEach(appt => {
                 if (!appt.notified) {
@@ -291,13 +345,11 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
               });
             }
 
-            // Checagem de Vencimento de Contratos (Acompanhamento Pós-Venda - 5 Dias de antecedência)
             if (client.dealClosed && client.contracts) {
               client.contracts.forEach(contract => {
                 const dia = parseInt(contract.diaVencimento);
                 if (dia > 0 && dia <= 31) {
                   const nextVencimento = new Date(now.getFullYear(), now.getMonth(), dia);
-                  // Se já passou do dia de vencimento, olhamos para o próximo mês
                   if (now.getDate() > dia + 1) {
                     nextVencimento.setMonth(nextVencimento.getMonth() + 1);
                   }
@@ -887,15 +939,10 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
       showCustomAlert('error', 'Erro', "Erro ao alterar senha: " + error.message);
     } else {
       showCustomAlert('success', 'Sucesso', 'Sua senha foi atualizada com sucesso!');
-      setIsChangePassModalVisible(false);
-      setNewPass('');
-      setNewPassConfirm('');
+      closeChangePassModal();
     }
   };
 
-  // =========================================================================
-  // MOTOR DE BUSCA E AUTO-IMPORTAÇÃO (Novo Hook)
-  // =========================================================================
   useEffect(() => {
     let pollingInterval;
 
@@ -910,31 +957,27 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
             let updatedBoard = JSON.parse(JSON.stringify(boardData));
             let newImportsCount = 0;
 
-            // Extrair números de telefone existentes para evitar duplicidade
             const existingPhones = new Set();
             updatedBoard.phases.forEach(p => p.clients.forEach(c => {
                 if (c.phone) existingPhones.add(c.phone.replace(/\D/g, ''));
             }));
 
             data.leads.forEach(leadRecord => {
-              leadsToClear.push(leadRecord.id); // Sempre marcamos para apagar da fila do Node, sendo salvo ou duplicado
+              leadsToClear.push(leadRecord.id); 
 
-              // Passar pelo motor inteligente de leitura (o mesmo do Modal manual)
               const parsedClientsArray = processLeadsIntelligence(leadRecord.text, true);
               
               parsedClientsArray.forEach(newClient => {
                 const cleanPhone = (newClient.phone || '').replace(/\D/g, '');
                 
-                // Validação final de duplicata e obrigatoriedade de telefone
                 if (cleanPhone && !existingPhones.has(cleanPhone)) {
-                   existingPhones.add(cleanPhone); // Marca para não inserir no mesmo loop
-                   updatedBoard.phases[0].clients.unshift(newClient); // Joga no início da Coluna 1
+                   existingPhones.add(cleanPhone); 
+                   updatedBoard.phases[0].clients.unshift(newClient); 
                    newImportsCount++;
                 }
               });
             });
 
-            // Se novos leads foram efetivamente salvos
             if (newImportsCount > 0) {
               setBoardData(updatedBoard);
               syncBoardToDatabase(updatedBoard);
@@ -942,7 +985,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
               addSystemNotification('Auto-Importação Concluída', `O sistema detectou e importou ${newImportsCount} lead(s) diretamente do WhatsApp de forma automática.`);
             }
 
-            // Limpa os processados do server.js
             if (leadsToClear.length > 0) {
                 await fetch('http://localhost:3001/auto-leads/clear', {
                     method: 'POST',
@@ -952,9 +994,9 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
             }
           }
         } catch (e) {
-            // Ignora silenciosamente, o servidor pode estar temporariamente ocupado ou offline
+            // Ignorado silenciosamente
         }
-      }, 5000); // Roda a cada 5 segundos
+      }, 5000);
     }
 
     return () => clearInterval(pollingInterval);
@@ -1173,6 +1215,45 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
     }
   };
 
+  const handleBulkDeleteExecute = async () => {
+    if (selectedLeadIds.length === 0 || !boardData) return;
+    try {
+      const updatedCurrentBoard = JSON.parse(JSON.stringify(boardData));
+      if (!updatedCurrentBoard.trash) updatedCurrentBoard.trash = [];
+      const extractedLeads = [];
+
+      updatedCurrentBoard.phases.forEach(phase => {
+        phase.clients = phase.clients.filter(client => {
+          if (selectedLeadIds.includes(client.id)) {
+            client.originalPhaseId = phase.id;
+            const deleteComment = {
+              id: `sys_del_${Date.now()}_${Math.random()}`,
+              text: `⚙️ Sistema: Lead enviado para a lixeira via Exclusão em Massa.`,
+              date: new Date().toISOString()
+            };
+            client.comments = [deleteComment, ...(client.comments || [])];
+            extractedLeads.push(client);
+            return false;
+          }
+          return true;
+        });
+      });
+
+      if (extractedLeads.length === 0) return;
+
+      updatedCurrentBoard.trash.push(...extractedLeads);
+      setBoardData(updatedCurrentBoard);
+      await syncBoardToDatabase(updatedCurrentBoard);
+
+      setIsBulkDeleteActive(false);
+      setSelectedLeadIds([]);
+
+      showCustomAlert('success', 'Sucesso', `${extractedLeads.length} lead(s) enviado(s) para a lixeira com sucesso.`);
+    } catch (err) {
+      showCustomAlert('error', 'Erro', 'Falha ao excluir em massa: ' + err.message);
+    }
+  };
+
   const addAdminActionToHistory = (message) => {
     if (!boardData) return;
     const updatedBoard = JSON.parse(JSON.stringify(boardData));
@@ -1194,10 +1275,20 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
     ? `Transferir Leads (${(selectedTargetUserObj.name || selectedTargetUserObj.email).split(' ')[0]})`
     : 'Transferir Leads';
 
-  return (
-    <View style={[styles.container, currentTheme.container]}>
+  const iconColor = isDarkMode ? '#94a3b8' : '#64748b';
 
-      {/* TOAST NOTIFICATION FLUTUANTE DE AUTO-IMPORT (Adicionado no Topo) */}
+  return (
+    <View style={[styles.container, currentTheme.container]} onStartShouldSetResponder={() => {
+      // Se clicar fora, fecha a lista e desativa o modo/botão de Transferir Leads se estiver aberto
+      if (isBulkDropdownOpen || isBulkTransferActive) {
+        setIsBulkDropdownOpen(false);
+        setIsBulkTransferActive(false);
+        setBulkTargetUserId(null);
+        setSelectedLeadIds([]);
+      }
+      return false;
+    }}>
+
       {toastNotif.visible && (
         <Animated.View style={[styles.toastContainer, currentTheme.toastContainer, { opacity: toastOpacity, transform: [{ translateY: toastTranslateY }] }]}>
            <Text style={styles.toastIcon}>✨</Text>
@@ -1277,16 +1368,36 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
                 Filtro
               </Text>
             </TouchableOpacity>
+
+            {userProfile?.role === 'admin' && (
+              <TouchableOpacity 
+                style={[styles.filterBtn, currentTheme.filterBtn, isBulkDeleteActive && { backgroundColor: isDarkMode ? '#450a0a' : '#fee2e2', borderColor: '#ef4444' }]} 
+                onPress={() => {
+                  if (!isBulkDeleteActive) {
+                    setIsBulkDeleteActive(true);
+                    setIsBulkTransferActive(false);
+                  } else {
+                    setIsBulkDeleteActive(false);
+                    setSelectedLeadIds([]);
+                  }
+                }}
+              >
+                <Text style={[styles.filterBtnText, currentTheme.filterBtnText, isBulkDeleteActive && { color: '#ef4444' }]}>
+                  Excluir em Massa
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.mobileRowBottom}>
             {userProfile?.role === 'admin' && (
-              <View style={{ position: 'relative', flex: 1 }}>
+              <View style={{ position: 'relative', flex: 1 }} onStartShouldSetResponder={(e) => { e.stopPropagation(); return false; }}>
                 <TouchableOpacity 
                   style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary, styles.mobileActionBtn, isBulkTransferActive && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#3b82f6' }]} 
                   onPress={() => {
                     if (!isBulkTransferActive) {
                       setIsBulkTransferActive(true);
+                      setIsBulkDeleteActive(false);
                       setIsBulkDropdownOpen(true);
                     } else {
                       setIsBulkTransferActive(false);
@@ -1358,6 +1469,25 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
                   Filtro
                 </Text>
               </TouchableOpacity>
+
+              {userProfile?.role === 'admin' && (
+                <TouchableOpacity 
+                  style={[styles.filterBtn, currentTheme.filterBtn, isBulkDeleteActive && { backgroundColor: isDarkMode ? '#450a0a' : '#fee2e2', borderColor: '#ef4444' }]} 
+                  onPress={() => {
+                    if (!isBulkDeleteActive) {
+                      setIsBulkDeleteActive(true);
+                      setIsBulkTransferActive(false);
+                    } else {
+                      setIsBulkDeleteActive(false);
+                      setSelectedLeadIds([]);
+                    }
+                  }}
+                >
+                  <Text style={[styles.filterBtnText, currentTheme.filterBtnText, isBulkDeleteActive && { color: '#ef4444' }]}>
+                    Excluir em Massa
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -1413,12 +1543,13 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
             )}
 
             {userProfile?.role === 'admin' && (
-              <View style={{ position: 'relative' }}>
+              <View style={{ position: 'relative' }} onStartShouldSetResponder={(e) => { e.stopPropagation(); return false; }}>
                 <TouchableOpacity 
                   style={[styles.actionBtnSecondary, currentTheme.actionBtnSecondary, isBulkTransferActive && { backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff', borderColor: '#3b82f6' }]} 
                   onPress={() => {
                     if (!isBulkTransferActive) {
                       setIsBulkTransferActive(true);
+                      setIsBulkDeleteActive(false);
                       setIsBulkDropdownOpen(true);
                     } else {
                       setIsBulkTransferActive(false);
@@ -1478,7 +1609,7 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
               onEditPhase={(p) => setEditingPhase(p)}
               onReorderPhase={handleReorderPhase}
               onAddComment={handleAddCommentToClient}
-              isBulkSelecting={isBulkTransferActive}
+              isBulkSelecting={isBulkTransferActive || isBulkDeleteActive}
               selectedLeadIds={selectedLeadIds}
               onToggleSelectLead={(clientId) => {
                 setSelectedLeadIds(prev => 
@@ -1525,6 +1656,15 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
           onPress={handleBulkTransferExecute}
         >
           <Text style={styles.floatingBulkBtnText}>Transferir ({selectedLeadIds.length})</Text>
+        </TouchableOpacity>
+      )}
+
+      {isBulkDeleteActive && selectedLeadIds.length > 0 && (
+        <TouchableOpacity 
+          style={[styles.floatingBulkBtn, { backgroundColor: '#ef4444' }]} 
+          onPress={handleBulkDeleteExecute}
+        >
+          <Text style={styles.floatingBulkBtnText}>Excluir ({selectedLeadIds.length})</Text>
         </TouchableOpacity>
       )}
 
@@ -1640,7 +1780,7 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
             <View style={[styles.sidebarFooterContainer, currentTheme.sidebarFooterContainer]}>
               <TouchableOpacity 
                 style={[styles.sidebarFooterButtonChangePass, currentTheme.sidebarFooterButtonChangePass, isMobile && styles.sidebarFooterButtonMobile]} 
-                onPress={() => { setIsChangePassModalVisible(true); closeSidebar(); }}
+                onPress={() => { openChangePassModal(); closeSidebar(); }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.sidebarFooterButtonChangePassText, currentTheme.sidebarFooterButtonChangePassText, isMobile && styles.sidebarFooterButtonTextMobile]}>Trocar Minha Senha</Text>
@@ -1707,36 +1847,95 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
 
       {isChangePassModalVisible && (
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, currentTheme.modalContent]}>
+          <Animated.View style={[styles.modalContent, currentTheme.modalContent, { opacity: changePassOpacity, transform: [{ scale: changePassScale }] }]}>
             <Text style={[styles.modalTitle, currentTheme.modalTitle]}>Trocar Minha Senha</Text>
             <Text style={[styles.modalText, currentTheme.modalText]}>Digite sua nova senha de acesso abaixo (mínimo de 6 caracteres, com maiúscula, minúscula, número e caractere especial).</Text>
             
-            <TextInput
-              style={[styles.passInput, currentTheme.passInput]}
-              placeholder="Nova senha (ex: Senha123!)"
-              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-              secureTextEntry
-              value={newPass}
-              onChangeText={setNewPass}
-            />
-            <TextInput
-              style={[styles.passInput, currentTheme.passInput]}
-              placeholder="Confirme a nova senha"
-              placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-              secureTextEntry
-              value={newPassConfirm}
-              onChangeText={setNewPassConfirm}
-            />
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                style={[styles.passInput, currentTheme.passInput, { paddingRight: 45 }]}
+                placeholder="Nova senha (ex: Senha123!)"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                secureTextEntry={!showNewPass}
+                value={newPass}
+                onChangeText={setNewPass}
+                textContentType="password"
+                autoComplete="off"
+                {...Platform.select({
+                  web: {
+                    style: {
+                      ...styles.passInput,
+                      ...currentTheme.passInput,
+                      paddingRight: 45,
+                      outlineStyle: 'none',
+                      WebkitTextSecurity: showNewPass ? 'none' : 'disc'
+                    }
+                  }
+                })}
+              />
+              <TouchableOpacity 
+                style={styles.eyeIconContainer} 
+                onPress={() => setShowNewPass(!showNewPass)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.vectorEyeWrapper}>
+                  <View style={[styles.eyeOuterFrame, { borderColor: iconColor }]}>
+                    <View style={[styles.eyeInnerPupil, { backgroundColor: iconColor }]} />
+                  </View>
+                  {!showNewPass && (
+                    <View style={[styles.eyeSlashLine, { backgroundColor: iconColor }]} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                style={[styles.passInput, currentTheme.passInput, { paddingRight: 45 }]}
+                placeholder="Confirme a nova senha"
+                placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                secureTextEntry={!showNewPassConfirm}
+                value={newPassConfirm}
+                onChangeText={setNewPassConfirm}
+                textContentType="password"
+                autoComplete="off"
+                {...Platform.select({
+                  web: {
+                    style: {
+                      ...styles.passInput,
+                      ...currentTheme.passInput,
+                      paddingRight: 45,
+                      outlineStyle: 'none',
+                      WebkitTextSecurity: showNewPassConfirm ? 'none' : 'disc'
+                    }
+                  }
+                })}
+              />
+              <TouchableOpacity 
+                style={styles.eyeIconContainer} 
+                onPress={() => setShowNewPassConfirm(!showNewPassConfirm)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.vectorEyeWrapper}>
+                  <View style={[styles.eyeOuterFrame, { borderColor: iconColor }]}>
+                    <View style={[styles.eyeInnerPupil, { backgroundColor: iconColor }]} />
+                  </View>
+                  {!showNewPassConfirm && (
+                    <View style={[styles.eyeSlashLine, { backgroundColor: iconColor }]} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={[styles.cancelBtn, currentTheme.cancelBtn]} onPress={() => { setIsChangePassModalVisible(false); setNewPass(''); setNewPassConfirm(''); }}>
+              <TouchableOpacity style={[styles.cancelBtn, currentTheme.cancelBtn]} onPress={closeChangePassModal}>
                 <Text style={[styles.cancelBtnText, currentTheme.cancelBtnText]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: '#4f46e5' }]} onPress={handleUpdateOwnPassword} disabled={isChangingPass}>
                 <Text style={styles.confirmBtnText}>{isChangingPass ? 'Salvando...' : 'Salvar Senha'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       )}
 
@@ -1874,7 +2073,7 @@ const styles = StyleSheet.create({
 
   topHeaderMobileContainer: { paddingHorizontal: 10, paddingTop: 6, paddingBottom: 8, borderBottomWidth: 1, zIndex: 50 },
   mobileRowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  mobileRowMiddle: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 6 },
+  mobileRowMiddle: { flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 6, gap: 6 },
   mobileRowBottom: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, width: '100%' },
   mobileActionBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
 
@@ -1926,11 +2125,20 @@ const styles = StyleSheet.create({
   sidebarFooterButtonLogoutText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '700' },
 
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 },
-  modalContent: { padding: 24, borderRadius: 16, width: '90%', maxWidth: 320, alignItems: 'center' },
+  modalContent: { padding: 24, borderRadius: 16, width: '90%', maxWidth: 360, alignItems: 'center' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  modalText: { fontSize: 14, textAlign: 'center', marginBottom: 24 },
+  modalText: { fontSize: 14, textAlign: 'center', marginBottom: 20 },
   passInput: { width: '100%', borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 12, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
-  modalButtons: { flexDirection: 'row', gap: 12, width: '100%' },
+  
+  // Estilização do ícone vetorial de olho na senha
+  passwordInputContainer: { position: 'relative', justifyContent: 'center', width: '100%' },
+  eyeIconContainer: { position: 'absolute', right: 12, top: 12, height: 24, justifyContent: 'center', alignItems: 'center', width: 30 },
+  vectorEyeWrapper: { width: 18, height: 14, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  eyeOuterFrame: { width: 18, height: 12, borderWidth: 1.5, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  eyeInnerPupil: { width: 5, height: 5, borderRadius: 2.5 },
+  eyeSlashLine: { position: 'absolute', width: 20, height: 1.5, transform: [{ rotate: '-45deg' }] },
+
+  modalButtons: { flexDirection: 'row', gap: 12, width: '100%', marginTop: 8 },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center' },
   cancelBtnText: { fontWeight: 'bold' },
   confirmBtn: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },

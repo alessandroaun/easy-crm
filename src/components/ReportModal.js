@@ -6,23 +6,34 @@ const MODERN_FONT = Platform.OS === 'web' ? '"Inter", "Segoe UI", Roboto, Helvet
 export default function ReportModal({ visible, onClose, report, boardData, isDarkMode }) {
   if (!report) return null;
 
-  let mensagemLimpa = report.mensagem || '';
-  let dadosExtra = { fase: 'Todas as Fases', tag: 'Todas as Tags / Origens', leads: [] };
+  let dadosExtra = { fase: 'Todas as Fases', tag: 'Todas as Tags / Origens', leads: [], items: [] };
 
-  if (mensagemLimpa.includes('[DADOS_EXTRA:')) {
+  // Lê prioritariamente da nova coluna estruturada do Supabase (detalhes_json)
+  if (report.detalhes_json) {
+    dadosExtra.fase = report.detalhes_json.fase || dadosExtra.fase;
+    dadosExtra.tag = report.detalhes_json.tag || dadosExtra.tag;
+    dadosExtra.leads = report.detalhes_json.leads || [];
+    dadosExtra.items = report.detalhes_json.items || [];
+  } else if (report.mensagem && report.mensagem.includes('[DADOS_EXTRA:')) {
+    // Compatibilidade de fallback com o modelo antigo baseado em texto na coluna mensagem
     try {
-      const startIndex = mensagemLimpa.indexOf('[DADOS_EXTRA:');
-      const jsonString = mensagemLimpa.substring(startIndex + 13, mensagemLimpa.lastIndexOf(']'));
+      const startIndex = report.mensagem.indexOf('[DADOS_EXTRA:');
+      const jsonString = report.mensagem.substring(startIndex + 13, report.mensagem.lastIndexOf(']'));
       const parsedData = JSON.parse(jsonString);
       if (parsedData) {
         dadosExtra.fase = parsedData.fase || dadosExtra.fase;
         dadosExtra.tag = parsedData.tag || dadosExtra.tag;
         dadosExtra.leads = parsedData.leads || [];
+        dadosExtra.items = parsedData.items || [];
       }
-      mensagemLimpa = mensagemLimpa.substring(0, startIndex).trim();
     } catch (e) {
-      console.error("Erro ao decodificar DADOS_EXTRA:", e);
+      console.error("Erro ao decodificar DADOS_EXTRA antigo:", e);
     }
+  }
+
+  let mensagemResumida = report.mensagem || '';
+  if (mensagemResumida.includes('[DADOS_EXTRA:')) {
+    mensagemResumida = mensagemResumida.split('[DADOS_EXTRA:')[0].trim();
   }
 
   let faseExibida = dadosExtra.fase;
@@ -59,7 +70,7 @@ export default function ReportModal({ visible, onClose, report, boardData, isDar
             
             <View style={styles.metricsGrid}>
               <View style={[styles.metricCard, themeStyles.metricCard, { borderLeftColor: '#2563eb' }]}>
-                <Text style={[styles.metricLabel, themeStyles.metricLabel]}>Total Alvos</Text>
+                <Text style={[styles.metricLabel, themeStyles.metricLabel]}>Total de Leads</Text>
                 <Text style={[styles.metricValue, themeStyles.metricValue]}>{report.total_alvos || 0}</Text>
               </View>
               <View style={[styles.metricCard, themeStyles.metricCard, { borderLeftColor: '#16a34a' }]}>
@@ -100,9 +111,46 @@ export default function ReportModal({ visible, onClose, report, boardData, isDar
 
             <View style={[styles.sectionContainer, themeStyles.sectionContainer]}>
               <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>💬 Conteúdo da Mensagem Disparada</Text>
-              <View style={[styles.msgContainer, themeStyles.msgContainer]}>
-                <Text style={[styles.msgText, themeStyles.msgText]}>{mensagemLimpa}</Text>
-              </View>
+              
+              {dadosExtra.items && dadosExtra.items.length > 0 ? (
+                <View style={{ gap: 10 }}>
+                  {dadosExtra.items.map((item, idx) => (
+                    <View key={idx} style={[styles.itemCard, themeStyles.itemCard]}>
+                      <View style={styles.itemHeader}>
+                        <Text style={[styles.itemTypeTitle, themeStyles.itemTypeTitle]}>
+                          {item.type === 'text' ? '📝 Texto' : item.type === 'image' ? '🖼️ Imagem' : item.type === 'video' ? '🎥 Vídeo' : '🎵 Áudio'}
+                        </Text>
+                        <View style={[styles.badge, item.isVariation ? styles.badgeAlt : styles.badgeFixo]}>
+                          <Text style={[styles.badgeText, item.isVariation ? styles.badgeTextAlt : styles.badgeTextFixo]}>
+                            {item.isVariation ? 'Alternado' : 'Fixo'}
+                          </Text>
+                        </View>
+                      </View>
+                      
+                      {(item.type === 'image' || item.type === 'video' || item.type === 'audio') && (
+                        <View style={[styles.mediaAttachedBox, themeStyles.mediaAttachedBox]}>
+                          <Text style={[styles.mediaAttachedText, themeStyles.mediaAttachedText]}>
+                            📎 Mídia anexada no disparo {item.file?.name ? `(${item.file.name})` : ''}
+                          </Text>
+                        </View>
+                      )}
+
+                      {(item.text || item.caption || item.content) ? (
+                        <Text style={[styles.msgText, themeStyles.msgText, { marginTop: 4 }]}>
+                          {item.text || item.caption || item.content}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={[styles.msgContainer, themeStyles.msgContainer]}>
+                  <Text style={[styles.msgText, themeStyles.msgText]}>{mensagemResumida}</Text>
+                  <Text style={[styles.emptyLeadsText, themeStyles.emptyLeadsText, {marginTop: 8}]}>
+                    * Detalhamento bloco a bloco indisponível para este histórico antigo.
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={[styles.sectionContainer, themeStyles.sectionContainer]}>
@@ -177,6 +225,19 @@ const styles = StyleSheet.create({
   msgContainer: { padding: 14, borderRadius: 8, borderWidth: 1 },
   msgText: { fontSize: 13, fontStyle: 'italic', lineHeight: 18, fontFamily: MODERN_FONT },
 
+  // Estilos dos Novos Cards de Detalhamento
+  itemCard: { padding: 14, borderRadius: 8, borderWidth: 1, marginBottom: 6 },
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  itemTypeTitle: { fontSize: 13, fontWeight: '700', fontFamily: MODERN_FONT },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  badgeFixo: { backgroundColor: '#e0f2fe' },
+  badgeAlt: { backgroundColor: '#fef3c7' },
+  badgeText: { fontSize: 10, fontWeight: '700', fontFamily: MODERN_FONT, textTransform: 'uppercase' },
+  badgeTextFixo: { color: '#0284c7' },
+  badgeTextAlt: { color: '#d97706' },
+  mediaAttachedBox: { padding: 8, borderRadius: 6, marginBottom: 6 },
+  mediaAttachedText: { fontSize: 12, fontStyle: 'italic', fontFamily: MODERN_FONT },
+
   leadsHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   leadsCountBadge: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, fontFamily: MODERN_FONT },
   
@@ -214,6 +275,13 @@ const lightStyles = StyleSheet.create({
   infoVal: { color: '#0f172a' },
   msgContainer: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
   msgText: { color: '#334155' },
+  
+  // Tema claro dos cards
+  itemCard: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  itemTypeTitle: { color: '#0f172a' },
+  mediaAttachedBox: { backgroundColor: '#f1f5f9' },
+  mediaAttachedText: { color: '#475569' },
+
   tableHeader: { backgroundColor: '#e2e8f0' },
   th: { color: '#475569' },
   tableRow: { borderBottomColor: '#e2e8f0' },
@@ -242,6 +310,13 @@ const darkStyles = StyleSheet.create({
   infoVal: { color: '#f8fafc' },
   msgContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },
   msgText: { color: '#cbd5e1' },
+
+  // Tema escuro dos cards
+  itemCard: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  itemTypeTitle: { color: '#f8fafc' },
+  mediaAttachedBox: { backgroundColor: '#0f172a' },
+  mediaAttachedText: { color: '#94a3b8' },
+
   tableHeader: { backgroundColor: '#334155' },
   th: { color: '#cbd5e1' },
   tableRow: { borderBottomColor: '#334155' },

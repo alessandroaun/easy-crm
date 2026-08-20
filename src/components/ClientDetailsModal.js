@@ -1,12 +1,57 @@
 // ClientDetailsModal
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, useWindowDimensions, Animated 
+  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView, useWindowDimensions, Animated, ActivityIndicator, Alert, Linking
 } from 'react-native';
 import { setLeadUpdateCallback } from './WhatsAppBulkModal';
 import { supabase } from '../services/supabaseClient';
 
-export default function ClientDetailsModal({ visible, onClose, clientData, onSave, isAdmin, usersList, currentUserId, onTransferLead, isDarkMode }) {
+// Importações necessárias para gerar e compartilhar a proposta
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+
+const CommentsSection = ({ formData, setFormData, newCommentText, setNewCommentText, isDarkMode, isMobile, themeStyles }) => {
+  const handleAddComment = () => {
+    if (!newCommentText.trim()) return;
+    const comment = { id: Date.now().toString(), text: newCommentText, date: new Date().toISOString() };
+    setFormData(prev => ({ ...prev, comments: [comment, ...(prev.comments || [])] }));
+    setNewCommentText('');
+  };
+
+  return (
+    <View style={[styles.commentsContainer, isMobile && styles.commentsContainerMobile]}>
+      <Text style={[styles.commentsTitle, themeStyles.commentsTitle]}>Atividades e Comentários</Text>
+      <View style={[styles.commentInputContainer, themeStyles.commentInputContainer]}>
+        <TextInput 
+          style={[styles.commentInput, themeStyles.commentInput]} 
+          placeholder="Registre uma ação..." 
+          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+          multiline={true} 
+          value={newCommentText} 
+          onChangeText={setNewCommentText} 
+        />
+        <TouchableOpacity style={styles.addCommentBtn} onPress={handleAddComment}><Text style={styles.addCommentBtnText}>Salvar</Text></TouchableOpacity>
+      </View>
+      <ScrollView style={styles.commentsList} showsVerticalScrollIndicator={false}>
+        {(!formData.comments || formData.comments.length === 0) ? (
+          <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Nenhuma interação registrada.</Text>
+        ) : (
+          formData.comments.map(comment => {
+            const isSystem = comment.text.includes('Sistema:');
+            return (
+              <View key={comment.id} style={[styles.commentCard, isSystem ? themeStyles.commentCardAuto : themeStyles.commentCardManual]}>
+                <Text style={[styles.commentDate, themeStyles.commentDate]}>{new Date(comment.date).toLocaleDateString('pt-BR')} às {new Date(comment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>
+                <Text style={[styles.commentText, isSystem ? themeStyles.commentTextAuto : themeStyles.commentTextManual]}>{comment.text}</Text>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+    </View>
+  );
+};
+
+export default function ClientDetailsModal({ visible, onClose, clientData, onSave, isAdmin, usersList, currentUserId, isDarkMode }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 850;
 
@@ -14,18 +59,61 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   const [originalData, setOriginalData] = useState({}); 
   const [activeTab, setActiveTab] = useState('informacoes');
   const [newCommentText, setNewCommentText] = useState('');
-  
+   
   const [apptType, setApptType] = useState('Ligar');
   const [apptDate, setApptDate] = useState(''); 
   const [apptTime, setApptTime] = useState(''); 
   const [apptReminder, setApptReminder] = useState(0); 
-
-  const [selectedTransferUserId, setSelectedTransferUserId] = useState('');
-  const [transferWithoutComment, setTransferWithoutComment] = useState(false);
-  
+   
   const [alertConfig, setAlertConfig] = useState({ visible: false, type: 'success', title: '', message: '' });
   const alertScale = useRef(new Animated.Value(0.8)).current;
   const alertOpacity = useRef(new Animated.Value(0)).current;
+
+  // Estados de Animação para Zoom In / Zoom Out
+  const modalScale = useRef(new Animated.Value(0.8)).current;
+  const modalOpacity = useRef(new Animated.Value(0)).current;
+  const [showModalContent, setShowModalContent] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setShowModalContent(true);
+      modalScale.setValue(0.8);
+      modalOpacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(modalScale, { toValue: 1, friction: 7, tension: 40, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(modalOpacity, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+      ]).start();
+    }
+  }, [visible]);
+
+  const handleCloseModal = () => {
+    Animated.parallel([
+      Animated.timing(modalScale, { toValue: 0.8, duration: 180, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(modalOpacity, { toValue: 0, duration: 180, useNativeDriver: Platform.OS !== 'web' })
+    ]).start(() => {
+      setShowModalContent(false);
+      onClose();
+    });
+  };
+
+  // --- Estados para a Aba de Proposta ---
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [dadosSimulacao, setDadosSimulacao] = useState({
+    tipoBem: 'Automóvel',
+    administradora: 'Embracon',
+    credito: '120000',
+    prazo: '120',
+    taxaAdm: '15',
+    parcelaIntegral: '1150',
+    lanceEmbutido: '25',
+    lanceDoBolso: '60000',
+    mostrarLanceDoBolso: false,
+    mostrarTaxaAdministracao: true,
+    temAdesao: false,
+    adesaoPercentual: '1',
+    adesaoAteMes: '4',
+    mesContemplacao: '6'
+  });
 
   const formatCurrency = (value) => {
     if (!value && value !== 0) return '';
@@ -37,7 +125,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     return parts.join(',');
   };
 
-  // Efeito para atualização em tempo real dos valores de crédito e parcela
   useEffect(() => {
     if (formData.dealClosed && formData.contracts && formData.contracts.length > 0) {
       let totalValor = 0;
@@ -83,7 +170,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       if (clientData.history) {
         mergedInfo = mergedInfo ? `${mergedInfo}\n\n=== DADOS DA IMPORTAÇÃO ===\n${clientData.history}` : clientData.history;
       }
-      
+       
       const formattedClientData = { ...clientData, initialInfo: mergedInfo };
       delete formattedClientData.history; 
 
@@ -104,12 +191,17 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       setOriginalData(JSON.parse(JSON.stringify(formattedClientData))); 
       setActiveTab('informacoes');
       setNewCommentText('');
-      setSelectedTransferUserId('');
-      setTransferWithoutComment(false);
-      
+       
       const now = new Date();
       setApptDate(now.toLocaleDateString('pt-BR'));
       setApptTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+
+      if (formattedClientData.desiredCredit) {
+         setDadosSimulacao(prev => ({ ...prev, credito: String(formattedClientData.desiredCredit).replace(/\D/g, '') }));
+      }
+      if (formattedClientData.idealInstallment) {
+         setDadosSimulacao(prev => ({ ...prev, parcelaIntegral: String(formattedClientData.idealInstallment).replace(/\D/g, '') }));
+      }
     }
   }, [clientData]);
 
@@ -121,7 +213,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
           text: messageText, 
           date: new Date().toISOString() 
         };
-        
+         
         setFormData(prev => ({ 
           ...prev, 
           comments: [newComment, ...(prev.comments || [])] 
@@ -210,20 +302,8 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   };
 
   const handleSave = () => {
-    if (activeTab === 'transferir') {
-      if (!selectedTransferUserId) {
-        showCustomAlert('error', 'Atenção', 'Selecione um vendedor de destino para transferir o lead.');
-        return;
-      }
-      if (onTransferLead) {
-        onTransferLead(formData, selectedTransferUserId, transferWithoutComment);
-      }
-      onClose();
-      return;
-    }
-
     let updatedData = { ...formData };
-    
+     
     if (updatedData.phone && updatedData.phone !== originalData.phone) {
       let cl = updatedData.phone.replace(/\D/g, '');
       if (!cl.startsWith('55') && cl.length <= 11) cl = '55' + cl;
@@ -256,14 +336,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     }
 
     onSave(updatedData);
-    onClose();
-  };
-
-  const handleAddComment = () => {
-    if (!newCommentText.trim()) return;
-    const comment = { id: Date.now().toString(), text: newCommentText, date: new Date().toISOString() };
-    setFormData(prev => ({ ...prev, comments: [comment, ...(prev.comments || [])] }));
-    setNewCommentText('');
+    handleCloseModal();
   };
 
   const handleAddAppointment = () => {
@@ -300,9 +373,9 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
           ...(prev.comments || [])
         ]
       }));
-      
+       
       showCustomAlert('success', 'Agendado!', 'Seu compromisso foi salvo e você será notificado no horário programado.');
-      
+       
     } catch (error) {
       showCustomAlert('error', 'Formato Inválido', 'Formato de data ou hora inválido. Use DD/MM/AAAA e HH:MM.');
     }
@@ -322,7 +395,152 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
     });
   };
 
-  if (!clientData) return null;
+  const enviarWhatsAppProposta = () => {
+    if (!formData.phone) {
+      showCustomAlert('error', 'Telefone ausente', 'O cliente não possui um número de telefone/WhatsApp cadastrado.');
+      return;
+    }
+
+    let phoneClean = String(formData.phone).replace(/\D/g, '');
+    if (phoneClean.length <= 11) {
+      phoneClean = '55' + phoneClean;
+    }
+
+    const creditoNum = parseFloat(String(dadosSimulacao.credito).replace(/\./g, '').replace(',', '.')) || 0;
+    const prazoNum = parseInt(dadosSimulacao.prazo) || 0;
+    const formatarMoeda = (val) => (val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const mensagem = `Olá, *${formData.name || 'Cliente'}*! 👋\n\n` +
+      `Conforme conversamos, preparei a simulação do seu consórcio:\n\n` +
+      `🏢 *Administradora:* ${dadosSimulacao.administradora}\n` +
+      `💰 *Crédito Contratado:* R$ ${formatarMoeda(creditoNum)}\n` +
+      `⏳ *Prazo:* ${prazoNum} meses\n` +
+      `📉 *Parcela Integral:* R$ ${dadosSimulacao.parcelaIntegral}\n\n` +
+      `Acabei de gerar o documento completo em PDF com todos os detalhes do plano!🏼`;
+
+    const url = `https://wa.me/${phoneClean}?text=${encodeURIComponent(mensagem)}`;
+
+    if (Platform.OS === 'web') {
+      window.open(url, '_blank');
+    } else {
+      Linking.openURL(url);
+    }
+  };
+
+  const gerarEEnviarPDF = async () => {
+    setLoadingPdf(true);
+    
+    try {
+      const creditoNum = parseFloat(String(dadosSimulacao.credito).replace(/\./g, '').replace(',', '.')) || 0;
+      const prazoNum = parseInt(dadosSimulacao.prazo) || 0;
+      const taxaAdmNum = parseFloat(String(dadosSimulacao.taxaAdm).replace(',', '.')) || 0;
+      const parcelaIntegralNum = parseFloat(String(dadosSimulacao.parcelaIntegral).replace(/\./g, '').replace(',', '.')) || 0;
+      const lanceEmbutidoNum = parseFloat(String(dadosSimulacao.lanceEmbutido).replace(',', '.')) || 0;
+      const lanceDoBolsoNum = parseFloat(String(dadosSimulacao.lanceDoBolso).replace(/\./g, '').replace(',', '.')) || 0;
+      const mesContemplacaoNum = parseInt(dadosSimulacao.mesContemplacao) || 1;
+
+      const valorLanceEmbutido = creditoNum * (lanceEmbutidoNum / 100);
+      const creditoLiberado = creditoNum - valorLanceEmbutido;
+
+      let parcelaAteContemplacao = parcelaIntegralNum;
+      if (dadosSimulacao.temAdesao) {
+        const adesaoPct = parseFloat(String(dadosSimulacao.adesaoPercentual).replace(',', '.')) || 0;
+        const valorAdesaoPorParcela = creditoNum * (adesaoPct / 100) / (parseInt(dadosSimulacao.adesaoAteMes) || 1);
+        parcelaAteContemplacao += valorAdesaoPorParcela;
+      }
+
+      const taxaDecimal = taxaAdmNum / 100;
+      const totalComTaxa = creditoNum * (1 + taxaDecimal);
+      const totalPagoAteContemplacao = parcelaIntegralNum * mesContemplacaoNum;
+      const prazoRestante = Math.max(1, prazoNum - mesContemplacaoNum);
+      const saldoDevedorAposContemplacao = (totalComTaxa - totalPagoAteContemplacao) - valorLanceEmbutido;
+      const parcelaPosContemplacao = saldoDevedorAposContemplacao / prazoRestante;
+
+      const dataAtual = new Date();
+      const dataValidade = new Date(dataAtual.setDate(dataAtual.getDate() + 7)).toLocaleDateString('pt-BR');
+
+      const nomeCompleto = formData.name || 'Cliente';
+      const primeiroNome = nomeCompleto.split(' ')[0];
+
+      let opcoesLanceDinamicas = ["Lance embutido"];
+      if (dadosSimulacao.mostrarLanceDoBolso) {
+        opcoesLanceDinamicas.push("Lance livre");
+      }
+      opcoesLanceDinamicas.push("Lance limitado", "Lance fidelidade");
+
+      const payload = {
+        clienteNome: nomeCompleto,
+        primeiroNomeCliente: primeiroNome,
+        creditoContratado: creditoNum,
+        prazo: prazoNum,
+        taxaAdm: taxaAdmNum,
+        percentualLanceEmbutido: lanceEmbutidoNum,
+        parcelaIntegral: parcelaAteContemplacao,
+        valorLanceEmbutido: valorLanceEmbutido,
+        creditoLiberado: creditoLiberado,
+        parcelaPosContemplacao: parcelaPosContemplacao,
+        dataValidade: dataValidade,
+        tipoBem: dadosSimulacao.tipoBem,
+        administradora: dadosSimulacao.administradora,
+        temAdesao: dadosSimulacao.temAdesao,
+        adesaoPercentual: dadosSimulacao.adesaoPercentual,
+        adesaoAteMes: dadosSimulacao.adesaoAteMes,
+        lanceDoBolso: lanceDoBolsoNum,
+        mostrarLanceDoBolso: dadosSimulacao.mostrarLanceDoBolso,
+        mostrarTaxaAdministracao: dadosSimulacao.mostrarTaxaAdministracao,
+        mostrarLanceEmbutido: true,
+        opcoesLance: opcoesLanceDinamicas
+      };
+
+      const response = await fetch('https://backend-proposta-fhdq.onrender.com/gerar-simulacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Falha ao gerar o PDF no servidor Render.');
+      }
+
+      const blob = await response.blob();
+      const nomeArquivoCliente = nomeCompleto.replace(/\s/g, '_');
+
+      if (Platform.OS === 'web') {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Proposta_${nomeArquivoCliente}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+      } else {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          const base64data = reader.result.split(',')[1];
+          const filename = FileSystem.documentDirectory + `Proposta_${nomeArquivoCliente}.pdf`;
+          await FileSystem.writeAsStringAsync(filename, base64data, { encoding: FileSystem.EncodingType.Base64 });
+          await Sharing.shareAsync(filename);
+        };
+      }
+
+      const summaryText = `⚙️ Sistema: Proposta Gerada (${dadosSimulacao.administradora} - Crédito: R$ ${dadosSimulacao.credito}, Prazo: ${prazoNum}m).`;
+      setFormData(prev => ({
+         ...prev,
+         comments: [{ id: `sys_prop_${Date.now()}`, text: summaryText, date: new Date().toISOString() }, ...(prev.comments || [])]
+      }));
+
+      setLoadingPdf(false);
+
+    } catch (error) {
+      setLoadingPdf(false);
+      showCustomAlert('error', 'Erro na Geração', 'Não foi possível gerar a simulação no servidor do Render.');
+      console.error(error);
+    }
+  };
+
+  if (!clientData || !showModalContent) return null;
 
   const themeStyles = isDarkMode ? darkStyles : lightStyles;
 
@@ -351,38 +569,6 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
       </TouchableOpacity>
     );
   };
-
-  const CommentsSection = () => (
-    <View style={[styles.commentsContainer, isMobile && styles.commentsContainerMobile]}>
-      <Text style={[styles.commentsTitle, themeStyles.commentsTitle]}>Atividades e Comentários</Text>
-      <View style={[styles.commentInputContainer, themeStyles.commentInputContainer]}>
-        <TextInput 
-          style={[styles.commentInput, themeStyles.commentInput]} 
-          placeholder="Registre uma ação..." 
-          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-          multiline={true} 
-          value={newCommentText} 
-          onChangeText={setNewCommentText} 
-        />
-        <TouchableOpacity style={styles.addCommentBtn} onPress={handleAddComment}><Text style={styles.addCommentBtnText}>Salvar</Text></TouchableOpacity>
-      </View>
-      <ScrollView style={styles.commentsList} showsVerticalScrollIndicator={false}>
-        {(!formData.comments || formData.comments.length === 0) ? (
-          <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Nenhuma interação registrada.</Text>
-        ) : (
-          formData.comments.map(comment => {
-            const isSystem = comment.text.includes('Sistema:');
-            return (
-              <View key={comment.id} style={[styles.commentCard, isSystem ? themeStyles.commentCardAuto : themeStyles.commentCardManual]}>
-                <Text style={[styles.commentDate, themeStyles.commentDate]}>{new Date(comment.date).toLocaleDateString('pt-BR')} às {new Date(comment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>
-                <Text style={[styles.commentText, isSystem ? themeStyles.commentTextAuto : themeStyles.commentTextManual]}>{comment.text}</Text>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
-    </View>
-  );
 
   const renderInstallments = (contract) => {
     const prazo = parseInt(contract.prazo) || 0;
@@ -422,7 +608,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
   };
 
   return (
-    <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={onClose}>
+    <Modal animationType="none" transparent={true} visible={visible} onRequestClose={handleCloseModal}>
       <View style={styles.overlay}>
         
         {alertConfig.visible && (
@@ -441,7 +627,16 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
           </View>
         )}
 
-        <View style={[styles.modalWrapper, themeStyles.modalWrapper, isMobile && styles.modalWrapperMobile]}>
+        {/* Animação Zoom In / Zoom Out baseada no centro */}
+        <Animated.View style={[
+          styles.modalWrapper, 
+          themeStyles.modalWrapper, 
+          isMobile && styles.modalWrapperMobile,
+          {
+            opacity: modalOpacity,
+            transform: [{ scale: modalScale }]
+          }
+        ]}>
           
           <View style={[styles.header, themeStyles.header, isMobile && styles.headerMobile]}>
             <View style={{ flex: 1, marginRight: 12 }}>
@@ -455,7 +650,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
               >
                 <Text style={styles.dealToggleBtnText}>{formData.dealClosed ? 'Negócio Fechado' : 'Fechou Negócio?'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={onClose} style={[styles.closeButton, themeStyles.closeButton]}><Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text></TouchableOpacity>
+              <TouchableOpacity onPress={handleCloseModal} style={[styles.closeButton, themeStyles.closeButton]}><Text style={[styles.closeButtonText, themeStyles.closeButtonText]}>✕</Text></TouchableOpacity>
             </View>
           </View>
 
@@ -470,9 +665,9 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <TabButton id="financeiro" label="Financeiro" />
                   <TabButton id="kpis" label="Inteligência" />
                   <TabButton id="agendamentos" label="Agendamentos" />
+                  <TabButton id="proposta" label="Gerar Proposta" />
                   {formData.dealClosed && <TabButton id="acompanhamento" label="Acompanhamento" />}
                   <TabButton id="comentarios" label="Comentários" />
-                  {isAdmin && <TabButton id="transferir" label="Transferir Lead" />}
                 </ScrollView>
               </View>
             ) : (
@@ -483,13 +678,301 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                 <TabButton id="financeiro" label="Financeiro" />
                 <TabButton id="kpis" label="Inteligência" />
                 <TabButton id="agendamentos" label="Agendamentos" />
+                <TabButton id="proposta" label="Gerar Proposta" />
                 {formData.dealClosed && <TabButton id="acompanhamento" label="Acompanhamento" />}
-                {isAdmin && <TabButton id="transferir" label="Transferir Lead" />}
               </View>
             )}
 
             <ScrollView style={[styles.contentArea, themeStyles.contentArea, isMobile && styles.contentAreaMobile]} showsVerticalScrollIndicator={false}>
-              
+               
+              {activeTab === 'proposta' && (
+                <View style={styles.formSection}>
+                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Gerar Proposta em PDF</Text>
+                  
+                  {/* Grid de 3 colunas otimizado */}
+                  <View style={[styles.row3Col, isMobile && styles.rowMobile]}>
+                    
+                    {/* Coluna 1 */}
+                    <View style={styles.col3Item}>
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Tipo de Bem</Text>
+                        {Platform.OS === 'web' ? (
+                          <select
+                            value={dadosSimulacao.tipoBem}
+                            onChange={(e) => setDadosSimulacao({...dadosSimulacao, tipoBem: e.target.value})}
+                            style={{
+                              width: '100%',
+                              height: 38,
+                              backgroundColor: isDarkMode ? '#1e293b' : '#f8fafc',
+                              color: isDarkMode ? '#f8fafc' : '#0f172a',
+                              borderColor: isDarkMode ? '#334155' : '#e2e8f0',
+                              borderWidth: 1,
+                              borderRadius: 6,
+                              paddingHorizontal: 8,
+                              fontSize: 13,
+                              outline: 'none'
+                            }}
+                          >
+                            <option value="Automóvel">Automóvel</option>
+                            <option value="Imóvel">Imóvel</option>
+                          </select>
+                        ) : (
+                          <View style={[styles.pickerContainer, themeStyles.pickerContainer]}>
+                            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 100 }}>
+                              {['Automóvel', 'Imóvel'].map(bem => (
+                                <TouchableOpacity 
+                                  key={bem} 
+                                  style={[styles.dropdownItem, dadosSimulacao.tipoBem === bem && styles.dropdownItemActive]}
+                                  onPress={() => setDadosSimulacao({...dadosSimulacao, tipoBem: bem})}
+                                >
+                                  <Text style={[styles.dropdownItemText, themeStyles.dropdownItemText, dadosSimulacao.tipoBem === bem && styles.dropdownItemTextActive]}>{bem}</Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Administradora</Text>
+                        {Platform.OS === 'web' ? (
+                          <select
+                            value={dadosSimulacao.administradora}
+                            onChange={(e) => setDadosSimulacao({...dadosSimulacao, administradora: e.target.value})}
+                            style={{
+                              width: '100%',
+                              height: 38,
+                              backgroundColor: isDarkMode ? '#1e293b' : '#f8fafc',
+                              color: isDarkMode ? '#f8fafc' : '#0f172a',
+                              borderColor: isDarkMode ? '#334155' : '#e2e8f0',
+                              borderWidth: 1,
+                              borderRadius: 6,
+                              paddingHorizontal: 8,
+                              fontSize: 13,
+                              outline: 'none'
+                            }}
+                          >
+                            <option value="Âncora">Âncora</option>
+                            <option value="Embracon">Embracon</option>
+                            <option value="Rodobens">Rodobens</option>
+                            <option value="Recon">Recon</option>
+                            <option value="Itaú">Itaú</option>
+                            <option value="Renault">Renault</option>
+                            <option value="Nissan">Nissan</option>
+                          </select>
+                        ) : (
+                          <View style={[styles.pickerContainer, themeStyles.pickerContainer]}>
+                            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 120 }}>
+                              {['Âncora', 'Embracon', 'Rodobens', 'Recon', 'Itaú', 'Renault', 'Nissan'].map(adm => (
+                                <TouchableOpacity 
+                                  key={adm} 
+                                  style={[styles.dropdownItem, dadosSimulacao.administradora === adm && styles.dropdownItemActive]}
+                                  onPress={() => setDadosSimulacao({...dadosSimulacao, administradora: adm})}
+                                >
+                                  <Text style={[styles.dropdownItemText, themeStyles.dropdownItemText, dadosSimulacao.administradora === adm && styles.dropdownItemTextActive]}>{adm}</Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Valor do Crédito (R$)</Text>
+                        <TextInput 
+                          style={[styles.inputCompact, themeStyles.input]} 
+                          keyboardType="numeric"
+                          placeholder="Ex: 120000"
+                          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                          value={dadosSimulacao.credito}
+                          onChangeText={(t) => setDadosSimulacao({...dadosSimulacao, credito: t})}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Coluna 2 */}
+                    <View style={styles.col3Item}>
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Prazo (Meses)</Text>
+                        <TextInput 
+                          style={[styles.inputCompact, themeStyles.input]} 
+                          keyboardType="numeric"
+                          placeholder="Ex: 120"
+                          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                          value={dadosSimulacao.prazo}
+                          onChangeText={(t) => setDadosSimulacao({...dadosSimulacao, prazo: t})}
+                        />
+                      </View>
+
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Taxa de Administração (%)</Text>
+                        <TextInput 
+                          style={[styles.inputCompact, themeStyles.input]} 
+                          keyboardType="numeric"
+                          placeholder="Ex: 15"
+                          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                          value={dadosSimulacao.taxaAdm}
+                          onChangeText={(t) => setDadosSimulacao({...dadosSimulacao, taxaAdm: t})}
+                        />
+                      </View>
+
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Parcela Integral (R$)</Text>
+                        <TextInput 
+                          style={[styles.inputCompact, themeStyles.input]} 
+                          keyboardType="numeric"
+                          placeholder="Ex: 1150"
+                          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                          value={dadosSimulacao.parcelaIntegral}
+                          onChangeText={(t) => setDadosSimulacao({...dadosSimulacao, parcelaIntegral: t})}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Coluna 3 */}
+                    <View style={styles.col3Item}>
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Lance Embutido (%)</Text>
+                        <TextInput 
+                          style={[styles.inputCompact, themeStyles.input]} 
+                          keyboardType="numeric"
+                          placeholder="Ex: 25"
+                          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                          value={dadosSimulacao.lanceEmbutido}
+                          onChangeText={(t) => setDadosSimulacao({...dadosSimulacao, lanceEmbutido: t})}
+                        />
+                      </View>
+
+                      <View style={styles.inputGroupCompact}>
+                        <Text style={[styles.label, themeStyles.label]}>Mês Contemplação</Text>
+                        <TextInput 
+                          style={[styles.inputCompact, themeStyles.input]} 
+                          keyboardType="numeric"
+                          placeholder="Ex: 6"
+                          placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                          value={dadosSimulacao.mesContemplacao}
+                          onChangeText={(t) => setDadosSimulacao({...dadosSimulacao, mesContemplacao: t})}
+                        />
+                      </View>
+
+                      <View style={styles.inputGroupCompact}>
+                        <TouchableOpacity 
+                          style={styles.checkboxContainerCompact} 
+                          onPress={() => setDadosSimulacao({...dadosSimulacao, mostrarTaxaAdministracao: !dadosSimulacao.mostrarTaxaAdministracao})}
+                        >
+                          <View style={[styles.checkbox, themeStyles.checkbox, dadosSimulacao.mostrarTaxaAdministracao && styles.checkboxChecked]}>
+                            {dadosSimulacao.mostrarTaxaAdministracao && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <Text style={[styles.checkboxLabel, themeStyles.checkboxLabel]}>Exibir Taxa Adm</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                  </View>
+
+                  {/* Configurações secundárias aproximadas logo abaixo sem folga vertical */}
+                  <View style={[styles.row, isMobile && styles.rowMobile, { marginTop: 4 }]}>
+                    <div style={styles.contractContainerCompact}>
+                      <TouchableOpacity 
+                        style={styles.checkboxContainer} 
+                        onPress={() => setDadosSimulacao({...dadosSimulacao, mostrarLanceDoBolso: !dadosSimulacao.mostrarLanceDoBolso})}
+                      >
+                        <View style={[styles.checkbox, themeStyles.checkbox, dadosSimulacao.mostrarLanceDoBolso && styles.checkboxChecked]}>
+                          {dadosSimulacao.mostrarLanceDoBolso && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                        <Text style={[styles.checkboxLabel, themeStyles.checkboxLabel, { fontWeight: 'bold' }]}>Exibir Lance do Bolso</Text>
+                      </TouchableOpacity>
+
+                      {dadosSimulacao.mostrarLanceDoBolso && (
+                        <View style={{ marginTop: 4 }}>
+                          <TextInput 
+                            style={[styles.inputSmall, themeStyles.inputSmall]} 
+                            placeholder="Valor do Lance do Bolso (R$)" 
+                            keyboardType="numeric"
+                            value={dadosSimulacao.lanceDoBolso}
+                            onChangeText={t => setDadosSimulacao({...dadosSimulacao, lanceDoBolso: t})}
+                            placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} 
+                          />
+                        </View>
+                      )}
+                    </div>
+
+                    <div style={styles.contractContainerCompact}>
+                      <TouchableOpacity 
+                        style={styles.checkboxContainer} 
+                        onPress={() => setDadosSimulacao({...dadosSimulacao, temAdesao: !dadosSimulacao.temAdesao})}
+                      >
+                        <View style={[styles.checkbox, themeStyles.checkbox, dadosSimulacao.temAdesao && styles.checkboxChecked]}>
+                          {dadosSimulacao.temAdesao && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                        <Text style={[styles.checkboxLabel, themeStyles.checkboxLabel, { fontWeight: 'bold' }]}>Cobrar taxa de adesão nas iniciais</Text>
+                      </TouchableOpacity>
+
+                      {dadosSimulacao.temAdesao && (
+                        <View style={[styles.row, isMobile && styles.rowMobile, { marginTop: 4, gap: 8 }]}>
+                          <TextInput 
+                            style={[styles.inputSmall, themeStyles.inputSmall, { flex: 1 }]} 
+                            placeholder="% Adesão" 
+                            keyboardType="numeric"
+                            value={dadosSimulacao.adesaoPercentual}
+                            onChangeText={t => setDadosSimulacao({...dadosSimulacao, adesaoPercentual: t})}
+                            placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} 
+                          />
+                          <TextInput 
+                            style={[styles.inputSmall, themeStyles.inputSmall, { flex: 1 }]} 
+                            placeholder="Até qual mês?" 
+                            keyboardType="numeric"
+                            value={dadosSimulacao.adesaoAteMes}
+                            onChangeText={t => setDadosSimulacao({...dadosSimulacao, adesaoAteMes: t})}
+                            placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} 
+                          />
+                        </View>
+                      )}
+                    </div>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+                    <TouchableOpacity 
+                      onPress={gerarEEnviarPDF}
+                      style={{ 
+                        flex: 1,
+                        backgroundColor: '#10b981', 
+                        padding: 10, 
+                        borderRadius: 8, 
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      disabled={loadingPdf}
+                    >
+                      {loadingPdf ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>GERAR E BAIXAR PDF</Text>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      onPress={enviarWhatsAppProposta}
+                      style={{ 
+                        flex: 1,
+                        backgroundColor: '#25D366', 
+                        padding: 10, 
+                        borderRadius: 8, 
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>ENVIAR NO WHATSAPP</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Frase solicitada indicando o tempo de espera */}
+                  <Text style={[styles.pdfNoticeText, themeStyles.pdfNoticeText]}>
+                    Pode demorar cerca de 40 segundos
+                  </Text>
+                </View>
+              )}
+
               {activeTab === 'informacoes' && (
                 <View style={styles.formSection}>
                   <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Informações Principais</Text>
@@ -512,13 +995,13 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
               {activeTab === 'agendamentos' && (
                 <View style={[styles.splitContainer, isMobile && styles.splitContainerMobile]}>
-                  
+                    
                   <View style={[styles.splitLeft, isMobile && styles.splitLeftMobile]}>
                     <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Criar Novo Agendamento</Text>
-                    
-                    <View style={styles.apptTypeContainer}>
+                      
+                    <View style={styles.apptTypeContainerHorizontal}>
                       {['Ligar', 'Visitar', 'Mensagem', 'Simulação'].map(tipo => (
-                        <TouchableOpacity key={tipo} style={[styles.apptTypeBtn, themeStyles.apptTypeBtn, apptType === tipo && themeStyles.apptTypeBtnActive]} onPress={() => setApptType(tipo)}>
+                        <TouchableOpacity key={tipo} style={[styles.apptTypeBtnHorizontal, themeStyles.apptTypeBtn, apptType === tipo && themeStyles.apptTypeBtnActive]} onPress={() => setApptType(tipo)}>
                           <Text style={[styles.apptTypeText, themeStyles.apptTypeText, apptType === tipo && themeStyles.apptTypeTextActive]}>{tipo}</Text>
                         </TouchableOpacity>
                       ))}
@@ -530,17 +1013,17 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                         <TextInput style={[styles.inputSmall, themeStyles.inputSmall]} placeholder="Ex: 25/12/2026" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={apptDate} onChangeText={handleDateChange} keyboardType="numeric" maxLength={10} />
                       </View>
                       <View style={styles.inputGroup}>
-                        <Text style={[styles.label, themeStyles.label]}>Horário (HH:MM)</Text>
-                        <TextInput style={[styles.inputSmall, themeStyles.inputSmall]} placeholder="Ex: 14:30" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={apptTime} onChangeText={handleTimeChange} keyboardType="numeric" maxLength={5} />
+                          <Text style={[styles.label, themeStyles.label]}>Horário (HH:MM)</Text>
+                          <TextInput style={[styles.inputSmall, themeStyles.inputSmall]} placeholder="Ex: 14:30" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} value={apptTime} onChangeText={handleTimeChange} keyboardType="numeric" maxLength={5} />
                       </View>
                     </View>
 
                     <Text style={[styles.label, themeStyles.label]}>Lembrar-me com antecedência de:</Text>
-                    <View style={styles.apptTypeContainer}>
-                      {[0, 15, 30, 60, 120].map(mins => (
-                        <TouchableOpacity key={mins} style={[styles.apptTypeBtn, themeStyles.apptTypeBtn, apptReminder === mins && themeStyles.apptTypeBtnActive]} onPress={() => setApptReminder(mins)}>
+                    <View style={styles.apptTypeContainerHorizontal}>
+                      {[0, 15, 30, 60].map(mins => (
+                        <TouchableOpacity key={mins} style={[styles.apptTypeBtnHorizontal, themeStyles.apptTypeBtn, apptReminder === mins && themeStyles.apptTypeBtnActive]} onPress={() => setApptReminder(mins)}>
                           <Text style={[styles.apptTypeText, themeStyles.apptTypeText, apptReminder === mins && themeStyles.apptTypeTextActive]}>
-                            {mins === 0 ? 'Na hora' : mins === 60 ? '1 hora' : mins === 120 ? '2 horas' : `${mins}m`}
+                            {mins === 0 ? 'Na hora' : mins === 60 ? '1h' : `${mins}m`}
                           </Text>
                         </TouchableOpacity>
                       ))}
@@ -553,7 +1036,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
                   <View style={[styles.splitRight, themeStyles.splitRight, isMobile && styles.splitRightMobile]}>
                     <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Agendamentos Ativos</Text>
-                    
+                      
                     <View style={{ width: '100%' }}>
                       {(!formData.appointments || formData.appointments.length === 0) ? (
                         <Text style={[styles.noCommentsText, themeStyles.noCommentsText]}>Nenhum agendamento futuro.</Text>
@@ -562,7 +1045,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                           <View key={appt.id} style={[styles.scheduledCard, themeStyles.scheduledCard, appt.notified && themeStyles.scheduledCardDone]}>
                             <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
                               <Text style={[styles.scheduledCardTitle, themeStyles.scheduledCardTitle]}>{appt.type}</Text>
-                              
+                                
                               <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                                 <Text style={[styles.scheduledCardReminder, themeStyles.scheduledCardReminder]}>{appt.reminderMinutes === 0 ? 'Na hora' : `${appt.reminderMinutes}m antes`}</Text>
                                 {!appt.notified && (
@@ -572,11 +1055,11 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                                 )}
                               </View>
                             </View>
-                            
+                              
                             <Text style={[styles.scheduledCardDate, themeStyles.scheduledCardDate]}>
                               📅 {new Date(appt.dateTime).toLocaleDateString('pt-BR')} às {new Date(appt.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                             </Text>
-                            
+                              
                             {appt.notified && <Text style={styles.scheduledCardStatus}>✓ Concluído</Text>}
                           </View>
                         ))
@@ -638,21 +1121,21 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                   <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Sistema de Pós-Venda</Text>
                   
                   <View style={styles.statusBtnGroup}>
-                    {['Cliente Não Contemplado', 'Cliente Contemplado', 'Cliente Cancelado'].map(st => (
-                      <TouchableOpacity 
-                        key={st} 
-                        style={[styles.clientStatusBtn, formData.clientStatus === st ? styles.clientStatusBtnActive : themeStyles.clientStatusBtnInactive]}
-                        onPress={() => handleChange('clientStatus', st)}
-                      >
-                        <Text style={[styles.clientStatusBtnText, formData.clientStatus === st ? styles.clientStatusBtnTextActive : themeStyles.clientStatusBtnTextInactive]}>{st}</Text>
-                      </TouchableOpacity>
-                    ))}
+                      {['Cliente Não Contemplado', 'Cliente Contemplado', 'Cliente Cancelado'].map(st => (
+                        <TouchableOpacity 
+                          key={st} 
+                          style={[styles.clientStatusBtn, formData.clientStatus === st ? styles.clientStatusBtnActive : themeStyles.clientStatusBtnInactive]}
+                          onPress={() => handleChange('clientStatus', st)}
+                        >
+                          <Text style={[styles.clientStatusBtnText, formData.clientStatus === st ? styles.clientStatusBtnTextActive : themeStyles.clientStatusBtnTextInactive]}>{st}</Text>
+                        </TouchableOpacity>
+                      ))}
                   </View>
 
                   {(formData.contracts || []).map((contract, index) => (
                     <View key={contract.id} style={[styles.contractContainer, themeStyles.contractContainer]}>
                       <Text style={[styles.contractTitle, themeStyles.contractTitle]}>Contrato {index + 1}</Text>
-                      
+                
                       <View style={[styles.row, isMobile && styles.rowMobile]}>
                         <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Nome da Administradora</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.administradora} onChangeText={t => handleContractChange(contract.id, 'administradora', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                         <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Categoria do Contrato</Text><TextInput style={[styles.inputSmall, themeStyles.inputSmall]} value={contract.categoria} onChangeText={t => handleContractChange(contract.id, 'categoria', t)} placeholder="Ex: Auto, Imóvel" placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
@@ -680,7 +1163,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                     <Text style={styles.addContractBtnText}>+ Adicionar Outro Contrato</Text>
                   </TouchableOpacity>
                 </View>
-              )}
+            )}
 
               {activeTab === 'kpis' && (
                 <View style={styles.formSection}>
@@ -690,60 +1173,47 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
                     <View style={styles.inputGroup}><Text style={[styles.label, themeStyles.label]}>Probabilidade de Fechamento (%)</Text><TextInput style={[styles.input, themeStyles.input]} value={formData.winProbability || ''} onChangeText={t => handleChange('winProbability', t)} placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'} /></View>
                   </View>
                 </View>
+            )}
+
+              {isMobile && activeTab === 'comentarios' && (
+                  <CommentsSection 
+                    formData={formData} 
+                    setFormData={setFormData} 
+                    newCommentText={newCommentText} 
+                    setNewCommentText={setNewCommentText} 
+                    isDarkMode={isDarkMode} 
+                    isMobile={isMobile} 
+                    themeStyles={themeStyles} 
+                  />
               )}
-
-              {isAdmin && activeTab === 'transferir' && (
-                <View style={styles.formSection}>
-                  <Text style={[styles.sectionTitle, themeStyles.sectionTitle]}>Transferência de Lead</Text>
-                  
-                  <Text style={[styles.label, themeStyles.label]}>Selecione o Vendedor Destino:</Text>
-                  <ScrollView nestedScrollEnabled={true} style={[styles.userListContainer, themeStyles.userListContainer]}>
-                    {usersList?.filter(u => u.id !== currentUserId).map(u => (
-                      <TouchableOpacity 
-                        key={u.id} 
-                        style={[styles.userOption, themeStyles.userOption, selectedTransferUserId === u.id && themeStyles.userOptionSelected]} 
-                        onPress={() => setSelectedTransferUserId(u.id)}
-                      >
-                        <Text style={[styles.userOptionText, themeStyles.userOptionText, selectedTransferUserId === u.id && themeStyles.userOptionTextSelected]}>
-                          {u.name || u.email}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                    {usersList?.filter(u => u.id !== currentUserId).length === 0 && (
-                       <Text style={{ padding: 12, color: '#94a3b8', fontStyle: 'italic' }}>Nenhum outro vendedor disponível.</Text>
-                    )}
-                  </ScrollView>
-
-                  <TouchableOpacity style={styles.checkboxContainer} onPress={() => setTransferWithoutComment(!transferWithoutComment)}>
-                    <View style={[styles.checkbox, themeStyles.checkbox, transferWithoutComment && styles.checkboxChecked]}>
-                      {transferWithoutComment && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={[styles.checkboxLabel, themeStyles.checkboxLabel]}>Transferir sem registrar comentário automático no card</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {isMobile && activeTab === 'comentarios' && <CommentsSection />}
             </ScrollView>
 
             {!isMobile && (
               <View style={[styles.commentsSidebarDesktop, themeStyles.commentsSidebarDesktop]}>
-                <CommentsSection />
+                <CommentsSection 
+                  formData={formData} 
+                  setFormData={setFormData} 
+                  newCommentText={newCommentText} 
+                  setNewCommentText={setNewCommentText} 
+                  isDarkMode={isDarkMode} 
+                  isMobile={isMobile} 
+                  themeStyles={themeStyles} 
+                />
               </View>
             )}
 
           </View>
 
           <View style={[styles.footer, themeStyles.footer, isMobile && styles.footerMobile]}>
-            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={onClose}>
+            <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={handleCloseModal}>
               <Text style={[styles.cancelButtonText, themeStyles.cancelButtonText]}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.saveButton, isMobile && { flex: 1, alignItems: 'center' }]} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>{activeTab === 'transferir' ? 'Confirmar Transferência' : 'Salvar Alterações'}</Text>
+              <Text style={styles.saveButtonText}>Salvar Alterações</Text>
             </TouchableOpacity>
           </View>
 
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -766,23 +1236,42 @@ const styles = StyleSheet.create({
   dealToggleBtnText: { fontWeight: '700', fontSize: 14, color: '#10b981' },
   body: { flex: 1, flexDirection: 'row' },
   bodyMobile: { flexDirection: 'column' }, 
-  sidebar: { width: 220, padding: 16, borderRightWidth: 1 },
-  tabButton: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8, marginBottom: 4 },
-  tabText: { fontSize: 14, fontWeight: '600' },
+  
+  // Menu lateral reposicionado ligeiramente para cima e com espaçamento uniforme
+  sidebar: { width: 220, padding: 16, borderRightWidth: 1, gap: 8, justifyContent: 'flex-start', paddingTop: 12 },
+  tabButton: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: 'transparent', alignItems: 'flex-start', justifyContent: 'center' },
+  tabText: { fontSize: 13, fontWeight: '600' },
+  
   sidebarMobileContainer: { borderBottomWidth: 1 },
   sidebarMobile: { paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row' },
   tabButtonMobile: { marginRight: 8, marginBottom: 0, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   tabTextMobile: { fontSize: 13 },
+  
   contentArea: { flex: 1, padding: 24 },
   contentAreaMobile: { padding: 16 },
-  formSection: { paddingBottom: 40 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20 },
-  row: { flexDirection: 'row', gap: 16, marginBottom: 16 },
+  formSection: { paddingBottom: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16 },
+  row: { flexDirection: 'row', gap: 16, marginBottom: 12 },
   rowMobile: { flexDirection: 'column', gap: 0, marginBottom: 0 }, 
-  inputGroup: { flex: 1, marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 14, ...Platform.select({ web: { outlineStyle: 'none' } }) },
-  inputSmall: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  inputGroup: { flex: 1, marginBottom: 10 },
+  label: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  input: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  inputSmall: { borderWidth: 1, borderRadius: 8, padding: 8, fontSize: 12, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  
+  row3Col: { flexDirection: 'row', gap: 12, marginBottom: 4 },
+  col3Item: { flex: 1, gap: 6 },
+  inputGroupCompact: { marginBottom: 4 },
+  inputCompact: { borderWidth: 1, borderRadius: 6, padding: 6, fontSize: 12, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  contractContainerCompact: { flex: 1, padding: 8, borderRadius: 6, borderWidth: 1 },
+  checkboxContainerCompact: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+
+  pdfNoticeText: { textAlign: 'center', fontSize: 11, fontStyle: 'italic', marginTop: 6 },
+
+  pickerContainer: { borderWidth: 1, borderRadius: 6, padding: 4, minHeight: 38, justifyContent: 'center' },
+  dropdownItem: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 4, marginBottom: 2 },
+  dropdownItemActive: { backgroundColor: '#2563eb' },
+  dropdownItemText: { fontSize: 13, fontWeight: '500' },
+  dropdownItemTextActive: { color: '#ffffff', fontWeight: 'bold' },
 
   splitContainer: { flexDirection: 'row', width: '100%', gap: 24 },
   splitContainerMobile: { flexDirection: 'column', width: '100%' },
@@ -790,32 +1279,32 @@ const styles = StyleSheet.create({
   splitLeftMobile: { width: '100%', marginBottom: 28 }, 
   splitRight: { flex: 1, borderLeftWidth: 1, paddingLeft: 24 },
   splitRightMobile: { width: '100%', borderLeftWidth: 0, paddingLeft: 0, borderTopWidth: 1, paddingTop: 20, marginTop: 35 },
-  
-  apptTypeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  apptTypeBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1 },
-  apptTypeText: { fontWeight: '600', fontSize: 12 },
-  saveApptBtn: { backgroundColor: '#f59e0b', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 12, marginBottom: 8 },
-  saveApptBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13 },
+   
+  apptTypeContainerHorizontal: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  apptTypeBtnHorizontal: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, minWidth: 60, alignItems: 'center' },
+  apptTypeText: { fontWeight: '600', fontSize: 11 },
+  saveApptBtn: { backgroundColor: '#f59e0b', paddingVertical: 10, borderRadius: 8, alignItems: 'center', marginTop: 8, marginBottom: 4 },
+  saveApptBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
   deleteApptBtn: { padding: 4, borderRadius: 6 },
 
-  scheduledCard: { borderWidth: 1, borderLeftWidth: 4, borderLeftColor: '#f59e0b', borderRadius: 8, padding: 12, marginBottom: 10, ...Platform.select({ web: { boxShadow: '0px 2px 4px rgba(0,0,0,0.03)' } }) },
+  scheduledCard: { borderWidth: 1, borderLeftWidth: 4, borderLeftColor: '#f59e0b', borderRadius: 8, padding: 10, marginBottom: 8, ...Platform.select({ web: { boxShadow: '0px 2px 4px rgba(0,0,0,0.03)' } }) },
   scheduledCardDone: { opacity: 0.5, borderLeftColor: '#cbd5e1' },
-  scheduledCardTitle: { fontSize: 14, fontWeight: 'bold' },
+  scheduledCardTitle: { fontSize: 13, fontWeight: 'bold' },
   scheduledCardReminder: { fontSize: 10, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  scheduledCardDate: { fontSize: 12, marginTop: 4, fontWeight: '500' },
-  scheduledCardStatus: { fontSize: 10, color: '#10b981', marginTop: 8, fontWeight: 'bold' },
+  scheduledCardDate: { fontSize: 11, marginTop: 4, fontWeight: '500' },
+  scheduledCardStatus: { fontSize: 10, color: '#10b981', marginTop: 6, fontWeight: 'bold' },
 
   statusBtnGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
   clientStatusBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1 },
   clientStatusBtnActive: { backgroundColor: '#2563eb', borderColor: '#1d4ed8' },
   clientStatusBtnTextActive: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
   clientStatusBtnTextInactive: { fontWeight: '600', fontSize: 13 },
-  
+   
   contractContainer: { padding: 16, borderRadius: 8, borderWidth: 1, marginBottom: 20 },
   contractTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 16 },
   addContractBtn: { paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: '#2563eb', alignItems: 'center' },
   addContractBtnText: { color: '#2563eb', fontWeight: 'bold', fontSize: 14 },
-  
+   
   installmentsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   installmentBox: { width: 40, height: 40, borderRadius: 6, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   installmentBoxChecked: { backgroundColor: '#10b981', borderColor: '#059669' },
@@ -852,14 +1341,11 @@ const styles = StyleSheet.create({
   successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
   successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
 
-  userListContainer: { maxHeight: 180, borderWidth: 1, borderRadius: 8, marginBottom: 20 },
-  userOption: { padding: 14, borderBottomWidth: 1 },
-  userOptionText: { fontSize: 13, fontWeight: '600' },
-  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  checkbox: { width: 22, height: 22, borderWidth: 1, borderRadius: 6, marginRight: 10, justifyContent: 'center', alignItems: 'center' },
+  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  checkbox: { width: 16, height: 16, borderWidth: 1, borderRadius: 4, marginRight: 6, justifyContent: 'center', alignItems: 'center' },
   checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  checkmark: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
-  checkboxLabel: { fontSize: 13, flex: 1, flexWrap: 'wrap' }
+  checkmark: { color: '#ffffff', fontSize: 10, fontWeight: 'bold' },
+  checkboxLabel: { fontSize: 11, flex: 1, flexWrap: 'wrap' }
 });
 
 const lightStyles = StyleSheet.create({
@@ -871,9 +1357,10 @@ const lightStyles = StyleSheet.create({
   closeButtonText: { color: '#64748b' },
   body: { backgroundColor: '#ffffff' },
   sidebar: { backgroundColor: '#f8fafc', borderRightColor: '#f1f5f9' },
-  tabButtonActive: { backgroundColor: '#eff6ff' },
-  tabText: { color: '#64748b' },
-  tabTextActive: { color: '#2563eb' },
+  tabButton: { backgroundColor: '#ffffff', borderColor: '#e2e8f0' },
+  tabButtonActive: { backgroundColor: '#eff6ff', borderColor: '#2563eb' },
+  tabText: { color: '#475569' },
+  tabTextActive: { color: '#2563eb', fontWeight: '700' },
   sidebarMobileContainer: { borderBottomColor: '#e2e8f0', backgroundColor: '#f8fafc' },
   tabButtonMobile: { backgroundColor: '#e2e8f0' },
   tabButtonMobileActive: { backgroundColor: '#2563eb' },
@@ -884,6 +1371,8 @@ const lightStyles = StyleSheet.create({
   label: { color: '#475569' },
   input: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#0f172a' },
   inputSmall: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#0f172a' },
+  pickerContainer: { backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+  dropdownItemText: { color: '#334155' },
   splitRight: { borderColor: '#e2e8f0' },
   apptTypeBtn: { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' },
   apptTypeBtnActive: { backgroundColor: '#e0e7ff', borderColor: '#4f46e5' },
@@ -916,13 +1405,9 @@ const lightStyles = StyleSheet.create({
   successAlertBox: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
   successAlertTitle: { color: '#1e293b' },
   successAlertMessage: { color: '#475569' },
-  userListContainer: { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' },
-  userOption: { borderBottomColor: '#f1f5f9' },
-  userOptionSelected: { backgroundColor: '#e0e7ff' },
-  userOptionText: { color: '#475569' },
-  userOptionTextSelected: { color: '#4f46e5' },
   checkbox: { borderColor: '#cbd5e1', backgroundColor: '#fff' },
-  checkboxLabel: { color: '#475569' }
+  checkboxLabel: { color: '#475569' },
+  pdfNoticeText: { color: '#64748b' }
 });
 
 const darkStyles = StyleSheet.create({
@@ -934,9 +1419,10 @@ const darkStyles = StyleSheet.create({
   closeButtonText: { color: '#f8fafc' },
   body: { backgroundColor: '#0f172a' },
   sidebar: { backgroundColor: '#1e293b', borderRightColor: '#334155' },
-  tabButtonActive: { backgroundColor: '#334155' },
+  tabButton: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  tabButtonActive: { backgroundColor: '#334155', borderColor: '#60a5fa' },
   tabText: { color: '#94a3b8' },
-  tabTextActive: { color: '#60a5fa' },
+  tabTextActive: { color: '#60a5fa', fontWeight: '700' },
   sidebarMobileContainer: { borderBottomColor: '#334155', backgroundColor: '#1e293b' },
   tabButtonMobile: { backgroundColor: '#334155' },
   tabButtonMobileActive: { backgroundColor: '#2563eb' },
@@ -947,6 +1433,8 @@ const darkStyles = StyleSheet.create({
   label: { color: '#cbd5e1' },
   input: { backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' },
   inputSmall: { backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' },
+  pickerContainer: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  dropdownItemText: { color: '#cbd5e1' },
   splitRight: { borderColor: '#334155' },
   apptTypeBtn: { backgroundColor: '#1e293b', borderColor: '#334155' },
   apptTypeBtnActive: { backgroundColor: '#1e3a8a', borderColor: '#3b82f6' },
@@ -979,11 +1467,7 @@ const darkStyles = StyleSheet.create({
   successAlertBox: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
   successAlertTitle: { color: '#f8fafc' },
   successAlertMessage: { color: '#94a3b8' },
-  userListContainer: { borderColor: '#334155', backgroundColor: '#1e293b' },
-  userOption: { borderBottomColor: '#334155' },
-  userOptionSelected: { backgroundColor: '#1e3a8a' },
-  userOptionText: { color: '#cbd5e1' },
-  userOptionTextSelected: { color: '#93c5fd' },
   checkbox: { borderColor: '#475569', backgroundColor: '#0f172a' },
-  checkboxLabel: { color: '#cbd5e1' }
+  checkboxLabel: { color: '#cbd5e1' },
+  pdfNoticeText: { color: '#94a3b8' }
 });

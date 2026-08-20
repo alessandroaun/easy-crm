@@ -77,6 +77,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
         e.dataTransfer.setData('dragType', 'client');
         e.dataTransfer.setData('clientId', client.id);
         e.dataTransfer.setData('sourcePhaseId', phaseId);
+        
       };
 
       let pressTimer = null;
@@ -384,6 +385,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
     <>
       <View 
         ref={cardRef} 
+        data-card-container
         dataSet={{ clientid: client.id }} 
         style={[
           styles.card, 
@@ -452,6 +454,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
             {client.phone && (
               <View style={styles.actionButtonsContainer}>
                 <TouchableOpacity 
+                  data-card-action-btn
                   style={[
                     styles.btnActionWA, 
                     client.whatsappError ? (isDarkMode ? { backgroundColor: '#7f1d1d' } : { backgroundColor: '#fee2e2' }) : (isDarkMode ? { backgroundColor: '#064e3b' } : { backgroundColor: '#dcfce7' })
@@ -468,7 +471,7 @@ export default function ClientCard({ client, phaseId, onDelete, onOpen, onAddCom
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.btnActionCall, themeStyles.btnActionCall]} onPress={handlePhoneCall}>
+                <TouchableOpacity data-card-action-btn style={[styles.btnActionCall, themeStyles.btnActionCall]} onPress={handlePhoneCall}>
                   <Text style={[styles.btnActionTextCall, themeStyles.btnActionTextCall]}>Ligar</Text>
                 </TouchableOpacity>
               </View>
@@ -619,7 +622,6 @@ const lightStyles = StyleSheet.create({
     ...Platform.select({ 
       web: { 
         boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)', 
-        cursor: 'grab', 
         userSelect: 'none', 
         WebkitUserSelect: 'none', 
         WebkitTouchCallout: 'none' 
@@ -656,7 +658,6 @@ const darkStyles = StyleSheet.create({
     ...Platform.select({ 
       web: { 
         boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.3)', 
-        cursor: 'grab', 
         userSelect: 'none', 
         WebkitUserSelect: 'none', 
         WebkitTouchCallout: 'none' 

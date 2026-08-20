@@ -1,3 +1,4 @@
+// AuthScreen
 import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, 
@@ -11,6 +12,7 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
   const [isForgotPass, setIsForgotPass] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -49,6 +51,7 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
   };
 
   const currentTheme = isDarkMode ? darkStyles : lightStyles;
+  const iconColor = isDarkMode ? '#94a3b8' : '#64748b';
 
   return (
     <KeyboardAvoidingView style={[styles.container, currentTheme.container]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -112,17 +115,47 @@ export default function AuthScreen({ onRequirePasswordChange, isDarkMode, toggle
             {!isForgotPass ? (
               <View style={styles.passwordFullGroup}>
                 <Text style={[styles.label, currentTheme.label]}>Senha</Text>
-                <TextInput
-                  style={[styles.input, currentTheme.input]}
-                  placeholder="••••••••"
-                  placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-                  secureTextEntry
-                  value={password}
-                  onChangeText={setPassword}
-                  returnKeyType="done"
-                  onSubmitEditing={handleAuth}
-                  blurOnSubmit={false}
-                />
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={[styles.input, currentTheme.input, styles.passwordInputWithIcon]}
+                    placeholder="••••••••"
+                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                    returnKeyType="done"
+                    onSubmitEditing={handleAuth}
+                    blurOnSubmit={false}
+                    textContentType="password"
+                    autoComplete="off"
+                    {...Platform.select({
+                      web: {
+                        style: {
+                          ...styles.input,
+                          ...currentTheme.input,
+                          ...styles.passwordInputWithIcon,
+                          outlineStyle: 'none',
+                          WebkitTextSecurity: showPassword ? 'none' : 'disc'
+                        }
+                      }
+                    })}
+                  />
+                  <TouchableOpacity 
+                    style={styles.eyeIconContainer} 
+                    onPress={() => setShowPassword(!showPassword)}
+                    activeOpacity={0.7}
+                  >
+                    {/* Ícone Vetorial Estilo Bancário */}
+                    <View style={styles.vectorEyeWrapper}>
+                      <View style={[styles.eyeOuterFrame, { borderColor: iconColor }]}>
+                        <View style={[styles.eyeInnerPupil, { backgroundColor: iconColor }]} />
+                      </View>
+                      {!showPassword && (
+                        <View style={[styles.eyeSlashLine, { backgroundColor: iconColor }]} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity style={styles.forgotPassContainer} onPress={() => { setIsForgotPass(true); setErrorMessage(''); setSuccessMessage(''); }}>
                   <Text style={[styles.forgotPassText, currentTheme.forgotPassText]}>Esqueceu a senha?</Text>
                 </TouchableOpacity>
@@ -168,11 +201,21 @@ const styles = StyleSheet.create({
   label: { fontFamily: MODERN_FONT, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   dynamicSectionContainer: { height: 88, justifyContent: 'flex-start', marginBottom: 16 },
   passwordFullGroup: { width: '100%' },
+  passwordInputContainer: { position: 'relative', justifyContent: 'center' },
+  passwordInputWithIcon: { paddingRight: 45 },
+  
+  // Estilização do Ícone Vetorial Bancário do Olho
+  eyeIconContainer: { position: 'absolute', right: 12, height: '100%', justifyContent: 'center', alignItems: 'center', width: 30 },
+  vectorEyeWrapper: { width: 18, height: 14, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  eyeOuterFrame: { width: 18, height: 12, borderWidth: 1.5, borderRadius: 9, justifyContent: 'center', alignItems: 'center' },
+  eyeInnerPupil: { width: 5, height: 5, borderRadius: 2.5 },
+  eyeSlashLine: { position: 'absolute', width: 20, height: 1.5, transform: [{ rotate: '-45deg' }] },
+
   forgotPassContainer: { alignItems: 'flex-end', marginTop: 6 },
   forgotPassText: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '600' },
   infoBalloon: { borderRadius: 10, padding: 10, justifyContent: 'center', borderWidth: 1 },
   infoBalloonText: { fontFamily: MODERN_FONT, fontSize: 11.5, lineHeight: 16, textAlign: 'center' },
-  input: { borderRadius: 12, padding: 12, fontSize: 15, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
+  input: { borderRadius: 12, padding: 12, fontSize: 15, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none', WebkitTextSecurity: 'none' } }) },
   primaryButton: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4, ...Platform.select({ web: { transition: 'background-color 0.2s ease' } }) },
   primaryButtonDisabled: { backgroundColor: '#93c5fd' },
   primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700', fontFamily: MODERN_FONT },
