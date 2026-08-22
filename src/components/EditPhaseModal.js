@@ -35,7 +35,15 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
       setIsConfirmingDelete(false);
       
       const safePhases = (Array.isArray(allPhases) && allPhases.length > 0) ? allPhases : [phase];
-      const sorted = [...safePhases].sort((a, b) => (a.order || 0) - (b.order || 0));
+      let sorted = [...safePhases].sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      // Garantir que a fase "Novo Cliente" fique sempre fixada na primeira posição ao carregar
+      const novoClienteIndex = sorted.findIndex(p => (p.title || '').trim().toLowerCase() === 'novo cliente');
+      if (novoClienteIndex > 0) {
+        const [novoClienteObj] = sorted.splice(novoClienteIndex, 1);
+        sorted.unshift(novoClienteObj);
+      }
+
       setLocalPhases(sorted);
     }
   }, [phase, allPhases, isDarkMode]);
@@ -46,11 +54,14 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
   };
 
   const movePhase = (direction) => {
+    const isCurrentProtected = (phase.title || '').trim().toLowerCase() === 'novo cliente';
+    if (isCurrentProtected) return; // Trava absoluta para a fase protegida não se mover
+
     const currentIndex = localPhases.findIndex(p => p.id === phase.id);
     if (currentIndex === -1) return;
 
     const newIndex = currentIndex + direction;
-    if (newIndex < 0 || newIndex >= localPhases.length) return;
+    if (newIndex <= 0 || newIndex >= localPhases.length) return; // Impede ir para a posição 0 (topo)
 
     const newList = [...localPhases];
     const temp = newList[currentIndex];
@@ -82,6 +93,9 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
   const themeStyles = isDarkMode ? darkStyles : lightStyles;
   const currentColorsPalette = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
 
+  // Regra de Negócio: Blindar a fase "Novo Cliente" contra exclusões e edição de nome
+  const isProtectedPhase = (phase.title || '').trim().toLowerCase() === 'novo cliente';
+
   return (
     <Modal animationType="fade" transparent={true} visible={visible} onRequestClose={handleClose}>
       <View style={styles.overlay}>
@@ -96,82 +110,86 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody}>
-                <View style={styles.form}>
-                  <Text style={[styles.label, themeStyles.label]}>Nome da Fase</Text>
-                  <TextInput
-                    style={[styles.input, themeStyles.input]}
-                    value={title}
-                    onChangeText={setTitle}
-                    placeholder="Ex: Em Negociação"
-                    placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
-                  />
+              <View style={styles.formBody}>
+                <Text style={[styles.label, themeStyles.label]}>Nome da Fase</Text>
+                <TextInput
+                  style={[styles.input, themeStyles.input, isProtectedPhase && styles.inputDisabled]}
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder="Ex: Em Negociação"
+                  placeholderTextColor={isDarkMode ? '#64748b' : '#94a3b8'}
+                  editable={!isProtectedPhase} 
+                />
 
-                  <Text style={[styles.label, themeStyles.label]}>Cor da fase</Text>
-                  <View style={styles.colorPicker}>
-                    {currentColorsPalette.map((c) => (
-                      <TouchableOpacity
-                        key={c}
-                        style={[styles.colorSwatch, { backgroundColor: c }, color === c && styles.colorSwatchSelected]}
-                        onPress={() => setColor(c)}
-                      />
-                    ))}
-                  </View>
-
-                  <View style={styles.kanbanOrgHeader}>
-                    <Text style={[styles.label, themeStyles.label]}>Posicionamento no fluxo de vendas</Text>
-                  </View>
-                  
-                  <View style={[styles.orderingContainer, themeStyles.orderingContainer]}>
-                    <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true} style={{maxHeight: 180}}>
-                      {localPhases.map((p, index) => {
-                        const isEditing = p.id === phase.id;
-                        const displayTitle = isEditing ? (title || 'Fase sem nome') : p.title;
-                        const displayColor = isEditing ? color : (p.color || (isDarkMode ? '#1e293b' : '#f1f5f9'));
-
-                        return (
-                          <View key={p.id || index} style={[styles.phaseRow, themeStyles.phaseRow, isEditing && (isDarkMode ? darkStyles.phaseRowEditing : styles.phaseRowEditing)]}>
-                            <View style={styles.phaseRowHeader}>
-                              <View style={[styles.positionBadge, themeStyles.positionBadge]}>
-                                <Text style={[styles.positionBadgeText, themeStyles.positionBadgeText, isEditing && (isDarkMode ? darkStyles.positionBadgeTextEditing : styles.positionBadgeTextEditing)]}>{index + 1}</Text>
-                              </View>
-                              <View style={[styles.colorIndicator, { backgroundColor: displayColor }]} />
-                              <Text style={[styles.phaseRowTitle, themeStyles.phaseRowTitle, isEditing && (isDarkMode ? darkStyles.phaseRowTitleEditing : styles.phaseRowTitleEditing)]} numberOfLines={1}>
-                                {displayTitle}
-                              </Text>
-                            </View>
-
-                            {isEditing && (
-                              <View style={styles.phaseRowControls}>
-                                <TouchableOpacity 
-                                  onPress={() => movePhase(-1)} 
-                                  disabled={index === 0} 
-                                  style={[styles.moveBtn, themeStyles.moveBtn, index === 0 && styles.moveBtnDisabled]}
-                                >
-                                  <Text style={[styles.moveBtnText, themeStyles.moveBtnText]}>▲</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity 
-                                  onPress={() => movePhase(1)} 
-                                  disabled={index === localPhases.length - 1} 
-                                  style={[styles.moveBtn, themeStyles.moveBtn, index === localPhases.length - 1 && styles.moveBtnDisabled]}
-                                >
-                                  <Text style={[styles.moveBtnText, themeStyles.moveBtnText]}>▼</Text>
-                                </TouchableOpacity>
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                  <Text style={[styles.helpText, themeStyles.helpText]}>Use as setas para reposicionar esta fase no seu funil de vendas.</Text>
+                <Text style={[styles.label, themeStyles.label]}>Cor da fase</Text>
+                <View style={styles.colorPicker}>
+                  {currentColorsPalette.map((c) => (
+                    <TouchableOpacity
+                      key={c}
+                      style={[styles.colorSwatch, { backgroundColor: c }, color === c && styles.colorSwatchSelected]}
+                      onPress={() => setColor(c)}
+                    />
+                  ))}
                 </View>
-              </ScrollView>
+
+                <View style={styles.kanbanOrgHeader}>
+                  <Text style={[styles.label, themeStyles.label]}>Posicionamento no fluxo de vendas</Text>
+                </View>
+                
+                <View style={[styles.orderingContainer, themeStyles.orderingContainer]}>
+                  <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true} style={{ flexShrink: 1 }}>
+                    {localPhases.map((p, index) => {
+                      const isEditing = p.id === phase.id;
+                      const displayTitle = isEditing ? (title || 'Fase sem nome') : p.title;
+                      const displayColor = isEditing ? color : (p.color || (isDarkMode ? '#1e293b' : '#f1f5f9'));
+                      const isItemProtected = (p.title || '').trim().toLowerCase() === 'novo cliente';
+
+                      return (
+                        <View key={p.id || index} style={[styles.phaseRow, themeStyles.phaseRow, isEditing && (isDarkMode ? darkStyles.phaseRowEditing : styles.phaseRowEditing)]}>
+                          <View style={styles.phaseRowHeader}>
+                            <View style={[styles.positionBadge, themeStyles.positionBadge]}>
+                              <Text style={[styles.positionBadgeText, themeStyles.positionBadgeText, isEditing && (isDarkMode ? darkStyles.positionBadgeTextEditing : styles.positionBadgeTextEditing)]}>{index + 1}</Text>
+                            </View>
+                            <View style={[styles.colorIndicator, { backgroundColor: displayColor }]} />
+                            <Text style={[styles.phaseRowTitle, themeStyles.phaseRowTitle, isEditing && (isDarkMode ? darkStyles.phaseRowTitleEditing : styles.phaseRowTitleEditing)]} numberOfLines={1}>
+                              {displayTitle}
+                            </Text>
+                          </View>
+
+                          {isEditing && (
+                            <View style={styles.phaseRowControls}>
+                              <TouchableOpacity 
+                                onPress={() => movePhase(-1)} 
+                                disabled={isProtectedPhase || index === 0 || index === 1} 
+                                style={[styles.moveBtn, themeStyles.moveBtn, (isProtectedPhase || index === 0 || index === 1) && styles.moveBtnDisabled]}
+                              >
+                                <Text style={[styles.moveBtnText, themeStyles.moveBtnText]}>▲</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                onPress={() => movePhase(1)} 
+                                disabled={isProtectedPhase || index === localPhases.length - 1} 
+                                style={[styles.moveBtn, themeStyles.moveBtn, (isProtectedPhase || index === localPhases.length - 1) && styles.moveBtnDisabled]}
+                              >
+                                <Text style={[styles.moveBtnText, themeStyles.moveBtnText]}>▼</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+                <Text style={[styles.helpText, themeStyles.helpText]}>Use as setas para reposicionar esta fase no seu funil de vendas.</Text>
+              </View>
 
               <View style={[styles.footer, themeStyles.footer]}>
-                <TouchableOpacity style={styles.deletePhaseButton} onPress={() => setIsConfirmingDelete(true)}>
-                  <Text style={styles.deletePhaseText}>Excluir Fase</Text>
-                </TouchableOpacity>
+                {!isProtectedPhase ? (
+                  <TouchableOpacity style={styles.deletePhaseButton} onPress={() => setIsConfirmingDelete(true)}>
+                    <Text style={styles.deletePhaseText}>Excluir Fase</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View /> 
+                )}
                 
                 <View style={styles.footerActionsRight}>
                   <TouchableOpacity style={[styles.cancelButton, themeStyles.cancelButton]} onPress={handleClose}>
@@ -226,7 +244,7 @@ export default function EditPhaseModal({ visible, onClose, phase, allPhases, onS
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   modalContainer: {
-    width: '100%', maxWidth: 480, maxHeight: '90%', borderRadius: 16, padding: 24,
+    width: '100%', maxWidth: 480, maxHeight: '90%', borderRadius: 16, padding: 24, flexShrink: 1,
     ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } })
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
@@ -234,13 +252,13 @@ const styles = StyleSheet.create({
   closeButton: { borderRadius: 8, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   closeButtonText: { fontSize: 16, fontWeight: 'bold' },
   
-  scrollBody: { flexGrow: 0 },
-  form: { marginBottom: 10 },
+  formBody: { flexShrink: 1, marginBottom: 10 },
   label: { fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 12, fontFamily: MODERN_FONT },
   input: {
     borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 15, fontFamily: MODERN_FONT,
     ...Platform.select({ web: { outlineStyle: 'none' } })
   },
+  inputDisabled: { opacity: 0.6 },
   colorPicker: { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },
   colorSwatch: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0' },
   colorSwatchSelected: { borderColor: '#2563eb', transform: [{ scale: 1.1 }] },
@@ -250,7 +268,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     minHeight: 70,
-    maxHeight: 180,
+    flexShrink: 1,
     padding: 6,
     marginTop: 4,
   },

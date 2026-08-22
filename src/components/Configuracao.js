@@ -28,6 +28,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
   const [goalHistory, setGoalHistory] = useState([]);
   
   const [hasPendingParamRequest, setHasPendingParamRequest] = useState(false);
+  const [lastParamRequestDate, setLastParamRequestDate] = useState(null);
 
   const [newPass, setNewPass] = useState('');
   const [newPassConfirm, setNewPassConfirm] = useState('');
@@ -107,6 +108,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
         setConversionRateGoal(p.conversionRateGoal || '12');
         setGoalHistory(p.goalHistory || []);
         setHasPendingParamRequest(!!p.pendingRequest);
+        setLastParamRequestDate(p.lastParamRequestDate || null);
       } else {
         const defaultHistory = [
           { id: 1, month: 'Julho / 2026', goal: '2.000.000', reached: '2.430.000', status: 'success' },
@@ -156,6 +158,33 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
   };
 
   const openParamRequestModal = () => {
+    if (lastParamRequestDate) {
+      const lastDate = new Date(lastParamRequestDate);
+      const now = new Date();
+      const diffTime = Math.abs(now - lastDate);
+      const totalMsLeft = (7 * 24 * 60 * 60 * 1000) - diffTime;
+      
+      if (totalMsLeft > 0) {
+        const d = Math.floor(totalMsLeft / (1000 * 60 * 60 * 24));
+        const h = Math.floor((totalMsLeft / (1000 * 60 * 60)) % 24);
+        const m = Math.floor((totalMsLeft / 1000 / 60) % 60);
+
+        let timeParts = [];
+        if (d > 0) timeParts.push(`${d} dia(s)`);
+        if (h > 0) timeParts.push(`${h} hora(s)`);
+        if (m > 0 || (d === 0 && h === 0)) timeParts.push(`${m} minuto(s)`);
+
+        const timeLeftStr = timeParts.join(', ').replace(/,([^,]*)$/, ' e$1');
+
+        showAlertModal(
+          "Aguarde", 
+          `Você só poderá enviar uma nova solicitação de alteração de metas e parâmetros a cada 7 dias.\nTempo restante: ${timeLeftStr}`, 
+          "warning"
+        );
+        return;
+      }
+    }
+
     setReqGoal(monthlyGoal);
     setReqCalls(dailyCalls);
     setReqSims(dailySims);
@@ -183,10 +212,12 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
       p.pendingRequest = {
         goal: reqGoal, calls: reqCalls, sims: reqSims, negs: reqNegs, ticket: reqTicket, conv: reqConv, justification: reqJustification
       };
+      p.lastParamRequestDate = new Date().toISOString();
 
       const { error } = await supabase.from('crm_boards').update({ data_payload: p }).eq('id', `config_${user.id}`);
       if (error) throw error;
 
+      setLastParamRequestDate(p.lastParamRequestDate);
       setHasPendingParamRequest(true);
       setIsParamRequestModalVisible(false);
       showAlertModal("Solicitação Enviada", "O administrador avaliará as mudanças nas suas metas e parâmetros.", "success");
@@ -203,7 +234,6 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Se for admin, pode salvar as metas diretamente
       if (userRole === 'admin') {
         const { data: configs } = await supabase.from('crm_boards').select('data_payload').eq('id', `config_${user.id}`).limit(1);
         let p = configs && configs.length > 0 ? configs[0].data_payload : {};
@@ -437,21 +467,6 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
 
       </ScrollView>
 
-      {/* MODAL DE ALERTA GERAL */}
-      <Modal visible={customModal.visible} transparent={true} animationType="fade" onRequestClose={closeAlertModal}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, themeStyles.modalContainer]}>
-            <View style={styles.modalHeaderBar}>
-              <Text style={[styles.modalHeaderTitle, themeStyles.modalHeaderTitle]}>{customModal.title}</Text>
-            </View>
-            <Text style={[styles.modalMessageText, themeStyles.modalMessageText]}>{customModal.message}</Text>
-            <TouchableOpacity style={styles.modalButtonPrimary} onPress={closeAlertModal}>
-              <Text style={styles.modalButtonPrimaryText}>Compreendido</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* MODAL DE SOLICITAÇÃO DE PARÂMETROS */}
       <Modal visible={isParamRequestModalVisible} transparent={true} animationType="fade" onRequestClose={() => setIsParamRequestModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -459,7 +474,7 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
             <Text style={[styles.modalHeaderTitle, themeStyles.modalHeaderTitle, { marginBottom: 12 }]}>Solicitar Alteração de Metas e Parâmetros</Text>
             <Text style={[styles.modalMessageText, themeStyles.modalMessageText, { marginBottom: 16 }]}>Altere os valores desejados e insira uma justificativa para enviar ao Administrador.</Text>
 
-            <ScrollView style={{ maxHeight: '60vh', marginBottom: 16 }}>
+            <ScrollView style={{ maxHeight: '60vh', marginBottom: 16 }} showsVerticalScrollIndicator={false}>
               <Text style={[styles.label, themeStyles.label]}>Nova Meta do Mês (R$)</Text>
               <TextInput style={[styles.input, themeStyles.input, { marginBottom: 10 }]} value={reqGoal} onChangeText={(t) => handleCurrencyChange(t, setReqGoal)} keyboardType="numeric" />
 
@@ -500,13 +515,37 @@ export default function Configuracao({ onConfigSaved, isDarkMode }) {
             </ScrollView>
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={[styles.modalButtonPrimary, themeStyles.secondaryButton, { flex: 1, backgroundColor: 'transparent' }]} onPress={() => setIsParamRequestModalVisible(false)}>
-                <Text style={[styles.modalButtonPrimaryText, themeStyles.secondaryButtonText]}>Cancelar</Text>
+              <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtnStyle, { flex: 1 }]} onPress={() => setIsParamRequestModalVisible(false)}>
+                <Text style={[styles.cancelBtnTextStyle, themeStyles.cancelBtnTextStyle]}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButtonPrimary, { flex: 1, backgroundColor: '#2563eb' }]} onPress={handleSubmitParamRequest}>
+              <TouchableOpacity style={[styles.modalBtn, { flex: 1, backgroundColor: '#2563eb' }]} onPress={handleSubmitParamRequest}>
                 <Text style={styles.modalButtonPrimaryText}>Enviar Solicitação</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ====================================================================== */}
+      {/* MODAIS DE ALERTA RENDERIZADOS NO FINAL (Z-INDEX GLOBAL E DESIGN NOVO)  */}
+      {/* ====================================================================== */}
+      <Modal visible={customModal.visible} transparent={true} animationType="fade" onRequestClose={closeAlertModal}>
+        <View style={[styles.modalOverlay, { zIndex: 999999, elevation: 100 }]}>
+          <View style={[styles.alertModalBox, themeStyles.alertModalBox, { padding: 24, maxWidth: 400 }]}>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 16, position: 'relative', width: '100%'}}>
+              <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle, {marginBottom: 0, fontSize: 18, textAlign: 'center'}]}>
+                {customModal.type === 'error' ? '❌ ' : customModal.type === 'warning' ? '⏳ ' : '✅ '}{customModal.title}
+              </Text>
+              <TouchableOpacity onPress={closeAlertModal} style={{position: 'absolute', right: 0}}>
+                <Text style={[{fontSize: 20, fontWeight: 'bold'}, isDarkMode ? {color: '#94a3b8'} : {color: '#64748b'}]}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ marginBottom: 24, width: '100%' }}>
+              <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage, {textAlign: 'center', fontSize: 14, marginBottom: 0}]}>{customModal.message}</Text>
+            </View>
+            <TouchableOpacity style={[styles.alertModalBtn, { alignSelf: 'center', paddingHorizontal: 32, width: 'auto' }]} onPress={closeAlertModal}>
+              <Text style={styles.alertModalBtnText}>Compreendido</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -554,13 +593,23 @@ const styles = StyleSheet.create({
   historyDataRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
   historyDataLabel: { fontFamily: MODERN_FONT, fontSize: 10, fontWeight: '600', marginBottom: 2 },
   historyDataValue: { fontFamily: MODERN_FONT, fontSize: 12, fontWeight: '800' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center' },
+  
+  modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 },
+  
+  alertModalBox: { width: '100%', maxWidth: 380, borderRadius: 16, padding: 24, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 15px 35px rgba(0,0,0,0.25)' } }) },
+  alertModalTitle: { fontSize: 17, fontWeight: '700', marginBottom: 8, fontFamily: MODERN_FONT, textAlign: 'center' },
+  alertModalMessage: { fontSize: 13, lineHeight: 18, marginBottom: 20, fontFamily: MODERN_FONT, textAlign: 'center' },
+  alertModalBtn: { width: '100%', backgroundColor: '#2563eb', paddingVertical: 11, borderRadius: 8, alignItems: 'center' },
+  alertModalBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT },
+
   modalContainer: { borderRadius: 12, padding: 20, width: '90%', maxWidth: 320, ...Platform.select({ web: { boxShadow: '0px 10px 30px rgba(0,0,0,0.15)' } }) },
-  modalHeaderBar: { marginBottom: 12 },
   modalHeaderTitle: { fontFamily: MODERN_FONT, fontSize: 16, fontWeight: '800' },
-  modalMessageText: { fontFamily: MODERN_FONT, fontSize: 13, lineHeight: 18, marginBottom: 20 },
-  modalButtonPrimary: { backgroundColor: '#2563eb', borderRadius: 6, paddingVertical: 10, alignItems: 'center' },
-  modalButtonPrimaryText: { fontFamily: MODERN_FONT, color: '#ffffff', fontSize: 12, fontWeight: '700' }
+  modalMessageText: { fontFamily: MODERN_FONT, fontSize: 13, lineHeight: 18 },
+  modalButtonPrimaryText: { fontFamily: MODERN_FONT, color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  modalBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  
+  cancelBtnStyle: { borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  cancelBtnTextStyle: { fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT }
 });
 
 /* Estilos de Tema Claro */
@@ -591,7 +640,12 @@ const lightStyles = StyleSheet.create({
   historyDataValue: { color: '#0f172a' },
   modalContainer: { backgroundColor: '#ffffff' },
   modalHeaderTitle: { color: '#0f172a' },
-  modalMessageText: { color: '#475569' }
+  modalMessageText: { color: '#475569' },
+  alertModalBox: { backgroundColor: '#ffffff' },
+  alertModalTitle: { color: '#1e293b' },
+  alertModalMessage: { color: '#475569' },
+  cancelBtnStyle: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
+  cancelBtnTextStyle: { color: '#475569' }
 });
 
 /* Estilos de Tema Escuro */
@@ -622,5 +676,10 @@ const darkStyles = StyleSheet.create({
   historyDataValue: { color: '#f8fafc' },
   modalContainer: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
   modalHeaderTitle: { color: '#f8fafc' },
-  modalMessageText: { color: '#94a3b8' }
+  modalMessageText: { color: '#94a3b8' },
+  alertModalBox: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  alertModalTitle: { color: '#f8fafc' },
+  alertModalMessage: { color: '#94a3b8' },
+  cancelBtnStyle: { backgroundColor: '#334155', borderColor: '#475569' },
+  cancelBtnTextStyle: { color: '#cbd5e1' }
 });

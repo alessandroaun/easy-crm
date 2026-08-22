@@ -101,20 +101,15 @@ export default function NotificationModal({
                     
                     if (item.type === 'ParamChangeRequest') {
                       return (
-                        <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardRequest : { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }]}>
-                          <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#f8fafc' } : { color: '#1e293b' }]}>Alteração de Metas / Parâmetros</Text>
-                          <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 8, lineHeight: 18 }, isDarkMode ? { color: '#cbd5e1' } : { color: '#475569' }]}>
+                        <View key={item.id} style={[styles.notificationCard, isDarkMode ? darkStyles.cardRequest : { borderColor: '#fcd34d', backgroundColor: '#fef3c7' }]}>
+                          <Text style={[{ fontFamily: MODERN_FONT, fontWeight: '800', marginBottom: 5 }, isDarkMode ? { color: '#fcd34d' } : { color: '#92400e' }]}>Alteração de Metas / Parâmetros</Text>
+                          <Text style={[{ fontFamily: MODERN_FONT, fontSize: 13, marginBottom: 8, lineHeight: 18 }, isDarkMode ? { color: '#fde68a' } : { color: '#b45309' }]}>
                             O vendedor <Text style={{fontWeight: 'bold'}}>{item.userName}</Text> enviou uma solicitação para alterar metas e parâmetros.
                           </Text>
-                          <Text style={[{ fontFamily: MODERN_FONT, fontSize: 11, marginBottom: 12 }, isDarkMode ? { color: '#94a3b8' } : { color: '#64748b' }]}>
-                            Acesse a aba Painel Administrativo, clique em Configuração no card do usuário para gerenciar essa pendência.
+                          <Text style={[{ fontFamily: MODERN_FONT, fontSize: 11, marginBottom: 12 }, isDarkMode ? { color: '#fbbf24' } : { color: '#d97706' }]}>
+                            Acesse a aba Painel Administrativo e clique em "Configuração" no usuário para ler a justificativa e responder ao chamado.
                           </Text>
-                          <TouchableOpacity 
-                            style={[styles.dismissButton, { backgroundColor: '#2563eb' }]} 
-                            onPress={() => onDismissSystem(item.id)}
-                          >
-                            <Text style={styles.dismissButtonText}>Ciente</Text>
-                          </TouchableOpacity>
+                          {/* Botão de ciente removido propositalmente: essa notificação some automaticamente quando a pendência é aprovada/recusada no Painel Admin */}
                         </View>
                       );
                     }
@@ -344,7 +339,7 @@ const darkStyles = StyleSheet.create({
   historyCard: { borderColor: '#334155', backgroundColor: '#0f172a', opacity: 0.9 },
   historyText: { color: '#cbd5e1' },
   historyDate: { color: '#94a3b8' },
-  cardRequest: { borderColor: '#334155', backgroundColor: '#0f172a' },
+  cardRequest: { borderColor: '#451a03', backgroundColor: '#78350f' }, 
   cardAlert: { borderColor: '#14532d', backgroundColor: '#052e16' },
   cardApproved: { borderColor: '#14532d', backgroundColor: '#052e16' },
   cardReset: { borderColor: '#7f1d1d', backgroundColor: '#450a0a' },

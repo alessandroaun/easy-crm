@@ -24,12 +24,9 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSellersDropdownOpen, setIsSellersDropdownOpen] = useState(false);
   
-  // Estado para detectar se o app está rodando via Electron
   const [isElectron, setIsElectron] = useState(false);
-
   const [isAutoImportActive, setIsAutoImportActive] = useState(false);
 
-  // Hook de Responsividade
   const { width } = useWindowDimensions();
   const isMobile = width < 850; 
 
@@ -44,16 +41,13 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [isClientModalVisible, setIsClientModalVisible] = useState(false);
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
   
-  // Estados da Transferência em Massa de Leads
   const [isBulkTransferActive, setIsBulkTransferActive] = useState(false);
   const [bulkTargetUserId, setBulkTargetUserId] = useState(null);
   const [isBulkDropdownOpen, setIsBulkDropdownOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
 
-  // Estados da Exclusão em Massa para a Lixeira (Admin)
   const [isBulkDeleteActive, setIsBulkDeleteActive] = useState(false);
 
-  // Estados da Troca de Senha Própria
   const [isChangePassModalVisible, setIsChangePassModalVisible] = useState(false);
   const [newPass, setNewPass] = useState('');
   const [newPassConfirm, setNewPassConfirm] = useState('');
@@ -61,7 +55,6 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
   const [showNewPassConfirm, setShowNewPassConfirm] = useState(false);
   const [isChangingPass, setIsChangingPass] = useState(false);
 
-  // Animação de Zoom In/Out para a Troca de Senha
   const changePassScale = useRef(new Animated.Value(0.8)).current;
   const changePassOpacity = useRef(new Animated.Value(0)).current;
 
@@ -210,26 +203,18 @@ export default function DashboardScreen({ isDarkMode, toggleDarkMode }) {
       const isElectronEnv = userAgent.includes('electron') || window.electron || (window.process && window.process.versions && window.process.versions.electron);
       setIsElectron(!!isElectronEnv);
 
-      // Injeta estilos globais para corrigir o comportamento do cursor nos cards e botões de ação
       const styleId = 'dashboard-cursor-fixes';
-if (!document.getElementById(styleId)) {
-  const styleEl = document.createElement('style');
-  styleEl.id = styleId;
-  styleEl.innerHTML = `
-    /* Define cursor padrão para o container do card e todo o seu conteúdo */
-    [data-card-container] {
-      cursor: default !important;
-    }
-    
-    /* Garante que elementos de interação específicos recuperem o cursor pointer */
-    [data-card-container] button, 
-    [data-card-container] [data-card-action-btn],
-    [data-card-container] .action-icon-button {
-      cursor: pointer !important;
-    }
-  `;
-  document.head.appendChild(styleEl);
-}
+      if (!document.getElementById(styleId)) {
+        const styleEl = document.createElement('style');
+        styleEl.id = styleId;
+        styleEl.innerHTML = `
+          [data-card-container] { cursor: default !important; }
+          [data-card-container] button, 
+          [data-card-container] [data-card-action-btn],
+          [data-card-container] .action-icon-button { cursor: pointer !important; }
+        `;
+        document.head.appendChild(styleEl);
+      }
     }
   }, []);
 
@@ -1279,7 +1264,6 @@ if (!document.getElementById(styleId)) {
 
   return (
     <View style={[styles.container, currentTheme.container]} onStartShouldSetResponder={() => {
-      // Se clicar fora, fecha a lista e desativa o modo/botão de Transferir Leads se estiver aberto
       if (isBulkDropdownOpen || isBulkTransferActive) {
         setIsBulkDropdownOpen(false);
         setIsBulkTransferActive(false);
@@ -1799,7 +1783,7 @@ if (!document.getElementById(styleId)) {
         </View>
       )}
 
-      {/* MODAIS */}
+      {/* MODAIS (NORMAL Z-INDEX) */}
       <AddClientModal visible={isClientModalVisible} onClose={() => setIsClientModalVisible(false)} onSave={handleSaveNewClient} isDarkMode={isDarkMode} />
       <AddPhaseModal visible={isPhaseModalVisible} onClose={() => setIsPhaseModalVisible(false)} onSave={handleSaveNewPhase} isDarkMode={isDarkMode} />
       <TrashModal visible={isTrashModalVisible} onClose={() => setIsTrashModalVisible(false)} trashClients={boardData?.trash || []} onPermanentDelete={handlePermanentDelete} onRestore={handleRestoreFromTrash} isDarkMode={isDarkMode} />
@@ -1965,21 +1949,29 @@ if (!document.getElementById(styleId)) {
         </View>
       )}
 
-      {alertConfig.visible && (
-        <View style={styles.successAlertOverlay}>
-          <Animated.View style={[styles.successAlertBox, currentTheme.successAlertBox, { opacity: alertOpacity, transform: [{ scale: alertScale }] }]}>
-            <Text style={styles.successAlertIcon}>{alertConfig.type === 'success' ? '✅' : '⚠️'}</Text>
-            <Text style={[styles.successAlertTitle, currentTheme.successAlertTitle]}>{alertConfig.title}</Text>
-            <Text style={[styles.successAlertMessage, currentTheme.successAlertMessage]}>{alertConfig.message}</Text>
-            <TouchableOpacity 
-              style={[styles.successAlertBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }]} 
-              onPress={closeCustomAlert}
-            >
-              <Text style={styles.successAlertBtnText}>{alertConfig.type === 'success' ? 'Continuar' : 'Entendi'}</Text>
+      {/* ====================================================================== */}
+      {/* MODAL DE ALERTA RENDERIZADO NO FINAL (Z-INDEX GLOBAL E DESIGN NOVO)    */}
+      {/* ====================================================================== */}
+      <Modal animationType="fade" transparent={true} visible={alertConfig.visible} onRequestClose={closeCustomAlert}>
+        <View style={[styles.modalOverlay, { zIndex: 999999, elevation: 100 }]}>
+          <Animated.View style={[styles.alertModalBox, currentTheme.alertModalBox, { opacity: alertOpacity, transform: [{ scale: alertScale }], padding: 24, maxWidth: 400 }]}>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 16, position: 'relative', width: '100%'}}>
+              <Text style={[styles.alertModalTitle, currentTheme.alertModalTitle, {marginBottom: 0, fontSize: 18, textAlign: 'center'}]}>
+                {alertConfig.type === 'error' ? '❌ ' : alertConfig.type === 'warning' ? '⏳ ' : '✅ '}{alertConfig.title}
+              </Text>
+              <TouchableOpacity onPress={closeCustomAlert} style={{position: 'absolute', right: 0}}>
+                <Text style={[{fontSize: 20, fontWeight: 'bold'}, isDarkMode ? {color: '#94a3b8'} : {color: '#64748b'}]}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ marginBottom: 24, width: '100%' }}>
+              <Text style={[styles.alertModalMessage, currentTheme.alertModalMessage, {textAlign: 'center', fontSize: 14, marginBottom: 0}]}>{alertConfig.message}</Text>
+            </View>
+            <TouchableOpacity style={[styles.alertModalBtn, alertConfig.type === 'error' && { backgroundColor: '#ef4444' }, { alignSelf: 'center', paddingHorizontal: 32, width: 'auto' }]} onPress={closeCustomAlert}>
+              <Text style={styles.alertModalBtnText}>{alertConfig.type === 'success' ? 'Continuar' : 'Compreendido'}</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
-      )}
+      </Modal>
 
     </View>
   );
@@ -2130,7 +2122,6 @@ const styles = StyleSheet.create({
   modalText: { fontSize: 14, textAlign: 'center', marginBottom: 20 },
   passInput: { width: '100%', borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 12, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
   
-  // Estilização do ícone vetorial de olho na senha
   passwordInputContainer: { position: 'relative', justifyContent: 'center', width: '100%' },
   eyeIconContainer: { position: 'absolute', right: 12, top: 12, height: 24, justifyContent: 'center', alignItems: 'center', width: 30 },
   vectorEyeWrapper: { width: 18, height: 14, justifyContent: 'center', alignItems: 'center', position: 'relative' },
@@ -2144,13 +2135,12 @@ const styles = StyleSheet.create({
   confirmBtn: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#ef4444', alignItems: 'center' },
   confirmBtnText: { fontWeight: 'bold', color: '#ffffff' },
 
-  successAlertOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 },
-  successAlertBox: { padding: 24, borderRadius: 16, alignItems: 'center', width: 320 },
-  successAlertIcon: { fontSize: 48, marginBottom: 12 },
-  successAlertTitle: { fontSize: 20, fontWeight: '800', marginBottom: 8 },
-  successAlertMessage: { fontSize: 14, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  successAlertBtn: { backgroundColor: '#10b981', paddingVertical: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
-  successAlertBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+  // Alerta Modal Atualizado
+  alertModalBox: { width: '100%', maxWidth: 380, borderRadius: 16, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 15px 35px rgba(0,0,0,0.25)' } }) },
+  alertModalTitle: { fontSize: 17, fontWeight: '700', fontFamily: MODERN_FONT },
+  alertModalMessage: { fontSize: 13, lineHeight: 18, fontFamily: MODERN_FONT },
+  alertModalBtn: { backgroundColor: '#2563eb', paddingVertical: 11, borderRadius: 8, alignItems: 'center' },
+  alertModalBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT },
 
   bulkDropdownMenu: { position: 'absolute', top: 40, left: 0, right: 0, borderWidth: 1, borderRadius: 8, minWidth: 140, padding: 6, zIndex: 1000 },
   bulkDropdownTitle: { fontSize: 11, fontWeight: 'bold', marginBottom: 4, paddingHorizontal: 4 },
@@ -2211,9 +2201,9 @@ const lightStyles = StyleSheet.create({
   passInput: { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#0f172a' },
   cancelBtn: { backgroundColor: '#f1f5f9' },
   cancelBtnText: { color: '#475569' },
-  successAlertBox: { backgroundColor: '#ffffff', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.2)' } }) },
-  successAlertTitle: { color: '#1e293b' },
-  successAlertMessage: { color: '#475569' },
+  alertModalBox: { backgroundColor: '#ffffff' },
+  alertModalTitle: { color: '#1e293b' },
+  alertModalMessage: { color: '#475569' },
   blockTitle: { color: '#1e293b' },
   blockText: { color: '#64748b' }
 });
@@ -2259,15 +2249,15 @@ const darkStyles = StyleSheet.create({
   bulkDropdownMenu: { backgroundColor: '#1e293b', borderColor: '#334155' },
   bulkDropdownTitle: { color: '#94a3b8' },
   bulkDropdownItemText: { color: '#cbd5e1' },
-  modalContent: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
+  modalContent: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
   modalTitle: { color: '#f8fafc' },
   modalText: { color: '#94a3b8' },
   passInput: { backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc' },
   cancelBtn: { backgroundColor: '#334155' },
   cancelBtnText: { color: '#cbd5e1' },
-  successAlertBox: { backgroundColor: '#1e293b', ...Platform.select({ web: { boxShadow: '0px 10px 25px rgba(0,0,0,0.4)' } }) },
-  successAlertTitle: { color: '#f8fafc' },
-  successAlertMessage: { color: '#94a3b8' },
+  alertModalBox: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1 },
+  alertModalTitle: { color: '#f8fafc' },
+  alertModalMessage: { color: '#94a3b8' },
   blockTitle: { color: '#f8fafc' },
-  blockText: { color: '#94a3b8' },
+  blockText: { color: '#94a3b8' }
 });

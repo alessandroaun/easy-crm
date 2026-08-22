@@ -492,14 +492,14 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
         opcoesLance: opcoesLanceDinamicas
       };
 
-      const response = await fetch('https://backend-proposta-fhdq.onrender.com/gerar-simulacao', {
+      const response = await fetch('https://backend-proposta-1067952907073.southamerica-east1.run.app/gerar-simulacao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error('Falha ao gerar o PDF no servidor Render.');
+        throw new Error('Falha ao gerar a proposta.');
       }
 
       const blob = await response.blob();
@@ -535,7 +535,7 @@ export default function ClientDetailsModal({ visible, onClose, clientData, onSav
 
     } catch (error) {
       setLoadingPdf(false);
-      showCustomAlert('error', 'Erro na Geração', 'Não foi possível gerar a simulação no servidor do Render.');
+      showCustomAlert('error', 'Erro na Geração', 'Não foi possível gerar a proposta.');
       console.error(error);
     }
   };

@@ -21,7 +21,7 @@ export default function AdminPanel({ isDarkMode }) {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
 
-  // Estados do Modal de Configuração (Substitui o antigo Modal de Reset)
+  // Estados do Modal de Configuração
   const [isConfigModalVisible, setIsConfigModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   
@@ -141,12 +141,10 @@ export default function AdminPanel({ isDarkMode }) {
     try {
       setIsImporting(true);
 
-      // Fetch Source Board
       const { data: sourceBoards } = await supabase.from('crm_boards').select('data_payload').eq('user_id', sourceUserId).ilike('id', 'board_%').limit(1);
       if (!sourceBoards || sourceBoards.length === 0) throw new Error("Quadro do usuário origem não encontrado.");
       const sourcePayload = sourceBoards[0].data_payload || { phases: [] };
 
-      // Fetch Target Board
       const { data: targetBoards } = await supabase.from('crm_boards').select('id, data_payload').eq('user_id', selectedUser.id).ilike('id', 'board_%').limit(1);
       if (!targetBoards || targetBoards.length === 0) throw new Error("Quadro do usuário destino não encontrado.");
       const targetBoardId = targetBoards[0].id;
@@ -202,13 +200,22 @@ export default function AdminPanel({ isDarkMode }) {
     if (!selectedUser) return;
     try {
       setLoading(true);
+
+      const hasChanges = (
+        goalInput !== (selectedUser.config.monthlyGoal || '0') ||
+        callsInput !== (selectedUser.config.dailyCalls || '0') ||
+        simsInput !== (selectedUser.config.dailySims || '0') ||
+        negsInput !== (selectedUser.config.dailyNeg || '0') ||
+        ticketInput !== (selectedUser.config.ticketMedio || '0') ||
+        convInput !== (selectedUser.config.conversionRateGoal || '0') ||
+        editRole !== (selectedUser.role || 'vendedor')
+      );
       
       if (editRole && editRole !== selectedUser.role) {
         const { error: roleError } = await supabase
           .from('user_profiles')
           .update({ role: editRole })
           .eq('id', selectedUser.id);
-          
         if (roleError) throw roleError;
       }
 
@@ -226,19 +233,21 @@ export default function AdminPanel({ isDarkMode }) {
         .from('crm_boards')
         .update({ data_payload: updatedConfig })
         .eq('id', `config_${selectedUser.id}`);
-
       if (configError) throw configError;
 
-      const { data: boardData } = await supabase.from('crm_boards').select('data_payload, id').eq('user_id', selectedUser.id).ilike('id', 'board_%').limit(1);
-      if (boardData && boardData.length > 0) {
-        let payload = boardData[0].data_payload;
-        payload.unreadNotifications = [{
-          id: `param_update_${Date.now()}`,
-          type: 'Sistema',
-          text: `⚙️ As suas metas, parâmetros ou nível de acesso foram atualizados pelo administrador.`,
-          date: new Date().toISOString()
-        }, ...(payload.unreadNotifications || [])];
-        await supabase.from('crm_boards').update({ data_payload: payload }).eq('id', boardData[0].id);
+      // Somente envia notificação de atualização de parâmetros se houver uma real alteração
+      if (hasChanges) {
+        const { data: boardData } = await supabase.from('crm_boards').select('data_payload, id').eq('user_id', selectedUser.id).ilike('id', 'board_%').limit(1);
+        if (boardData && boardData.length > 0) {
+          let payload = boardData[0].data_payload;
+          payload.unreadNotifications = [{
+            id: `param_update_${Date.now()}`,
+            type: 'Sistema',
+            text: `⚙️ As suas metas, parâmetros ou nível de acesso foram atualizados pelo administrador.`,
+            date: new Date().toISOString()
+          }, ...(payload.unreadNotifications || [])];
+          await supabase.from('crm_boards').update({ data_payload: payload }).eq('id', boardData[0].id);
+        }
       }
 
       setIsConfigModalVisible(false);
@@ -251,16 +260,87 @@ export default function AdminPanel({ isDarkMode }) {
     }
   };
 
-  const handleClearPending = async (user) => {
+  const handleApproveParamRequest = async (user) => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const req = user.config.pendingRequest;
+      const updatedConfig = { ...user.config };
+      
+      updatedConfig.monthlyGoal = req.goal;
+      updatedConfig.dailyCalls = req.calls;
+      updatedConfig.dailySims = req.sims;
+      updatedConfig.dailyNeg = req.negs;
+      updatedConfig.ticketMedio = req.ticket;
+      updatedConfig.conversionRateGoal = req.conv;
+      
+      delete updatedConfig.pendingRequest;
+
+      setGoalInput(req.goal);
+      setCallsInput(req.calls);
+      setSimsInput(req.sims);
+      setNegsInput(req.negs);
+      setTicketInput(req.ticket);
+      setConvInput(req.conv);
+
+      const { error: configError } = await supabase.from('crm_boards').update({ data_payload: updatedConfig }).eq('id', `config_${user.id}`);
+      if (configError) throw configError;
+
+      const { data: boardData } = await supabase.from('crm_boards').select('data_payload, id').eq('user_id', user.id).ilike('id', 'board_%').limit(1);
+      if (boardData && boardData.length > 0) {
+        let payload = boardData[0].data_payload;
+        payload.unreadNotifications = [{
+          id: `param_approved_${Date.now()}`,
+          type: 'Sistema',
+          text: `✅ Sua solicitação de alteração de metas e parâmetros foi APROVADA pelo administrador.`,
+          date: new Date().toISOString()
+        }, ...(payload.unreadNotifications || [])];
+        await supabase.from('crm_boards').update({ data_payload: payload }).eq('id', boardData[0].id);
+      }
+
+      setSelectedUser(prev => ({...prev, hasPendingRequest: false, config: updatedConfig}));
+      await addAdminActionToHistory(`Aprovou alteração de metas solicitada pelo vendedor: ${user.name || user.email}`);
+
+      setIsConfigModalVisible(false); // Fecha o modal imediatamente
+      showAlert("Sucesso", "A solicitação foi aceita e os parâmetros foram atualizados no perfil do vendedor.");
+      fetchUsers();
+    } catch (err) {
+      showAlert("Erro", "Falha ao aceitar solicitação: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectParamRequest = async (user) => {
+    if (!user) return;
     try {
       setLoading(true);
       const updatedConfig = { ...user.config };
       delete updatedConfig.pendingRequest;
 
-      await supabase.from('crm_boards').update({ data_payload: updatedConfig }).eq('id', `config_${user.id}`);
+      const { error: configError } = await supabase.from('crm_boards').update({ data_payload: updatedConfig }).eq('id', `config_${user.id}`);
+      if (configError) throw configError;
+
+      const { data: boardData } = await supabase.from('crm_boards').select('data_payload, id').eq('user_id', user.id).ilike('id', 'board_%').limit(1);
+      if (boardData && boardData.length > 0) {
+        let payload = boardData[0].data_payload;
+        payload.unreadNotifications = [{
+          id: `param_rejected_${Date.now()}`,
+          type: 'Sistema',
+          text: `❌ Sua solicitação de alteração de metas e parâmetros foi RECUSADA pelo administrador.`,
+          date: new Date().toISOString()
+        }, ...(payload.unreadNotifications || [])];
+        await supabase.from('crm_boards').update({ data_payload: payload }).eq('id', boardData[0].id);
+      }
+
+      setSelectedUser(prev => ({...prev, hasPendingRequest: false, config: updatedConfig}));
+      await addAdminActionToHistory(`Recusou a alteração de metas solicitada pelo vendedor: ${user.name || user.email}`);
+
+      setIsConfigModalVisible(false); // Fecha o modal imediatamente
+      showAlert("Aviso", "A solicitação foi recusada e o usuário foi notificado.");
       fetchUsers();
-    } catch (error) {
-      showAlert("Erro", "Não foi possível limpar a pendência.");
+    } catch (err) {
+      showAlert("Erro", "Falha ao recusar solicitação: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -311,6 +391,30 @@ export default function AdminPanel({ isDarkMode }) {
       showAlert("Erro", "Erro ao excluir: " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const addAdminActionToHistory = async (message) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: boards } = await supabase.from('crm_boards').select('id, data_payload').eq('user_id', user.id).ilike('id', 'board_%').limit(1);
+      if (boards && boards.length > 0) {
+        const boardId = boards[0].id;
+        const payload = boards[0].data_payload || {};
+        if (!payload.notificationHistory) payload.notificationHistory = [];
+        
+        payload.notificationHistory.unshift({
+          id: `hist_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          text: `Ação Admin: ${message}`,
+          date: new Date().toISOString(),
+          type: 'Sistema' 
+        });
+        
+        await supabase.from('crm_boards').update({ data_payload: payload }).eq('id', boardId);
+      }
+    } catch (error) {
+      console.error("Erro ao salvar histórico do admin:", error);
     }
   };
 
@@ -371,12 +475,6 @@ export default function AdminPanel({ isDarkMode }) {
         <TouchableOpacity style={[styles.btn, themeStyles.btnReset]} onPress={() => handleOpenConfigModal(item)}>
           <Text style={[styles.btnTextReset, themeStyles.btnTextReset]}>Configuração</Text>
         </TouchableOpacity>
-
-        {item.hasPendingRequest && (
-          <TouchableOpacity style={[styles.btn, { backgroundColor: '#f59e0b' }]} onPress={() => handleClearPending(item)}>
-            <Text style={styles.btnText}>Concluir Pendência</Text>
-          </TouchableOpacity>
-        )}
 
         <TouchableOpacity 
           style={[styles.btn, themeStyles.btnDelete]} 
@@ -444,24 +542,9 @@ export default function AdminPanel({ isDarkMode }) {
         )}
       </View>
 
-      <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setIsAlertModalVisible(false)}>
-          <Pressable style={[styles.alertModalBox, themeStyles.alertModalBox]} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.alertIconBadge}>
-              <Text style={{ fontSize: 20 }}>💬</Text>
-            </View>
-            <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle]}>{alertTitle}</Text>
-            <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage]}>{alertMessage}</Text>
-            <TouchableOpacity style={styles.alertModalBtn} onPress={() => setIsAlertModalVisible(false)}>
-              <Text style={styles.alertModalBtnText}>OK</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       <Modal animationType="fade" transparent={true} visible={isConfigModalVisible} onRequestClose={() => setIsConfigModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsConfigModalVisible(false)}>
-          <Pressable style={[styles.modalContent, themeStyles.modalContent, { maxWidth: 900, padding: 0, overflow: 'visible' }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.modalContent, themeStyles.modalContent, { maxWidth: 900, padding: 0, overflow: 'hidden' }]} onPress={(e) => e.stopPropagation()}>
             
             {/* Header Fixo do Modal */}
             <View style={[styles.configModalHeader, themeStyles.configModalHeader]}>
@@ -474,10 +557,10 @@ export default function AdminPanel({ isDarkMode }) {
               </TouchableOpacity>
             </View>
 
-            <View style={{ width: '100%', padding: 16 }}>
+            {/* ScrollView Interno para corrigir o modal gigante */}
+            <ScrollView style={{ width: '100%', maxHeight: '75vh' }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
               
               <View style={styles.configGridRow}>
-                
                 {/* COLUNA ESQUERDA: CREDENCIAIS E PERMISSÕES */}
                 <View style={[styles.configCardCol, themeStyles.configCardCol]}>
                   <View style={styles.configCardHeader}>
@@ -579,16 +662,30 @@ export default function AdminPanel({ isDarkMode }) {
                       </View>
                     )}
                   </View>
-
                 </View>
-
               </View>
 
               {/* SESSÃO DE PENDÊNCIAS (SE HOUVER) */}
               {selectedUser?.hasPendingRequest && selectedUser.config.pendingRequest && (
-                <View style={[styles.configCardCol, { backgroundColor: isDarkMode ? '#451a03' : '#fef3c7', borderColor: '#f59e0b', borderWidth: 1, marginBottom: 10, padding: 10 }]}>
-                  <Text style={[styles.sectionTitle, { color: '#d97706', marginBottom: 2 }]}>⚠️ Solicitação Pendente de Metas</Text>
-                  <Text style={styles.pendingText}>Meta: R$ {selectedUser.config.pendingRequest.goal} | Ticket: R$ {selectedUser.config.pendingRequest.ticket} | Ligações: {selectedUser.config.pendingRequest.calls} | Sims: {selectedUser.config.pendingRequest.sims} | Negs: {selectedUser.config.pendingRequest.negs} | Conv: {selectedUser.config.pendingRequest.conv}%</Text>
+                <View style={[styles.configCardCol, themeStyles.pendingCard, { marginBottom: 10 }]}>
+                  <Text style={[styles.sectionTitle, themeStyles.pendingCardTitle]}>⚠️ Solicitação Pendente de Metas</Text>
+                  
+                  <Text style={[styles.pendingText, themeStyles.pendingCardText]}>
+                    <Text style={{fontWeight: 'bold'}}>Metas solicitadas:</Text> Meta: R$ {selectedUser.config.pendingRequest.goal} | Ticket: R$ {selectedUser.config.pendingRequest.ticket} | Ligações: {selectedUser.config.pendingRequest.calls} | Sims: {selectedUser.config.pendingRequest.sims} | Negs: {selectedUser.config.pendingRequest.negs} | Conv: {selectedUser.config.pendingRequest.conv}%
+                  </Text>
+                  
+                  <Text style={[styles.pendingText, themeStyles.pendingCardText, { marginTop: 8, fontStyle: 'italic' }]}>
+                    <Text style={{fontWeight: 'bold'}}>Justificativa do usuário:</Text> {selectedUser.config.pendingRequest.justification || 'Nenhuma justificativa foi informada pelo usuário.'}
+                  </Text>
+                  
+                  <View style={styles.pendingActionButtons}>
+                    <TouchableOpacity style={[styles.pendingBtn, { backgroundColor: '#10b981' }]} onPress={() => handleApproveParamRequest(selectedUser)}>
+                      <Text style={styles.pendingBtnText}>Aceitar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.pendingBtn, { backgroundColor: '#ef4444' }]} onPress={() => handleRejectParamRequest(selectedUser)}>
+                      <Text style={styles.pendingBtnText}>Recusar</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
@@ -628,8 +725,7 @@ export default function AdminPanel({ isDarkMode }) {
                   </View>
                 </View>
               </View>
-
-            </View>
+            </ScrollView>
 
             {/* Footer Fixo do Modal com Botão Cancelar Estilizado */}
             <View style={[styles.configModalFooter, themeStyles.configModalFooter]}>
@@ -647,7 +743,7 @@ export default function AdminPanel({ isDarkMode }) {
 
       <Modal animationType="fade" transparent={true} visible={isCreateModalVisible} onRequestClose={() => setIsCreateModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsCreateModalVisible(false)}>
-          <Pressable style={[styles.alertModalBox, themeStyles.alertModalBox]} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.modalContent, themeStyles.modalContent, { padding: 24, maxWidth: 400 }]} onPress={(e) => e.stopPropagation()}>
             <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle, { textAlign: 'left', width: '100%' }]}>Criar Novo Usuário</Text>
             <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage, { textAlign: 'left', width: '100%', marginBottom: 14 }]}>Preencha os dados. A senha padrão inicial será <Text style={{fontWeight: 'bold'}}>Senha123!</Text>.</Text>
 
@@ -679,16 +775,43 @@ export default function AdminPanel({ isDarkMode }) {
         </Pressable>
       </Modal>
 
-      <Modal animationType="fade" transparent={true} visible={isDeleteModalVisible} onRequestClose={() => setIsDeleteModalVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setIsDeleteModalVisible(false)}>
-          <Pressable style={[styles.alertModalBox, themeStyles.alertModalBox]} onPress={(e) => e.stopPropagation()}>
-            <View style={[styles.alertIconBadge, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
-              <Text style={{ fontSize: 20 }}>⚠️</Text>
+      {/* ====================================================================== */}
+      {/* MODAIS DE ALERTA RENDERIZADOS NO FINAL (Z-INDEX GLOBAL E DESIGN NOVO)  */}
+      {/* ====================================================================== */}
+      <Modal animationType="fade" transparent={true} visible={isAlertModalVisible} onRequestClose={() => setIsAlertModalVisible(false)}>
+        <View style={[styles.modalOverlay, { zIndex: 999999, elevation: 100 }]}>
+          <View style={[styles.alertModalBox, themeStyles.alertModalBox, { padding: 24, maxWidth: 400 }]}>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 16, position: 'relative', width: '100%'}}>
+              <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle, {marginBottom: 0, fontSize: 18, textAlign: 'center'}]}>
+                {alertTitle.toLowerCase().includes('erro') ? '❌ ' : alertTitle.toLowerCase().includes('sucesso') ? '✅ ' : '⚠️ '}{alertTitle}
+              </Text>
+              <TouchableOpacity onPress={() => setIsAlertModalVisible(false)} style={{position: 'absolute', right: 0}}>
+                <Text style={[{fontSize: 20, fontWeight: 'bold'}, isDarkMode ? {color: '#94a3b8'} : {color: '#64748b'}]}>✕</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle]}>Aviso Crítico</Text>
-            <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage]}>
-              Tem certeza que deseja apagar permanentemente a conta de <Text style={{fontWeight: 'bold', color: '#ef4444'}}>{userToDelete?.name}</Text>? Esta ação <Text style={{fontWeight: 'bold'}}>NÃO PODE</Text> ser desfeita e todos os dados vinculados serão perdidos.
-            </Text>
+            <View style={{ marginBottom: 24, width: '100%' }}>
+              <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage, {textAlign: 'center', fontSize: 14, marginBottom: 0}]}>{alertMessage}</Text>
+            </View>
+            <TouchableOpacity style={[styles.alertModalBtn, { alignSelf: 'center', paddingHorizontal: 32, width: 'auto' }]} onPress={() => setIsAlertModalVisible(false)}>
+              <Text style={styles.alertModalBtnText}>Compreendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal animationType="fade" transparent={true} visible={isDeleteModalVisible} onRequestClose={() => setIsDeleteModalVisible(false)}>
+        <View style={[styles.modalOverlay, { zIndex: 999999, elevation: 100 }]}>
+          <View style={[styles.alertModalBox, themeStyles.alertModalBox, { padding: 24, maxWidth: 400 }]}>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 16, position: 'relative', width: '100%'}}>
+              <Text style={[styles.alertModalTitle, themeStyles.alertModalTitle, {marginBottom: 0, fontSize: 18, textAlign: 'center', color: '#ef4444'}]}>
+                ⚠️ Aviso Crítico
+              </Text>
+            </View>
+            <View style={{ marginBottom: 24, width: '100%' }}>
+              <Text style={[styles.alertModalMessage, themeStyles.alertModalMessage, {textAlign: 'center', fontSize: 14, marginBottom: 0}]}>
+                Tem certeza que deseja apagar permanentemente a conta de <Text style={{fontWeight: 'bold', color: '#ef4444'}}>{userToDelete?.name}</Text>? Esta ação <Text style={{fontWeight: 'bold'}}>NÃO PODE</Text> ser desfeita e todos os dados vinculados serão perdidos.
+              </Text>
+            </View>
             <View style={styles.modalButtons}>
               <TouchableOpacity style={[styles.modalBtn, themeStyles.cancelBtnStyle]} onPress={() => setIsDeleteModalVisible(false)}>
                 <Text style={[styles.cancelBtnTextStyle, themeStyles.cancelBtnTextStyle]}>Cancelar</Text>
@@ -697,8 +820,8 @@ export default function AdminPanel({ isDarkMode }) {
                 <Text style={styles.confirmBtnText}>Sim, Excluir</Text>
               </TouchableOpacity>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
     </View>
@@ -748,17 +871,15 @@ const styles = StyleSheet.create({
   btnTextReset: { fontWeight: 'bold', fontSize: 11, fontFamily: MODERN_FONT },
   btnTextDelete: { fontWeight: 'bold', fontSize: 11, fontFamily: MODERN_FONT },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 },
   
-  // Estilo refinado e moderno para modais de aviso centrais
-  alertModalBox: { width: '100%', maxWidth: 380, borderRadius: 16, padding: 24, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 15px 35px rgba(0,0,0,0.25)' } }) },
-  alertIconBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(37, 99, 235, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  alertModalTitle: { fontSize: 17, fontWeight: '700', marginBottom: 8, fontFamily: MODERN_FONT, textAlign: 'center' },
-  alertModalMessage: { fontSize: 13, lineHeight: 18, marginBottom: 20, fontFamily: MODERN_FONT, textAlign: 'center' },
-  alertModalBtn: { width: '100%', backgroundColor: '#2563eb', paddingVertical: 11, borderRadius: 8, alignItems: 'center' },
+  alertModalBox: { width: '100%', maxWidth: 380, borderRadius: 16, alignItems: 'center', ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 15px 35px rgba(0,0,0,0.25)' } }) },
+  alertModalTitle: { fontSize: 17, fontWeight: '700', fontFamily: MODERN_FONT },
+  alertModalMessage: { fontSize: 13, lineHeight: 18, fontFamily: MODERN_FONT },
+  alertModalBtn: { backgroundColor: '#2563eb', paddingVertical: 11, borderRadius: 8, alignItems: 'center' },
   alertModalBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT },
 
-  modalContent: { borderRadius: 16, padding: 24, width: '100%', maxWidth: 400, ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
+  modalContent: { borderRadius: 16, width: '100%', maxWidth: 400, ...Platform.select({ web: { outlineStyle: 'none', boxShadow: '0px 10px 25px rgba(0,0,0,0.15)' } }) },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8, fontFamily: MODERN_FONT },
   modalSubtitle: { fontSize: 13, marginBottom: 20, lineHeight: 18, fontFamily: MODERN_FONT },
   
@@ -773,6 +894,11 @@ const styles = StyleSheet.create({
   configCardCol: { flex: 1, minWidth: 320, padding: 14, borderRadius: 12, borderWidth: 1, position: 'relative' },
   configCardHeader: { marginBottom: 10, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(100,116,139,0.15)' },
   configCardTitle: { fontSize: 13, fontWeight: '700', fontFamily: MODERN_FONT },
+
+  // Estilos da Solicitação Pendente de Metas
+  pendingActionButtons: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  pendingBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  pendingBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT },
 
   dropdownRowBox: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   dropdownTriggerBox: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -799,7 +925,7 @@ const styles = StyleSheet.create({
   resetPasswordBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12, fontFamily: MODERN_FONT },
 
   sectionTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8, fontFamily: MODERN_FONT },
-  pendingText: { fontSize: 12, fontFamily: MODERN_FONT, fontWeight: '600' },
+  pendingText: { fontSize: 12, fontFamily: MODERN_FONT, fontWeight: '500', lineHeight: 18 },
 
   inputLabel: { fontSize: 11, fontWeight: '600', marginBottom: 4, fontFamily: MODERN_FONT },
   textInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, marginBottom: 10, fontFamily: MODERN_FONT, ...Platform.select({ web: { outlineStyle: 'none' } }) },
@@ -813,13 +939,12 @@ const styles = StyleSheet.create({
   confirmBtn: { backgroundColor: '#2563eb' },
   confirmBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 13, fontFamily: MODERN_FONT },
   
-  // Estilo de Botão Cancelar Profissional (Coeso com o padrão dos modais)
   cancelBtnStyle: { borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   cancelBtnTextStyle: { fontWeight: '700', fontSize: 13, fontFamily: MODERN_FONT }
 });
 
 const lightStyles = StyleSheet.create({
-  container: { backgroundColor: '#f8fafc' },
+  container: { backgroundColor: '#F9FAFB' },
   title: { color: '#0f172a' },
   subtitle: { color: '#64748b' },
   filterSection: { backgroundColor: '#fff', borderColor: '#e2e8f0' },
@@ -862,7 +987,10 @@ const lightStyles = StyleSheet.create({
   roleBtnText: { color: '#64748b' },
   roleBtnTextActive: { color: '#2563eb' },
   cancelBtnStyle: { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' },
-  cancelBtnTextStyle: { color: '#475569' }
+  cancelBtnTextStyle: { color: '#475569' },
+  pendingCard: { backgroundColor: '#fef3c7', borderColor: '#f59e0b' },
+  pendingCardTitle: { color: '#d97706' },
+  pendingCardText: { color: '#92400e' }
 });
 
 const darkStyles = StyleSheet.create({
@@ -909,5 +1037,8 @@ const darkStyles = StyleSheet.create({
   roleBtnText: { color: '#94a3b8' },
   roleBtnTextActive: { color: '#93c5fd' },
   cancelBtnStyle: { backgroundColor: '#334155', borderColor: '#475569' },
-  cancelBtnTextStyle: { color: '#cbd5e1' }
+  cancelBtnTextStyle: { color: '#cbd5e1' },
+  pendingCard: { backgroundColor: '#451a03', borderColor: '#d97706' },
+  pendingCardTitle: { color: '#fcd34d' },
+  pendingCardText: { color: '#fde68a' }
 });
